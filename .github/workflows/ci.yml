@@ -43,7 +43,9 @@ jobs:
           psql -f supabase/tests/bootstrap.sql
           psql -f supabase/migrations/202607110001_sprint_1_core_schema.sql
           psql -f supabase/migrations/202607110002_align_foundation_schema.sql
+          psql -f supabase/migrations/202607110003_crm_companies_foundation.sql
           psql -f supabase/tests/rls_smoke.sql
+          psql -f supabase/tests/companies_smoke.sql
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

@@ -60,14 +60,15 @@ export function normalizePublicPhone(value?: string | null): string {
 export function buildCompanyFingerprintParts(
   company: CompanyFingerprintInput,
 ): CompanyFingerprintParts {
+  const city = normalizeWords(company.city);
+  const state = normalizeWords(company.state);
+  const country = normalizeWords(company.country);
+
   return {
     name: normalizeCompanyName(company.companyName),
     domain: normalizeWebsiteDomain(company.websiteUrl),
     phone: normalizePublicPhone(company.publicPhone),
-    location: [company.city, company.state, company.country]
-      .map(normalizeWords)
-      .filter(Boolean)
-      .join("|"),
+    location: city && state ? [city, state, country].filter(Boolean).join("|") : "",
   };
 }
 
@@ -93,4 +94,3 @@ export function isLikelyDuplicateCompany(
 
   return corroboratingMatches.some(Boolean);
 }
-
