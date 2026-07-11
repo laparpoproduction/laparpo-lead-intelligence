@@ -15,7 +15,9 @@ test("shows the Sprint 1 dashboard preview without local credentials", async ({ 
 test("exposes protected foundation modules in preview mode", async ({ page }) => {
   await page.goto("/companies");
 
-  await expect(page.getByRole("heading", { name: "Companies" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Companies", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("No companies yet")).toBeVisible();
   await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
 });
