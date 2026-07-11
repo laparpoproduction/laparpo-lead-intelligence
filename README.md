@@ -73,7 +73,8 @@ Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_P
 The migrations provide:
 
 - `profiles` with CEO/Admin, Sales Manager and Sales Representative roles
-- `companies` with public source metadata, social URLs, location and fingerprint
+- `companies` with public source metadata, normalized contact fields, social URLs,
+  full address, location and fingerprint
 - `contacts` with public contact details and evidence URL
 - `leads` with ownership, score confidence, value, service and follow-up fields
 - `lead_signals`, `lead_activities` and `sales_tasks`
@@ -90,7 +91,11 @@ Company fingerprints normalise:
 - Malaysian phone numbers into country-code form;
 - city, state and country.
 
-The database enforces a unique fingerprint. `src/lib/companies/duplicate.ts` provides the matching application utility and requires a matching name plus at least one corroborating attribute before labelling records likely duplicates.
+Fingerprint and website-domain indexes are intentionally non-unique: branches and
+legitimate businesses may share a corporate website, phone or city. The database
+normalizes these fields for lookup, while `src/lib/companies/duplicate.ts` labels a
+record as a likely duplicate only when its normalized name matches together with a
+matching domain, Malaysian phone number, or complete city-and-state location.
 
 ## Quality checks
 
@@ -102,7 +107,9 @@ npm run build
 npm run test:e2e
 ```
 
-GitHub Actions also applies both migrations to PostgreSQL and runs `supabase/tests/rls_smoke.sql`. The smoke test proves that a sample admin can create a sourced company, public contact and assigned lead, while an unrelated representative cannot read those records.
+GitHub Actions applies all migrations to PostgreSQL and runs the general RLS test
+plus `supabase/tests/companies_smoke.sql`. The company test verifies normalization,
+source provenance, management creation, representative ownership and isolation.
 
 ## Manual test checklist
 
