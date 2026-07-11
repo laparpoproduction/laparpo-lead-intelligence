@@ -1,0 +1,2 @@
+-- Sprint 1 deliberately contains no fabricated leads.
+-- Create users through Supabase Auth, then add real public business leads in later sprints.
