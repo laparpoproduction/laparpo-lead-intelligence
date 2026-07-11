@@ -1,2 +1,8 @@
--- Sprint 1 deliberately contains no fabricated leads.
--- Create users through Supabase Auth, then add real public business leads in later sprints.
+-- Sprint 1 deliberately contains no fabricated leads or credentials.
+-- Create the first user through Supabase Auth, then promote the verified account:
+--
+-- update public.profiles
+-- set role = 'ceo_admin'
+-- where email = 'replace-with-the-ceo-email@example.com';
+--
+-- The profile trigger creates every other account as a Sales Representative by default.
