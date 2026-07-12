@@ -75,9 +75,17 @@ beforeEach(() => {
     "test-company-confirmation-secret-32-characters";
   service = {
     create: vi.fn().mockResolvedValue(companyFixture),
-    createConfirmedDuplicate: vi.fn().mockResolvedValue(companyFixture),
+    createConfirmedDuplicate: vi.fn().mockResolvedValue({
+      status: "applied",
+      companyId,
+      company: companyFixture,
+    }),
     update: vi.fn().mockResolvedValue(companyFixture),
-    updateConfirmedDuplicate: vi.fn().mockResolvedValue(companyFixture),
+    updateConfirmedDuplicate: vi.fn().mockResolvedValue({
+      status: "applied",
+      companyId,
+      company: companyFixture,
+    }),
     softDelete: vi.fn().mockResolvedValue(undefined),
   };
   vi.mocked(createCompanyMutationContext).mockReset().mockResolvedValue({
@@ -163,7 +171,50 @@ describe("Companies server actions", () => {
     expect(service.createConfirmedDuplicate).toHaveBeenCalledWith(
       expect.objectContaining({ displayName: companyFixture.displayName }),
       actor,
+      expect.objectContaining({
+        confirmationId: expect.any(String),
+        operation: "create",
+        submissionHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
     );
+  });
+
+  it("returns the original result when the same confirmed create is submitted twice", async () => {
+    vi.mocked(service.create).mockRejectedValueOnce(new CompanyDuplicateError([companyId]));
+    const warning = await createCompanyAction(initialCompanyFormState, createForm());
+    const confirmed = createForm();
+    confirmed.set("confirmationToken", warning.confirmationToken ?? "");
+
+    const first = await createCompanyAction(initialCompanyFormState, confirmed);
+    vi.mocked(service.createConfirmedDuplicate).mockResolvedValueOnce({
+      status: "already_consumed",
+      companyId,
+    });
+    const repeated = await createCompanyAction(initialCompanyFormState, confirmed);
+
+    expect(first).toMatchObject({ status: "success", companyId });
+    expect(repeated).toMatchObject({
+      status: "success",
+      companyId,
+      message: expect.stringContaining("already created"),
+    });
+  });
+
+  it("allows a safe retry when the first confirmed create fails", async () => {
+    vi.mocked(service.create).mockRejectedValueOnce(new CompanyDuplicateError([companyId]));
+    const warning = await createCompanyAction(initialCompanyFormState, createForm());
+    const confirmed = createForm();
+    confirmed.set("confirmationToken", warning.confirmationToken ?? "");
+    vi.mocked(service.createConfirmedDuplicate)
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockResolvedValueOnce({ status: "applied", companyId, company: companyFixture });
+
+    await expect(
+      createCompanyAction(initialCompanyFormState, confirmed),
+    ).resolves.toMatchObject({ status: "error" });
+    await expect(
+      createCompanyAction(initialCompanyFormState, confirmed),
+    ).resolves.toMatchObject({ status: "success", companyId });
   });
 
   it("rejects duplicate confirmation when the payload changes", async () => {
@@ -195,6 +246,28 @@ describe("Companies server actions", () => {
     expect(state).toMatchObject({
       status: "duplicate_warning",
       confirmationToken: expect.any(String),
+    });
+  });
+
+  it("does not reapply a consumed confirmed update", async () => {
+    vi.mocked(service.update).mockRejectedValueOnce(new CompanyDuplicateError([companyId]));
+    const identityUpdate = updateForm();
+    identityUpdate.set("displayName", "Existing Company");
+    const warning = await updateCompanyAction(
+      initialCompanyFormState,
+      identityUpdate,
+    );
+    identityUpdate.set("confirmationToken", warning.confirmationToken ?? "");
+    vi.mocked(service.updateConfirmedDuplicate).mockResolvedValue({
+      status: "already_consumed",
+      companyId,
+    });
+
+    const state = await updateCompanyAction(initialCompanyFormState, identityUpdate);
+    expect(state).toMatchObject({
+      status: "success",
+      companyId,
+      message: expect.stringContaining("already applied"),
     });
   });
 

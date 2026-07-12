@@ -22,6 +22,9 @@ const manager: CompanyActor = {
 function repositoryMock(overrides: Partial<CompanyRepository> = {}): CompanyRepository {
   return {
     create: vi.fn().mockResolvedValue(companyFixture),
+    createConfirmed: vi.fn().mockResolvedValue(companyFixture),
+    getConfirmationResult: vi.fn().mockResolvedValue(null),
+    recordConfirmationResult: vi.fn().mockResolvedValue(undefined),
     getById: vi.fn().mockResolvedValue(companyFixture),
     findByFingerprint: vi.fn().mockResolvedValue([companyFixture]),
     findByDomain: vi.fn().mockResolvedValue([companyFixture]),
@@ -44,6 +47,19 @@ const createInput = {
   sourceType: "company_website",
 };
 
+const createConfirmation = {
+  confirmationId: "55555555-5555-4555-8555-555555555555",
+  submissionHash: "a".repeat(64),
+  operation: "create" as const,
+};
+
+const updateConfirmation = {
+  confirmationId: "66666666-6666-4666-8666-666666666666",
+  submissionHash: "b".repeat(64),
+  operation: "update" as const,
+  companyId,
+};
+
 describe("CompanyService", () => {
   it("validates, checks duplicates, and creates for an active user", async () => {
     const repository = repositoryMock();
@@ -64,16 +80,50 @@ describe("CompanyService", () => {
     );
   });
 
-  it("allows an explicitly confirmed duplicate without rerunning candidate lookup", async () => {
+  it("applies a confirmed duplicate without rerunning candidate lookup", async () => {
     const repository = repositoryMock({
       findDuplicateCandidates: vi.fn().mockResolvedValue([companyFixture]),
     });
 
     await expect(
-      new CompanyService(repository).createConfirmedDuplicate(createInput, representative),
-    ).resolves.toEqual(companyFixture);
+      new CompanyService(repository).createConfirmedDuplicate(
+        createInput,
+        representative,
+        createConfirmation,
+      ),
+    ).resolves.toMatchObject({ status: "applied", companyId });
     expect(repository.findDuplicateCandidates).not.toHaveBeenCalled();
-    expect(repository.create).toHaveBeenCalled();
+    expect(repository.createConfirmed).toHaveBeenCalled();
+  });
+
+  it("returns an already-consumed result for confirmed create replay", async () => {
+    const repository = repositoryMock({
+      getConfirmationResult: vi.fn().mockResolvedValue(companyId),
+    });
+    await expect(
+      new CompanyService(repository).createConfirmedDuplicate(
+        createInput,
+        representative,
+        createConfirmation,
+      ),
+    ).resolves.toEqual({ status: "already_consumed", companyId });
+    expect(repository.createConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("allows confirmed create retry after an original failure", async () => {
+    const repository = repositoryMock({
+      createConfirmed: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("temporary failure"))
+        .mockResolvedValue(companyFixture),
+    });
+    const service = new CompanyService(repository);
+    await expect(
+      service.createConfirmedDuplicate(createInput, representative, createConfirmation),
+    ).rejects.toThrow("temporary failure");
+    await expect(
+      service.createConfirmedDuplicate(createInput, representative, createConfirmation),
+    ).resolves.toMatchObject({ status: "applied", companyId });
   });
 
   it("checks duplicate candidates beyond the first 100 records", async () => {
@@ -159,11 +209,60 @@ describe("CompanyService", () => {
       companyId,
       { displayName: "Confirmed Name" },
       representative,
+      updateConfirmation,
     );
     expect(repository.findDuplicateCandidates).not.toHaveBeenCalled();
     expect(repository.update).toHaveBeenCalledWith(companyId, {
       displayName: "Confirmed Name",
     });
+    expect(repository.recordConfirmationResult).toHaveBeenCalledWith(
+      updateConfirmation,
+      userId,
+      companyId,
+    );
+  });
+
+  it("does not reapply a consumed confirmed update", async () => {
+    const repository = repositoryMock({
+      getConfirmationResult: vi.fn().mockResolvedValue(companyId),
+    });
+    await expect(
+      new CompanyService(repository).updateConfirmedDuplicate(
+        companyId,
+        { displayName: "Confirmed Name" },
+        representative,
+        updateConfirmation,
+      ),
+    ).resolves.toEqual({ status: "already_consumed", companyId });
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it("safely reapplies the same update when recording consumption initially fails", async () => {
+    const repository = repositoryMock({
+      recordConfirmationResult: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("temporary ledger failure"))
+        .mockResolvedValue(undefined),
+    });
+    const service = new CompanyService(repository);
+
+    await expect(
+      service.updateConfirmedDuplicate(
+        companyId,
+        { displayName: "Confirmed Name" },
+        representative,
+        updateConfirmation,
+      ),
+    ).rejects.toThrow("temporary ledger failure");
+    await expect(
+      service.updateConfirmedDuplicate(
+        companyId,
+        { displayName: "Confirmed Name" },
+        representative,
+        updateConfirmation,
+      ),
+    ).resolves.toMatchObject({ status: "applied", companyId });
+    expect(repository.update).toHaveBeenCalledTimes(2);
   });
 
   it("allows soft delete only for management", async () => {

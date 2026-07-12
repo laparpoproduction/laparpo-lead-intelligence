@@ -30,7 +30,10 @@ describe("company duplicate confirmation", () => {
         },
         { now: now + 1_000, secret },
       ),
-    ).toBe(true);
+    ).toMatchObject({
+      confirmationId: expect.any(String),
+      submissionHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
   });
 
   it("rejects changed payloads, actors, operations, and expired tokens", () => {
@@ -41,14 +44,14 @@ describe("company duplicate confirmation", () => {
         { ...binding, submission: { displayName: "Changed" } },
         { now, secret },
       ),
-    ).toBe(false);
+    ).toBeNull();
     expect(
       verifyCompanyConfirmationToken(
         token,
         { ...binding, actorId: "22222222-2222-4222-8222-222222222222" },
         { now, secret },
       ),
-    ).toBe(false);
+    ).toBeNull();
     expect(
       verifyCompanyConfirmationToken(
         token,
@@ -59,22 +62,24 @@ describe("company duplicate confirmation", () => {
         },
         { now, secret },
       ),
-    ).toBe(false);
+    ).toBeNull();
     expect(
       verifyCompanyConfirmationToken(token, binding, {
         now: now + 11 * 60 * 1_000,
         secret,
       }),
-    ).toBe(false);
+    ).toBeNull();
   });
 
   it("rejects tampered signatures", () => {
     const token = createCompanyConfirmationToken(binding, { now, secret });
+    const [payload, signed] = token.split(".") as [string, string];
+    const tamperedSignature = `${signed.startsWith("A") ? "B" : "A"}${signed.slice(1)}`;
     expect(
-      verifyCompanyConfirmationToken(`${token.slice(0, -1)}x`, binding, {
+      verifyCompanyConfirmationToken(`${payload}.${tamperedSignature}`, binding, {
         now,
         secret,
       }),
-    ).toBe(false);
+    ).toBeNull();
   });
 });

@@ -150,19 +150,28 @@ export async function createCompanyAction(
       operation: "create",
       submission: parsed.input,
     };
-    const company = parsed.confirmationToken
-      ? verifyCompanyConfirmationToken(parsed.confirmationToken, binding)
-        ? await service.createConfirmedDuplicate(parsed.input, actor)
-        : null
-      : await service.create(parsed.input, actor);
-
-    if (!company) return invalidConfirmationState();
+    let companyId: string;
+    let alreadyConsumed = false;
+    if (parsed.confirmationToken) {
+      const verified = verifyCompanyConfirmationToken(parsed.confirmationToken, binding);
+      if (!verified) return invalidConfirmationState();
+      const result = await service.createConfirmedDuplicate(parsed.input, actor, {
+        ...verified,
+        operation: "create",
+      });
+      companyId = result.companyId;
+      alreadyConsumed = result.status === "already_consumed";
+    } else {
+      companyId = (await service.create(parsed.input, actor)).id;
+    }
     revalidatePath("/companies");
     return {
       status: "success",
-      message: "Company created successfully.",
-      companyId: company.id,
-      redirectTo: `/companies/${company.id}`,
+      message: alreadyConsumed
+        ? "This confirmed company was already created. Returning the original result."
+        : "Company created successfully.",
+      companyId,
+      redirectTo: `/companies/${companyId}`,
     };
   } catch (error) {
     if (error instanceof CompanyDuplicateError) {
@@ -193,19 +202,34 @@ export async function updateCompanyAction(
       companyId: parsed.companyId,
       submission: parsed.input,
     };
-    const company = parsed.confirmationToken
-      ? verifyCompanyConfirmationToken(parsed.confirmationToken, binding)
-        ? await service.updateConfirmedDuplicate(parsed.companyId, parsed.input, actor)
-        : null
-      : await service.update(parsed.companyId, parsed.input, actor);
-
-    if (!company) return invalidConfirmationState();
+    let companyId: string;
+    let alreadyConsumed = false;
+    if (parsed.confirmationToken) {
+      const verified = verifyCompanyConfirmationToken(parsed.confirmationToken, binding);
+      if (!verified) return invalidConfirmationState();
+      const result = await service.updateConfirmedDuplicate(
+        parsed.companyId,
+        parsed.input,
+        actor,
+        {
+          ...verified,
+          operation: "update",
+          companyId: parsed.companyId,
+        },
+      );
+      companyId = result.companyId;
+      alreadyConsumed = result.status === "already_consumed";
+    } else {
+      companyId = (await service.update(parsed.companyId, parsed.input, actor)).id;
+    }
     revalidatePath("/companies");
-    revalidatePath(`/companies/${company.id}`);
+    revalidatePath(`/companies/${companyId}`);
     return {
       status: "success",
-      message: "Company updated successfully.",
-      companyId: company.id,
+      message: alreadyConsumed
+        ? "This confirmed update was already applied."
+        : "Company updated successfully.",
+      companyId,
     };
   } catch (error) {
     if (error instanceof CompanyDuplicateError) {

@@ -1,9 +1,10 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { getServerEnv } from "@/lib/env";
 
 const confirmationPayloadSchema = z.object({
   version: z.literal(1),
+  confirmationId: z.uuid(),
   actorId: z.uuid(),
   operation: z.enum(["create", "update"]),
   companyId: z.uuid().optional(),
@@ -12,6 +13,11 @@ const confirmationPayloadSchema = z.object({
 });
 
 type ConfirmationPayload = z.infer<typeof confirmationPayloadSchema>;
+
+export type VerifiedCompanyConfirmation = Pick<
+  ConfirmationPayload,
+  "confirmationId" | "submissionHash"
+>;
 
 export type CompanyConfirmationBinding = {
   actorId: string;
@@ -59,6 +65,7 @@ export function createCompanyConfirmationToken(
 ): string {
   const payload: ConfirmationPayload = {
     version: 1,
+    confirmationId: randomUUID(),
     actorId: binding.actorId,
     operation: binding.operation,
     companyId: binding.companyId,
@@ -74,10 +81,10 @@ export function verifyCompanyConfirmationToken(
   token: string,
   binding: CompanyConfirmationBinding,
   options: { now?: number; secret?: string } = {},
-): boolean {
+): VerifiedCompanyConfirmation | null {
   try {
     const [encodedPayload, encodedSignature, extra] = token.split(".");
-    if (!encodedPayload || !encodedSignature || extra) return false;
+    if (!encodedPayload || !encodedSignature || extra) return null;
 
     const suppliedSignature = Buffer.from(encodedSignature, "base64url");
     const expectedSignature = signature(
@@ -88,20 +95,25 @@ export function verifyCompanyConfirmationToken(
       suppliedSignature.length !== expectedSignature.length ||
       !timingSafeEqual(suppliedSignature, expectedSignature)
     ) {
-      return false;
+      return null;
     }
 
     const payload = confirmationPayloadSchema.parse(
       JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")),
     );
-    return (
+    const valid =
       payload.expiresAt >= (options.now ?? Date.now()) &&
       payload.actorId === binding.actorId &&
       payload.operation === binding.operation &&
       payload.companyId === binding.companyId &&
-      payload.submissionHash === submissionHash(binding.submission)
-    );
+      payload.submissionHash === submissionHash(binding.submission);
+    return valid
+      ? {
+          confirmationId: payload.confirmationId,
+          submissionHash: payload.submissionHash,
+        }
+      : null;
   } catch {
-    return false;
+    return null;
   }
 }

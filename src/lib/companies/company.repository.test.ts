@@ -87,6 +87,42 @@ describe("SupabaseCompanyRepository", () => {
     });
   });
 
+  it("returns one company for concurrent confirmed-create retries", async () => {
+    const { repository, builder } = setup(
+      { data: null, error: null },
+      [
+        { data: companyRowFixture, error: null },
+        { data: companyRowFixture, error: null },
+      ],
+    );
+    const input = validateCompanyCreate({
+      legalName: companyFixture.legalName,
+      displayName: companyFixture.displayName,
+      companyType: "fnb",
+      sourceUrl: companyFixture.sourceUrl,
+      sourceType: companyFixture.sourceType,
+    });
+    const confirmation = {
+      confirmationId: "55555555-5555-4555-8555-555555555555",
+      submissionHash: "a".repeat(64),
+      operation: "create" as const,
+    };
+
+    const [first, repeated] = await Promise.all([
+      repository.createConfirmed(input, userId, confirmation),
+      repository.createConfirmed(input, userId, confirmation),
+    ]);
+    expect(first.id).toBe(companyId);
+    expect(repeated.id).toBe(companyId);
+    expect(
+      builder.calls.filter(
+        (call) =>
+          call.method === "rpc" &&
+          call.args[0] === "create_confirmed_duplicate_company",
+      ),
+    ).toHaveLength(2);
+  });
+
   it("gets an active company by its unique id", async () => {
     const { repository, builder } = setup({ data: companyRowFixture, error: null });
     expect(await repository.getById(companyId)).toEqual(companyFixture);

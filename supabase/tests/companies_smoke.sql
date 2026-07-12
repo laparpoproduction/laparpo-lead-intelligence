@@ -362,3 +362,57 @@ end;
 $$;
 
 reset role;
+
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '00000000-0000-0000-0000-000000000001',
+  false
+);
+
+do $$
+declare
+  first_company public.companies%rowtype;
+  retried_company public.companies%rowtype;
+  payload jsonb := jsonb_build_object(
+    'legal_name', 'Idempotent Company Sdn Bhd',
+    'display_name', 'Idempotent Company',
+    'company_type', 'other',
+    'country', 'MY',
+    'source_url', 'https://idempotent-company.test/about',
+    'source_type', 'company_website',
+    'discovered_at', now()
+  );
+begin
+  first_company := public.create_confirmed_duplicate_company(
+    '50000000-0000-4000-8000-000000000001',
+    repeat('a', 64),
+    payload
+  );
+  retried_company := public.create_confirmed_duplicate_company(
+    '50000000-0000-4000-8000-000000000001',
+    repeat('a', 64),
+    payload
+  );
+
+  if first_company.id <> retried_company.id then
+    raise exception 'Confirmed create retry returned a different company';
+  end if;
+  if (
+    select count(*) from public.companies
+    where display_name = 'Idempotent Company'
+  ) <> 1 then
+    raise exception 'Confirmed create retry created multiple companies';
+  end if;
+  if not exists (
+    select 1 from public.company_mutation_confirmations
+    where confirmation_id = '50000000-0000-4000-8000-000000000001'
+      and company_id = first_company.id
+      and consumed_at is not null
+  ) then
+    raise exception 'Confirmed create consumption was not recorded';
+  end if;
+end;
+$$;
+
+reset role;
