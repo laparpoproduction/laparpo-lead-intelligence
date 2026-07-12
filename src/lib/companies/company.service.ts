@@ -147,8 +147,8 @@ export class CompanyService {
     const validatedId = validateCompanyId(id);
     const company = await this.repository.getById(validatedId);
     if (!company) throw new CompanyNotFoundError();
-    if (!isManagement(actor) && company.createdBy !== actor.userId) {
-      throw new CompanyPermissionError("Only management or the creator can delete this company");
+    if (!isManagement(actor)) {
+      throw new CompanyPermissionError("Only management can delete companies");
     }
     await this.repository.softDelete(validatedId);
   }
@@ -182,9 +182,8 @@ export class CompanyService {
     input: Company | ValidatedCreateCompanyInput,
     excludeId?: string,
   ): Promise<void> {
-    const query = input.displayName;
-    const candidates = await this.repository.search({ query, page: 1, pageSize: 100 });
-    const duplicateIds = candidates.items
+    const candidates = await this.repository.findDuplicateCandidates(duplicateInput(input));
+    const duplicateIds = candidates
       .filter((candidate) => candidate.id !== excludeId)
       .filter((candidate) =>
         isLikelyDuplicateCompany(duplicateInput(input), duplicateInput(candidate)),

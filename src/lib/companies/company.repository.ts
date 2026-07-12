@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapCompanyCreate, mapCompanyRow, mapCompanyUpdate } from "./company.mapper";
-import { normalizeWebsiteDomain } from "./duplicate";
+import {
+  buildCompanyFingerprintParts,
+  normalizeWebsiteDomain,
+  type CompanyFingerprintInput,
+} from "./duplicate";
 import type {
   Company,
   CompanyListOptions,
@@ -37,6 +41,7 @@ export interface CompanyRepository {
   getById(id: string, includeDeleted?: boolean): Promise<Company | null>;
   findByFingerprint(fingerprint: string, options?: CompanyLookupOptions): Promise<Company[]>;
   findByDomain(domain: string, options?: CompanyLookupOptions): Promise<Company[]>;
+  findDuplicateCandidates(input: CompanyFingerprintInput): Promise<Company[]>;
   list(options?: CompanyListOptions): Promise<PaginatedCompanies>;
   search(options: CompanyListOptions): Promise<PaginatedCompanies>;
   update(id: string, input: UpdateCompanyInput): Promise<Company>;
@@ -55,6 +60,8 @@ const sortColumns: Record<CompanySortField, string> = {
   createdAt: "created_at",
   updatedAt: "updated_at",
 };
+
+const duplicateCandidatePageSize = 100;
 
 function quotePostgrestValue(value: string): string {
   const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -133,6 +140,7 @@ export class SupabaseCompanyRepository implements CompanyRepository {
 
     const { data, error, count } = await query
       .order(sortColumns[parsed.sortBy], { ascending: parsed.sortDirection === "asc" })
+      .order("id", { ascending: true })
       .range(start, end);
 
     if (error) throw new CompanyRepositoryError("list", causeFrom(error));
@@ -152,6 +160,40 @@ export class SupabaseCompanyRepository implements CompanyRepository {
 
   search(options: CompanyListOptions): Promise<PaginatedCompanies> {
     return this.list(options);
+  }
+
+  async findDuplicateCandidates(input: CompanyFingerprintInput): Promise<Company[]> {
+    const parts = buildCompanyFingerprintParts(input);
+    if (!parts.name || (!parts.domain && !parts.phone && !parts.location)) return [];
+
+    const candidates: Company[] = [];
+    let offset = 0;
+
+    while (true) {
+      const { data, error } = await this.client
+        .rpc("find_company_duplicate_candidates", {
+          candidate_name: input.companyName,
+          candidate_domain: parts.domain || null,
+          candidate_phone: parts.phone || null,
+          candidate_city: input.city?.trim() || null,
+          candidate_state: input.state?.trim() || null,
+          candidate_country: input.country?.trim() || null,
+        })
+        .order("id", { ascending: true })
+        .range(offset, offset + duplicateCandidatePageSize - 1);
+
+      if (error) {
+        throw new CompanyRepositoryError("find duplicate candidates", causeFrom(error));
+      }
+
+      const page = (data ?? []).map((row: unknown) =>
+        mapCompanyRow(row as unknown as Parameters<typeof mapCompanyRow>[0]),
+      );
+      candidates.push(...page);
+
+      if (page.length < duplicateCandidatePageSize) return candidates;
+      offset += duplicateCandidatePageSize;
+    }
   }
 
   async update(id: string, input: UpdateCompanyInput): Promise<Company> {

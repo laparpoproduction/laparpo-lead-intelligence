@@ -45,6 +45,7 @@ jobs:
           psql -f supabase/migrations/202607110002_align_foundation_schema.sql
           psql -f supabase/migrations/202607110003_crm_companies_foundation.sql
           psql -f supabase/migrations/202607110004_companies_soft_delete.sql
+          psql -f supabase/migrations/202607110005_companies_rls_and_duplicate_candidates.sql
           psql -f supabase/tests/rls_smoke.sql
           psql -f supabase/tests/companies_smoke.sql
       - name: Install Playwright browser

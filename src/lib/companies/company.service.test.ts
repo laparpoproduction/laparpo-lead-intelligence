@@ -25,6 +25,7 @@ function repositoryMock(overrides: Partial<CompanyRepository> = {}): CompanyRepo
     getById: vi.fn().mockResolvedValue(companyFixture),
     findByFingerprint: vi.fn().mockResolvedValue([companyFixture]),
     findByDomain: vi.fn().mockResolvedValue([companyFixture]),
+    findDuplicateCandidates: vi.fn().mockResolvedValue([]),
     list: vi.fn().mockResolvedValue({ items: [companyFixture], page: 1, pageSize: 25, total: 1, totalPages: 1 }),
     search: vi.fn().mockResolvedValue({ items: [], page: 1, pageSize: 100, total: 0, totalPages: 0 }),
     update: vi.fn().mockResolvedValue(companyFixture),
@@ -48,17 +49,40 @@ describe("CompanyService", () => {
     const repository = repositoryMock();
     const service = new CompanyService(repository);
     await expect(service.create(createInput, representative)).resolves.toEqual(companyFixture);
-    expect(repository.search).toHaveBeenCalledWith({ query: "ABC (Malaysia)", page: 1, pageSize: 100 });
+    expect(repository.findDuplicateCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ companyName: "ABC (Malaysia)" }),
+    );
     expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ country: "MY" }), userId);
   });
 
   it("rejects a corroborated likely duplicate", async () => {
     const repository = repositoryMock({
-      search: vi.fn().mockResolvedValue({ items: [companyFixture], page: 1, pageSize: 100, total: 1, totalPages: 1 }),
+      findDuplicateCandidates: vi.fn().mockResolvedValue([companyFixture]),
     });
     await expect(new CompanyService(repository).create(createInput, representative)).rejects.toEqual(
       expect.objectContaining<Partial<CompanyDuplicateError>>({ candidateIds: [companyId] }),
     );
+  });
+
+  it("checks duplicate candidates beyond the first 100 records", async () => {
+    const nonDuplicates = Array.from({ length: 100 }, (_, index) => ({
+      ...companyFixture,
+      id: `candidate-${index.toString().padStart(3, "0")}`,
+      websiteUrl: `https://branch-${index}.example.my`,
+      websiteDomain: `branch-${index}.example.my`,
+      publicPhone: null,
+      city: null,
+      state: null,
+    }));
+    const repository = repositoryMock({
+      findDuplicateCandidates: vi
+        .fn()
+        .mockResolvedValue([...nonDuplicates, companyFixture]),
+    });
+
+    await expect(
+      new CompanyService(repository).create(createInput, representative),
+    ).rejects.toBeInstanceOf(CompanyDuplicateError);
   });
 
   it("uses repository permission checks for representatives", async () => {
@@ -108,22 +132,21 @@ describe("CompanyService", () => {
 
   it("orchestrates an authorised update and excludes the current duplicate candidate", async () => {
     const repository = repositoryMock({
-      search: vi.fn().mockResolvedValue({ items: [companyFixture], page: 1, pageSize: 100, total: 1, totalPages: 1 }),
+      findDuplicateCandidates: vi.fn().mockResolvedValue([companyFixture]),
     });
     await new CompanyService(repository).update(companyId, { city: "Butterworth" }, representative);
     expect(repository.update).toHaveBeenCalledWith(companyId, { city: "Butterworth" });
   });
 
-  it("allows soft delete only for management or the creator", async () => {
+  it("allows soft delete only for management", async () => {
     const repository = repositoryMock();
-    await new CompanyService(repository).softDelete(companyId, representative);
-    expect(repository.softDelete).toHaveBeenCalledWith(companyId);
-
-    const unrelated = { ...representative, userId: "44444444-4444-4444-8444-444444444444" };
-    await expect(new CompanyService(repository).softDelete(companyId, unrelated)).rejects.toBeInstanceOf(
+    await expect(
+      new CompanyService(repository).softDelete(companyId, representative),
+    ).rejects.toBeInstanceOf(
       CompanyPermissionError,
     );
     await expect(new CompanyService(repository).softDelete(companyId, manager)).resolves.toBeUndefined();
+    expect(repository.softDelete).toHaveBeenCalledTimes(1);
   });
 
   it("denies inactive users", async () => {

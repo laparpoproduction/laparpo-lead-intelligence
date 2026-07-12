@@ -12,9 +12,10 @@ type Response = { data: unknown; error: unknown; count?: number | null };
 type RecordedCall = { method: string; args: unknown[] };
 
 class QueryBuilder implements PromiseLike<Response> {
-  readonly calls: RecordedCall[] = [];
-
-  constructor(private readonly response: Response) {}
+  constructor(
+    private readonly response: Response,
+    readonly calls: RecordedCall[] = [],
+  ) {}
 
   private record(method: string, args: unknown[]): this {
     this.calls.push({ method, args });
@@ -40,19 +41,29 @@ class QueryBuilder implements PromiseLike<Response> {
   }
 }
 
-function setup(response: Response, rpcResponse: Response = { data: true, error: null }) {
-  const builder = new QueryBuilder(response);
+function setup(
+  response: Response,
+  rpcResponse: Response | Response[] = { data: true, error: null },
+) {
+  const calls: RecordedCall[] = [];
+  const rpcResponses = Array.isArray(rpcResponse) ? [...rpcResponse] : [rpcResponse];
   const client = {
     from: (table: string) => {
-      builder.calls.push({ method: "from", args: [table] });
-      return builder;
+      calls.push({ method: "from", args: [table] });
+      return new QueryBuilder(response, calls);
     },
     rpc: (name: string, args: unknown) => {
-      builder.calls.push({ method: "rpc", args: [name, args] });
-      return Promise.resolve(rpcResponse);
+      calls.push({ method: "rpc", args: [name, args] });
+      return new QueryBuilder(
+        rpcResponses.shift() ?? { data: [], error: null },
+        calls,
+      );
     },
   } as unknown as Pick<SupabaseClient, "from" | "rpc">;
-  return { repository: new SupabaseCompanyRepository(client), builder };
+  return {
+    repository: new SupabaseCompanyRepository(client),
+    builder: { calls },
+  };
 }
 
 describe("SupabaseCompanyRepository", () => {
@@ -174,11 +185,41 @@ describe("SupabaseCompanyRepository", () => {
 
     expect(result).toMatchObject({ page: 2, pageSize: 10, total: 26, totalPages: 3 });
     expect(builder.calls).toContainEqual({ method: "range", args: [10, 19] });
-    expect(builder.calls).toContainEqual({
-      method: "order",
-      args: ["display_name", { ascending: true }],
-    });
+    expect(builder.calls.filter((call) => call.method === "order")).toEqual([
+      { method: "order", args: ["display_name", { ascending: true }] },
+      { method: "order", args: ["id", { ascending: true }] },
+    ]);
     expect(builder.calls.find((call) => call.method === "or")?.args[0]).toContain('\\"Sdn Bhd\\"');
+  });
+
+  it("paginates through every targeted duplicate candidate", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      ...companyRowFixture,
+      id: `candidate-${index.toString().padStart(3, "0")}`,
+    }));
+    const finalCandidate = {
+      ...companyRowFixture,
+      id: "candidate-100",
+    };
+    const { repository, builder } = setup(
+      { data: null, error: null },
+      [
+        { data: firstPage, error: null },
+        { data: [finalCandidate], error: null },
+      ],
+    );
+
+    await expect(
+      repository.findDuplicateCandidates({
+        companyName: companyFixture.displayName,
+        websiteUrl: companyFixture.websiteUrl,
+      }),
+    ).resolves.toHaveLength(101);
+    expect(builder.calls.filter((call) => call.method === "rpc")).toHaveLength(2);
+    expect(builder.calls.filter((call) => call.method === "range")).toEqual([
+      { method: "range", args: [0, 99] },
+      { method: "range", args: [100, 199] },
+    ]);
   });
 
   it("updates and soft deletes active companies", async () => {
