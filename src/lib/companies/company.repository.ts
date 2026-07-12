@@ -4,6 +4,7 @@ import { normalizeWebsiteDomain } from "./duplicate";
 import type {
   Company,
   CompanyListOptions,
+  CompanyLookupOptions,
   CompanySortField,
   CompanyUpdate,
   PaginatedCompanies,
@@ -23,11 +24,19 @@ export class CompanyRepositoryError extends Error {
   }
 }
 
+export class CompanyRepositoryNotFoundError extends CompanyRepositoryError {
+  constructor(operation: string) {
+    super(operation);
+    this.message = `Company repository ${operation} found no active company`;
+    this.name = "CompanyRepositoryNotFoundError";
+  }
+}
+
 export interface CompanyRepository {
   create(input: ValidatedCreateCompanyInput, createdBy: string): Promise<Company>;
   getById(id: string, includeDeleted?: boolean): Promise<Company | null>;
-  getByFingerprint(fingerprint: string, includeDeleted?: boolean): Promise<Company | null>;
-  getByDomain(domain: string, includeDeleted?: boolean): Promise<Company | null>;
+  findByFingerprint(fingerprint: string, options?: CompanyLookupOptions): Promise<Company[]>;
+  findByDomain(domain: string, options?: CompanyLookupOptions): Promise<Company[]>;
   list(options?: CompanyListOptions): Promise<PaginatedCompanies>;
   search(options: CompanyListOptions): Promise<PaginatedCompanies>;
   update(id: string, input: UpdateCompanyInput): Promise<Company>;
@@ -75,19 +84,30 @@ export class SupabaseCompanyRepository implements CompanyRepository {
     return this.getSingle("id", validateCompanyId(id), includeDeleted, "get by id");
   }
 
-  async getByFingerprint(fingerprint: string, includeDeleted = false): Promise<Company | null> {
-    return this.getSingle(
+  async findByFingerprint(
+    fingerprint: string,
+    options: CompanyLookupOptions = {},
+  ): Promise<Company[]> {
+    return this.findMany(
       "fingerprint",
       validateCompanyFingerprint(fingerprint),
-      includeDeleted,
-      "get by fingerprint",
+      options.includeDeleted ?? false,
+      "find by fingerprint",
     );
   }
 
-  async getByDomain(domain: string, includeDeleted = false): Promise<Company | null> {
+  async findByDomain(
+    domain: string,
+    options: CompanyLookupOptions = {},
+  ): Promise<Company[]> {
     const normalized = normalizeWebsiteDomain(domain);
-    if (!normalized) return null;
-    return this.getSingle("website_domain", normalized, includeDeleted, "get by domain");
+    if (!normalized) return [];
+    return this.findMany(
+      "website_domain",
+      normalized,
+      options.includeDeleted ?? false,
+      "find by domain",
+    );
   }
 
   async list(options: CompanyListOptions = {}): Promise<PaginatedCompanies> {
@@ -142,20 +162,24 @@ export class SupabaseCompanyRepository implements CompanyRepository {
       .eq("id", validateCompanyId(id))
       .is("deleted_at", null)
       .select("*")
-      .single();
+      .maybeSingle();
 
-    if (error || !data) throw new CompanyRepositoryError("update", causeFrom(error));
+    if (error) throw new CompanyRepositoryError("update", causeFrom(error));
+    if (!data) throw new CompanyRepositoryNotFoundError("update");
     return mapCompanyRow(data as unknown as Parameters<typeof mapCompanyRow>[0]);
   }
 
   async softDelete(id: string): Promise<void> {
-    const { error } = await this.client
+    const { data, error } = await this.client
       .from("companies")
       .update({ deleted_at: new Date().toISOString() })
       .eq("id", validateCompanyId(id))
-      .is("deleted_at", null);
+      .is("deleted_at", null)
+      .select("id")
+      .maybeSingle();
 
     if (error) throw new CompanyRepositoryError("soft delete", causeFrom(error));
+    if (!data) throw new CompanyRepositoryNotFoundError("soft delete");
   }
 
   async canAccess(id: string): Promise<boolean> {
@@ -167,7 +191,7 @@ export class SupabaseCompanyRepository implements CompanyRepository {
   }
 
   private async getSingle(
-    column: "id" | "fingerprint" | "website_domain",
+    column: "id",
     value: string,
     includeDeleted: boolean,
     operation: string,
@@ -180,5 +204,23 @@ export class SupabaseCompanyRepository implements CompanyRepository {
     return data
       ? mapCompanyRow(data as unknown as Parameters<typeof mapCompanyRow>[0])
       : null;
+  }
+
+  private async findMany(
+    column: "fingerprint" | "website_domain",
+    value: string,
+    includeDeleted: boolean,
+    operation: string,
+  ): Promise<Company[]> {
+    let query = this.client.from("companies").select("*").eq(column, value);
+    if (!includeDeleted) query = query.is("deleted_at", null);
+    const { data, error } = await query
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true });
+
+    if (error) throw new CompanyRepositoryError(operation, causeFrom(error));
+    return (data ?? []).map((row) =>
+      mapCompanyRow(row as unknown as Parameters<typeof mapCompanyRow>[0]),
+    );
   }
 }

@@ -4,6 +4,7 @@ import type {
   Company,
   CompanyActor,
   CompanyListOptions,
+  CompanyLookupOptions,
   CreateCompanyInput,
   PaginatedCompanies,
   UpdateCompanyInput,
@@ -75,20 +76,31 @@ export class CompanyService {
     return company;
   }
 
-  async getByFingerprint(fingerprint: string, actor: CompanyActor): Promise<Company | null> {
+  async findByFingerprint(
+    fingerprint: string,
+    actor: CompanyActor,
+    options: CompanyLookupOptions = {},
+  ): Promise<Company[]> {
     this.requireActive(actor);
-    const company = await this.repository.getByFingerprint(
+    this.requireDeletedLookupPermission(options, actor);
+    const companies = await this.repository.findByFingerprint(
       validateCompanyFingerprint(fingerprint),
+      options,
     );
-    if (company) await this.requireCompanyAccess(company.id, actor);
-    return company;
+    await Promise.all(companies.map((company) => this.requireCompanyAccess(company.id, actor)));
+    return companies;
   }
 
-  async getByDomain(domain: string, actor: CompanyActor): Promise<Company | null> {
+  async findByDomain(
+    domain: string,
+    actor: CompanyActor,
+    options: CompanyLookupOptions = {},
+  ): Promise<Company[]> {
     this.requireActive(actor);
-    const company = await this.repository.getByDomain(domain);
-    if (company) await this.requireCompanyAccess(company.id, actor);
-    return company;
+    this.requireDeletedLookupPermission(options, actor);
+    const companies = await this.repository.findByDomain(domain, options);
+    await Promise.all(companies.map((company) => this.requireCompanyAccess(company.id, actor)));
+    return companies;
   }
 
   async list(
@@ -155,6 +167,15 @@ export class CompanyService {
     return ["displayName", "websiteUrl", "publicPhone", "city", "state", "country"].some(
       (field) => field in input,
     );
+  }
+
+  private requireDeletedLookupPermission(
+    options: CompanyLookupOptions,
+    actor: CompanyActor,
+  ): void {
+    if (options.includeDeleted && !isManagement(actor)) {
+      throw new CompanyPermissionError("Only management can include deleted companies");
+    }
   }
 
   private async verifyNoDuplicate(

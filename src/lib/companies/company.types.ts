@@ -145,6 +145,10 @@ export type CompanyFilters = {
   includeDeleted?: boolean;
 };
 
+export type CompanyLookupOptions = {
+  includeDeleted?: boolean;
+};
+
 export type CompanyListOptions = CompanyFilters & {
   page?: number;
   pageSize?: number;

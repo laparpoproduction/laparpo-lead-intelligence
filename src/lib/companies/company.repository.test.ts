@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import {
   CompanyRepositoryError,
+  CompanyRepositoryNotFoundError,
   SupabaseCompanyRepository,
 } from "./company.repository";
 import { validateCompanyCreate } from "./company.validation";
@@ -75,18 +76,80 @@ describe("SupabaseCompanyRepository", () => {
     });
   });
 
-  it("gets active companies by id, fingerprint, and normalised domain", async () => {
-    for (const action of [
-      (repository: SupabaseCompanyRepository) => repository.getById(companyId),
-      (repository: SupabaseCompanyRepository) =>
-        repository.getByFingerprint(companyFixture.fingerprint),
-      (repository: SupabaseCompanyRepository) =>
-        repository.getByDomain("https://www.EXAMPLE.my/menu"),
-    ]) {
-      const { repository, builder } = setup({ data: companyRowFixture, error: null });
-      expect(await action(repository)).toEqual(companyFixture);
-      expect(builder.calls).toContainEqual({ method: "is", args: ["deleted_at", null] });
-    }
+  it("gets an active company by its unique id", async () => {
+    const { repository, builder } = setup({ data: companyRowFixture, error: null });
+    expect(await repository.getById(companyId)).toEqual(companyFixture);
+    expect(builder.calls).toContainEqual({ method: "is", args: ["deleted_at", null] });
+  });
+
+  it("returns both active companies sharing one domain without a multiple-row lookup", async () => {
+    const secondRow = {
+      ...companyRowFixture,
+      id: "33333333-3333-4333-8333-333333333333",
+      display_name: "ABC Penang Branch",
+    };
+    const { repository, builder } = setup({
+      data: [companyRowFixture, secondRow],
+      error: null,
+    });
+
+    await expect(repository.findByDomain("https://www.EXAMPLE.my/menu")).resolves.toHaveLength(2);
+    expect(builder.calls).toContainEqual({ method: "eq", args: ["website_domain", "example.my"] });
+    expect(builder.calls).toContainEqual({ method: "is", args: ["deleted_at", null] });
+    expect(builder.calls.filter((call) => call.method === "order")).toEqual([
+      { method: "order", args: ["created_at", { ascending: true }] },
+      { method: "order", args: ["id", { ascending: true }] },
+    ]);
+    expect(builder.calls.some((call) => call.method === "maybeSingle")).toBe(false);
+  });
+
+  it("returns both active companies sharing one fingerprint", async () => {
+    const secondRow = {
+      ...companyRowFixture,
+      id: "33333333-3333-4333-8333-333333333333",
+      display_name: "ABC Penang Branch",
+    };
+    const { repository, builder } = setup({
+      data: [companyRowFixture, secondRow],
+      error: null,
+    });
+
+    await expect(repository.findByFingerprint(companyFixture.fingerprint)).resolves.toHaveLength(2);
+    expect(builder.calls).toContainEqual({
+      method: "eq",
+      args: ["fingerprint", companyFixture.fingerprint],
+    });
+    expect(builder.calls.some((call) => call.method === "maybeSingle")).toBe(false);
+  });
+
+  it("excludes deleted matches by default and includes them only when requested", async () => {
+    const deletedRow = {
+      ...companyRowFixture,
+      id: "33333333-3333-4333-8333-333333333333",
+      deleted_at: "2026-07-12T01:00:00.000Z",
+    };
+    const activeSetup = setup({ data: [companyRowFixture], error: null });
+    await expect(activeSetup.repository.findByDomain("example.my")).resolves.toHaveLength(1);
+    expect(activeSetup.builder.calls).toContainEqual({
+      method: "is",
+      args: ["deleted_at", null],
+    });
+
+    const allSetup = setup({ data: [companyRowFixture, deletedRow], error: null });
+    await expect(
+      allSetup.repository.findByDomain("example.my", { includeDeleted: true }),
+    ).resolves.toHaveLength(2);
+    expect(allSetup.builder.calls.some((call) => call.method === "is")).toBe(false);
+  });
+
+  it("returns an empty array when a domain or fingerprint has no matches", async () => {
+    const domainSetup = setup({ data: [], error: null });
+    await expect(domainSetup.repository.findByDomain("missing.example")).resolves.toEqual([]);
+
+    const fingerprintSetup = setup({ data: [], error: null });
+    await expect(
+      fingerprintSetup.repository.findByFingerprint(companyFixture.fingerprint),
+    ).resolves.toEqual([]);
   });
 
   it("applies filters, escaped search, sorting, and pagination", async () => {
@@ -125,10 +188,22 @@ describe("SupabaseCompanyRepository", () => {
     });
     expect(updateSetup.builder.calls).toContainEqual({ method: "is", args: ["deleted_at", null] });
 
-    const deleteSetup = setup({ data: null, error: null });
+    const deleteSetup = setup({ data: { id: companyId }, error: null });
     await deleteSetup.repository.softDelete(companyId);
     const payload = deleteSetup.builder.calls.find((call) => call.method === "update")?.args[0];
     expect(payload).toMatchObject({ deleted_at: expect.stringMatching(/^\d{4}-/) });
+  });
+
+  it("throws a clear not-found error when update or soft delete matches no active row", async () => {
+    const updateSetup = setup({ data: null, error: null });
+    await expect(updateSetup.repository.update(companyId, { city: "Butterworth" })).rejects.toBeInstanceOf(
+      CompanyRepositoryNotFoundError,
+    );
+
+    const deleteSetup = setup({ data: null, error: null });
+    await expect(deleteSetup.repository.softDelete(companyId)).rejects.toBeInstanceOf(
+      CompanyRepositoryNotFoundError,
+    );
   });
 
   it("uses the existing company access RPC", async () => {

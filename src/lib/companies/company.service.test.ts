@@ -23,8 +23,8 @@ function repositoryMock(overrides: Partial<CompanyRepository> = {}): CompanyRepo
   return {
     create: vi.fn().mockResolvedValue(companyFixture),
     getById: vi.fn().mockResolvedValue(companyFixture),
-    getByFingerprint: vi.fn().mockResolvedValue(companyFixture),
-    getByDomain: vi.fn().mockResolvedValue(companyFixture),
+    findByFingerprint: vi.fn().mockResolvedValue([companyFixture]),
+    findByDomain: vi.fn().mockResolvedValue([companyFixture]),
     list: vi.fn().mockResolvedValue({ items: [companyFixture], page: 1, pageSize: 25, total: 1, totalPages: 1 }),
     search: vi.fn().mockResolvedValue({ items: [], page: 1, pageSize: 100, total: 0, totalPages: 0 }),
     update: vi.fn().mockResolvedValue(companyFixture),
@@ -71,6 +71,39 @@ describe("CompanyService", () => {
     await expect(new CompanyService(allowed).getById(companyId, representative)).resolves.toEqual(
       companyFixture,
     );
+  });
+
+  it("returns all permitted domain and fingerprint matches", async () => {
+    const secondCompany = {
+      ...companyFixture,
+      id: "55555555-5555-4555-8555-555555555555",
+    };
+    const repository = repositoryMock({
+      findByDomain: vi.fn().mockResolvedValue([companyFixture, secondCompany]),
+      findByFingerprint: vi.fn().mockResolvedValue([companyFixture, secondCompany]),
+    });
+    const service = new CompanyService(repository);
+
+    await expect(service.findByDomain("example.my", representative)).resolves.toHaveLength(2);
+    await expect(
+      service.findByFingerprint(companyFixture.fingerprint, representative),
+    ).resolves.toHaveLength(2);
+    expect(repository.canAccess).toHaveBeenCalledTimes(4);
+  });
+
+  it("allows only management to include deleted lookup matches", async () => {
+    const repository = repositoryMock();
+    const service = new CompanyService(repository);
+
+    await expect(
+      service.findByDomain("example.my", representative, { includeDeleted: true }),
+    ).rejects.toBeInstanceOf(CompanyPermissionError);
+    await expect(
+      service.findByDomain("example.my", manager, { includeDeleted: true }),
+    ).resolves.toEqual([companyFixture]);
+    expect(repository.findByDomain).toHaveBeenLastCalledWith("example.my", {
+      includeDeleted: true,
+    });
   });
 
   it("orchestrates an authorised update and excludes the current duplicate candidate", async () => {
