@@ -64,6 +64,18 @@ describe("CompanyService", () => {
     );
   });
 
+  it("allows an explicitly confirmed duplicate without rerunning candidate lookup", async () => {
+    const repository = repositoryMock({
+      findDuplicateCandidates: vi.fn().mockResolvedValue([companyFixture]),
+    });
+
+    await expect(
+      new CompanyService(repository).createConfirmedDuplicate(createInput, representative),
+    ).resolves.toEqual(companyFixture);
+    expect(repository.findDuplicateCandidates).not.toHaveBeenCalled();
+    expect(repository.create).toHaveBeenCalled();
+  });
+
   it("checks duplicate candidates beyond the first 100 records", async () => {
     const nonDuplicates = Array.from({ length: 100 }, (_, index) => ({
       ...companyFixture,
@@ -136,6 +148,22 @@ describe("CompanyService", () => {
     });
     await new CompanyService(repository).update(companyId, { city: "Butterworth" }, representative);
     expect(repository.update).toHaveBeenCalledWith(companyId, { city: "Butterworth" });
+  });
+
+  it("allows an explicitly confirmed identity update without rerunning candidate lookup", async () => {
+    const repository = repositoryMock({
+      findDuplicateCandidates: vi.fn().mockResolvedValue([companyFixture]),
+    });
+
+    await new CompanyService(repository).updateConfirmedDuplicate(
+      companyId,
+      { displayName: "Confirmed Name" },
+      representative,
+    );
+    expect(repository.findDuplicateCandidates).not.toHaveBeenCalled();
+    expect(repository.update).toHaveBeenCalledWith(companyId, {
+      displayName: "Confirmed Name",
+    });
   });
 
   it("allows soft delete only for management", async () => {

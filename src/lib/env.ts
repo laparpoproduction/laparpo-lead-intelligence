@@ -7,6 +7,7 @@ const publicEnvSchema = z.object({
 
 const serverEnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1).optional(),
+  COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
@@ -31,6 +32,8 @@ export function getPublicEnv(): PublicEnv {
 export function getServerEnv(): ServerEnv {
   return serverEnvSchema.parse({
     OPENAI_API_KEY: process.env.OPENAI_API_KEY || undefined,
+    COMPANY_DUPLICATE_CONFIRMATION_SECRET:
+      process.env.COMPANY_DUPLICATE_CONFIRMATION_SECRET || undefined,
     LOG_LEVEL: process.env.LOG_LEVEL,
   });
 }

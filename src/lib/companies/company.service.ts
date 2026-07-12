@@ -61,9 +61,24 @@ export class CompanyService {
   constructor(private readonly repository: CompanyRepository) {}
 
   async create(input: CreateCompanyInput, actor: CompanyActor): Promise<Company> {
+    return this.createInternal(input, actor, true);
+  }
+
+  async createConfirmedDuplicate(
+    input: CreateCompanyInput,
+    actor: CompanyActor,
+  ): Promise<Company> {
+    return this.createInternal(input, actor, false);
+  }
+
+  private async createInternal(
+    input: CreateCompanyInput,
+    actor: CompanyActor,
+    verifyDuplicate: boolean,
+  ): Promise<Company> {
     this.requireActive(actor);
     const validated = validateCompanyCreate(input);
-    await this.verifyNoDuplicate(validated);
+    if (verifyDuplicate) await this.verifyNoDuplicate(validated);
     return this.repository.create(validated, actor.userId);
   }
 
@@ -128,6 +143,23 @@ export class CompanyService {
   }
 
   async update(id: string, input: UpdateCompanyInput, actor: CompanyActor): Promise<Company> {
+    return this.updateInternal(id, input, actor, true);
+  }
+
+  async updateConfirmedDuplicate(
+    id: string,
+    input: UpdateCompanyInput,
+    actor: CompanyActor,
+  ): Promise<Company> {
+    return this.updateInternal(id, input, actor, false);
+  }
+
+  private async updateInternal(
+    id: string,
+    input: UpdateCompanyInput,
+    actor: CompanyActor,
+    verifyDuplicate: boolean,
+  ): Promise<Company> {
     this.requireActive(actor);
     const validatedId = validateCompanyId(id);
     await this.requireCompanyAccess(validatedId, actor);
@@ -135,7 +167,7 @@ export class CompanyService {
     if (!current) throw new CompanyNotFoundError();
 
     const validated = validateCompanyUpdate(input, current.country);
-    if (this.identityChanged(validated)) {
+    if (verifyDuplicate && this.identityChanged(validated)) {
       const merged = { ...current, ...validated };
       await this.verifyNoDuplicate(merged, current.id);
     }
