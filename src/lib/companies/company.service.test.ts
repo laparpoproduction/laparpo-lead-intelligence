@@ -1,0 +1,111 @@
+import { describe, expect, it, vi } from "vitest";
+import type { CompanyRepository } from "./company.repository";
+import {
+  CompanyDuplicateError,
+  CompanyPermissionError,
+  CompanyService,
+} from "./company.service";
+import type { CompanyActor } from "./company.types";
+import { companyFixture, companyId, userId } from "./company.test-fixtures";
+
+const representative: CompanyActor = {
+  userId,
+  role: "sales_representative",
+  isActive: true,
+};
+const manager: CompanyActor = {
+  userId: "33333333-3333-4333-8333-333333333333",
+  role: "sales_manager",
+  isActive: true,
+};
+
+function repositoryMock(overrides: Partial<CompanyRepository> = {}): CompanyRepository {
+  return {
+    create: vi.fn().mockResolvedValue(companyFixture),
+    getById: vi.fn().mockResolvedValue(companyFixture),
+    getByFingerprint: vi.fn().mockResolvedValue(companyFixture),
+    getByDomain: vi.fn().mockResolvedValue(companyFixture),
+    list: vi.fn().mockResolvedValue({ items: [companyFixture], page: 1, pageSize: 25, total: 1, totalPages: 1 }),
+    search: vi.fn().mockResolvedValue({ items: [], page: 1, pageSize: 100, total: 0, totalPages: 0 }),
+    update: vi.fn().mockResolvedValue(companyFixture),
+    softDelete: vi.fn().mockResolvedValue(undefined),
+    canAccess: vi.fn().mockResolvedValue(true),
+    ...overrides,
+  };
+}
+
+const createInput = {
+  legalName: "ABC (Malaysia), Sdn Bhd",
+  displayName: "ABC (Malaysia)",
+  companyType: "fnb" as const,
+  websiteUrl: "https://example.my",
+  sourceUrl: "https://example.my/contact",
+  sourceType: "company_website",
+};
+
+describe("CompanyService", () => {
+  it("validates, checks duplicates, and creates for an active user", async () => {
+    const repository = repositoryMock();
+    const service = new CompanyService(repository);
+    await expect(service.create(createInput, representative)).resolves.toEqual(companyFixture);
+    expect(repository.search).toHaveBeenCalledWith({ query: "ABC (Malaysia)", page: 1, pageSize: 100 });
+    expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ country: "MY" }), userId);
+  });
+
+  it("rejects a corroborated likely duplicate", async () => {
+    const repository = repositoryMock({
+      search: vi.fn().mockResolvedValue({ items: [companyFixture], page: 1, pageSize: 100, total: 1, totalPages: 1 }),
+    });
+    await expect(new CompanyService(repository).create(createInput, representative)).rejects.toEqual(
+      expect.objectContaining<Partial<CompanyDuplicateError>>({ candidateIds: [companyId] }),
+    );
+  });
+
+  it("uses repository permission checks for representatives", async () => {
+    const denied = repositoryMock({ canAccess: vi.fn().mockResolvedValue(false) });
+    await expect(new CompanyService(denied).getById(companyId, representative)).rejects.toBeInstanceOf(
+      CompanyPermissionError,
+    );
+
+    const allowed = repositoryMock();
+    await expect(new CompanyService(allowed).getById(companyId, representative)).resolves.toEqual(
+      companyFixture,
+    );
+  });
+
+  it("orchestrates an authorised update and excludes the current duplicate candidate", async () => {
+    const repository = repositoryMock({
+      search: vi.fn().mockResolvedValue({ items: [companyFixture], page: 1, pageSize: 100, total: 1, totalPages: 1 }),
+    });
+    await new CompanyService(repository).update(companyId, { city: "Butterworth" }, representative);
+    expect(repository.update).toHaveBeenCalledWith(companyId, { city: "Butterworth" });
+  });
+
+  it("allows soft delete only for management or the creator", async () => {
+    const repository = repositoryMock();
+    await new CompanyService(repository).softDelete(companyId, representative);
+    expect(repository.softDelete).toHaveBeenCalledWith(companyId);
+
+    const unrelated = { ...representative, userId: "44444444-4444-4444-8444-444444444444" };
+    await expect(new CompanyService(repository).softDelete(companyId, unrelated)).rejects.toBeInstanceOf(
+      CompanyPermissionError,
+    );
+    await expect(new CompanyService(repository).softDelete(companyId, manager)).resolves.toBeUndefined();
+  });
+
+  it("denies inactive users", async () => {
+    await expect(
+      new CompanyService(repositoryMock()).list({}, { ...representative, isActive: false }),
+    ).rejects.toBeInstanceOf(CompanyPermissionError);
+  });
+
+  it("restricts deleted-record listing to management", async () => {
+    const repository = repositoryMock();
+    await expect(
+      new CompanyService(repository).list({ includeDeleted: true }, representative),
+    ).rejects.toBeInstanceOf(CompanyPermissionError);
+    await expect(
+      new CompanyService(repository).list({ includeDeleted: true }, manager),
+    ).resolves.toMatchObject({ total: 1 });
+  });
+});
