@@ -151,6 +151,13 @@ do $$
 declare
   affected_rows integer;
 begin
+  if exists (
+    select 1 from public.companies
+    where id = '10000000-0000-0000-0000-000000000012'
+  ) then
+    raise exception 'Inactive user read a company';
+  end if;
+
   begin
     insert into public.companies (
       legal_name,
@@ -268,6 +275,88 @@ begin
   get diagnostics affected_rows = row_count;
   if affected_rows <> 0 then
     raise exception 'Unrelated representative deleted a company';
+  end if;
+end;
+$$;
+
+reset role;
+
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '00000000-0000-0000-0000-000000000002',
+  false
+);
+
+do $$
+begin
+  begin
+    update public.companies
+    set deleted_at = now()
+    where id = '10000000-0000-0000-0000-000000000011';
+    raise exception 'Representative manipulated deleted_at';
+  exception
+    when insufficient_privilege then null;
+  end;
+end;
+$$;
+
+reset role;
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '00000000-0000-0000-0000-000000000001',
+  false
+);
+
+update public.companies
+set deleted_at = now()
+where id = '10000000-0000-0000-0000-000000000011';
+
+do $$
+begin
+  if not exists (
+    select 1 from public.companies
+    where id = '10000000-0000-0000-0000-000000000011'
+      and deleted_at is not null
+  ) then
+    raise exception 'Management cannot retrieve a deleted company';
+  end if;
+end;
+$$;
+
+reset role;
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '00000000-0000-0000-0000-000000000002',
+  false
+);
+
+do $$
+declare
+  affected_rows integer;
+begin
+  if exists (
+    select 1 from public.companies
+    where id = '10000000-0000-0000-0000-000000000011'
+  ) then
+    raise exception 'Representative read a soft-deleted company';
+  end if;
+
+  update public.companies
+  set description = 'Unauthorized deleted-company update'
+  where id = '10000000-0000-0000-0000-000000000011';
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 0 then
+    raise exception 'Representative updated a soft-deleted company';
+  end if;
+
+  delete from public.companies
+  where id = '10000000-0000-0000-0000-000000000011';
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 0 then
+    raise exception 'Representative deleted a soft-deleted company';
   end if;
 end;
 $$;
