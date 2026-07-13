@@ -1,0 +1,71 @@
+import type { Contact, ContactRow } from "./contact.types";
+
+export const contactId = "22222222-2222-4222-8222-222222222222";
+export const companyId = "11111111-1111-4111-8111-111111111111";
+export const creatorId = "33333333-3333-4333-8333-333333333333";
+export const assigneeId = "44444444-4444-4444-8444-444444444444";
+export const unrelatedId = "55555555-5555-4555-8555-555555555555";
+
+export const contactRowFixture: ContactRow = {
+  id: contactId,
+  company_id: companyId,
+  full_name: "Nur Aisyah binti Ahmad",
+  first_name: "Nur Aisyah",
+  last_name: "binti Ahmad",
+  job_title: "Marketing Director",
+  department: "Marketing",
+  seniority: "Senior",
+  work_email: "aisyah@example.my",
+  personal_email: null,
+  public_phone: "6045550100",
+  mobile_phone: "60123456789",
+  whatsapp_phone: "60123456789",
+  linkedin_url: "https://www.linkedin.com/in/nur-aisyah",
+  facebook_url: "https://www.facebook.com/nur.aisyah",
+  instagram_url: "https://www.instagram.com/nur.aisyah",
+  source_url: "https://example.my/team/nur-aisyah",
+  source_type: "company_website",
+  discovered_at: "2026-07-10T00:00:00.000Z",
+  last_verified_at: "2026-07-11T00:00:00.000Z",
+  is_primary_contact: true,
+  contact_status: "verified",
+  notes: "Publicly listed marketing contact.",
+  created_by: creatorId,
+  assigned_to: assigneeId,
+  created_at: "2026-07-10T00:00:00.000Z",
+  updated_at: "2026-07-11T00:00:00.000Z",
+  deleted_at: null,
+  fingerprint: "a".repeat(32),
+};
+
+export const contactFixture: Contact = {
+  id: contactId,
+  companyId,
+  fullName: "Nur Aisyah binti Ahmad",
+  firstName: "Nur Aisyah",
+  lastName: "binti Ahmad",
+  jobTitle: "Marketing Director",
+  department: "Marketing",
+  seniority: "Senior",
+  workEmail: "aisyah@example.my",
+  personalEmail: null,
+  publicPhone: "6045550100",
+  mobilePhone: "60123456789",
+  whatsappPhone: "60123456789",
+  linkedinUrl: "https://www.linkedin.com/in/nur-aisyah",
+  facebookUrl: "https://www.facebook.com/nur.aisyah",
+  instagramUrl: "https://www.instagram.com/nur.aisyah",
+  sourceUrl: "https://example.my/team/nur-aisyah",
+  sourceType: "company_website",
+  discoveredAt: "2026-07-10T00:00:00.000Z",
+  lastVerifiedAt: "2026-07-11T00:00:00.000Z",
+  isPrimaryContact: true,
+  contactStatus: "verified",
+  notes: "Publicly listed marketing contact.",
+  createdBy: creatorId,
+  assignedTo: assigneeId,
+  createdAt: "2026-07-10T00:00:00.000Z",
+  updatedAt: "2026-07-11T00:00:00.000Z",
+  deletedAt: null,
+  fingerprint: "a".repeat(32),
+};

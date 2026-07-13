@@ -383,6 +383,42 @@ begin
 end;
 $$;
 
+do $$
+declare
+  candidate_count integer;
+begin
+  select count(*) into candidate_count
+  from public.find_contact_duplicate_candidates(
+    '10000000-0000-0000-0000-000000000020',
+    null,
+    ' DUPLICATE@CONTACTS-SAMPLE.TEST ',
+    null,
+    null,
+    null,
+    null,
+    null
+  );
+  if candidate_count <> 2 then
+    raise exception 'Targeted email candidate lookup did not return every match';
+  end if;
+
+  select count(*) into candidate_count
+  from public.find_contact_duplicate_candidates(
+    '10000000-0000-0000-0000-000000000020',
+    'Different Public Phone User',
+    null,
+    null,
+    '04-555 0100',
+    null,
+    null,
+    null
+  );
+  if candidate_count <> 0 then
+    raise exception 'Shared company phone alone returned a duplicate candidate';
+  end if;
+end;
+$$;
+
 reset role;
 set role authenticated;
 select set_config(
