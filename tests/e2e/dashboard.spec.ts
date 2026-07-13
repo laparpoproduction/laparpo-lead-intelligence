@@ -47,6 +47,9 @@ test("returns not found for an unavailable company details route", async ({
   await page.goto(companyDetailsUrl);
 
   await expect(page).toHaveURL(companyDetailsUrl);
-  await expect(page.getByText("This page could not be found.")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Company not found" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to Companies" })).toBeVisible();
   await expect(page.getByText("Workspace ready")).toHaveCount(0);
 });
