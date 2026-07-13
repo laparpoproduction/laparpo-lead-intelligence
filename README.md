@@ -51,6 +51,7 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `202607110004_companies_soft_delete.sql`
    - `202607110005_companies_rls_and_duplicate_candidates.sql`
    - `202607110006_company_mutation_idempotency.sql`
+   - `202607110007_contacts_foundation.sql`
 6. Create the first user through Supabase Auth and promote that account to `ceo_admin`.
 7. Start the app:
 
@@ -85,7 +86,9 @@ The migrations provide:
 - `profiles` with CEO/Admin, Sales Manager and Sales Representative roles
 - `companies` with public source metadata, normalized contact fields, social URLs,
   full address, location and fingerprint
-- `contacts` with public contact details and evidence URL
+- `contacts` with optional company ownership, public professional details,
+  source provenance, assignment, lifecycle status, soft delete and a non-unique
+  duplicate signal
 - `leads` with ownership, score confidence, value, service and follow-up fields
 - `lead_signals`, `lead_activities` and `sales_tasks`
 - compatibility tables for `lead_sources` and `opportunities`
@@ -128,6 +131,34 @@ canonicalized, filter changes reset to page one, and pagination links preserve t
 active query. Company rows open a protected details route with a verified-record
 placeholder; timeline, analytics and contact workflows remain separately scoped.
 
+### Contacts database foundation
+
+`contacts.full_name` is the canonical display name. Optional `first_name` and
+`last_name` fields help when a public source provides them, but the database never
+splits or overwrites a supplied cultural name. `company_id` is nullable for a
+legitimate independent public contact; when present, the relationship uses
+`ON DELETE RESTRICT` so company removal cannot erase contact or CRM history.
+
+The constrained contact statuses are `discovered`, `verified`, `contacted`,
+`qualified`, `inactive` and `do_not_contact`. Every contact retains `source_url`,
+`source_type` and `discovered_at`. Emails are lowercased, Malaysian phone and
+WhatsApp values use country-code digit form, and public profile URLs are
+normalized before storage.
+
+The contact fingerprint is indexed but intentionally non-unique. A likely
+duplicate requires stronger corroboration: a matching work/personal email,
+LinkedIn profile or WhatsApp number, or the same normalized name together with
+the same company, public phone or mobile number. A shared name at different
+companies and a shared company main phone alone do not block a record. A future
+Contacts service may present these signals as a warning with a manual override.
+
+RLS exposes active contacts to management and to representatives who created or
+were assigned the contact, or who can access its company through ownership or an
+assigned lead. Inactive and unrelated users are denied. Ordinary table reads hide
+soft-deleted contacts and contacts whose company is soft-deleted; active CEO/Admin
+and Sales Manager users can retrieve archived records only through the explicit
+`list_archived_contacts()` function. Hard deletion is not permitted.
+
 ## Quality checks
 
 ```bash
@@ -138,9 +169,11 @@ npm run build
 npm run test:e2e
 ```
 
-GitHub Actions applies all migrations to PostgreSQL and runs the general RLS test
-plus `supabase/tests/companies_smoke.sql`. The company test verifies normalization,
-source provenance, management creation, representative ownership and isolation.
+GitHub Actions applies all migrations to PostgreSQL and runs the general RLS test,
+`supabase/tests/companies_smoke.sql` and `supabase/tests/contacts_smoke.sql`. The
+Contacts test verifies normalization, provenance, non-unique duplicate signals,
+nullable company relationships, management/representative access, archived-record
+isolation and safe company relationships.
 
 ## Manual test checklist
 
@@ -162,11 +195,14 @@ source provenance, management creation, representative ownership and isolation.
 
 - The company details route is a protected placeholder only; timeline, analytics
   and contact workflows are not implemented.
+- Contacts currently have database and normalization foundations only. Repository,
+  service, actions, UI and deliberate duplicate-override workflows remain out of
+  scope.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders until lead-management workflows are delivered.
 
 ## Recommended next sprint
 
-Begin the separately scoped Contacts foundation without expanding the Companies
-details placeholder into timeline, analytics or lead workflows.
+Build the separately scoped Contacts repository and service layer without adding
+Contacts actions, UI, messaging, discovery or lead workflows.

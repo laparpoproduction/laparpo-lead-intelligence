@@ -57,9 +57,11 @@ insert into public.contacts (
   company_id,
   full_name,
   job_title,
-  public_email,
-  contact_source_url,
-  discovered_at
+  work_email,
+  source_url,
+  source_type,
+  discovered_at,
+  created_by
 ) values (
   '20000000-0000-0000-0000-000000000001',
   '10000000-0000-0000-0000-000000000001',
@@ -67,7 +69,9 @@ insert into public.contacts (
   'Marketing Manager',
   'marketing@sample-food.test',
   'https://sample-food.test/contact',
-  now()
+  'company_website',
+  now(),
+  '00000000-0000-0000-0000-000000000001'
 );
 
 insert into public.lead_sources (
@@ -153,4 +157,3 @@ end;
 $$;
 
 reset role;
-
