@@ -18,8 +18,53 @@ test("exposes protected foundation modules in preview mode", async ({ page }) =>
   await expect(
     page.getByRole("heading", { name: "Companies", exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "Search companies" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Apply filters" })).toBeVisible();
   await expect(page.getByText("No companies yet")).toBeVisible();
   await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
+});
+
+test("drives Companies search and filters through canonical URL state", async ({
+  page,
+}) => {
+  await page.goto("/companies");
+
+  await page.getByRole("searchbox", { name: "Search companies" }).fill("Acme");
+  await page.getByRole("combobox", { name: "Company type" }).selectOption("agency");
+  await page.getByRole("textbox", { name: "City" }).fill("George Town");
+  await page.getByRole("combobox", { name: "Sort by" }).selectOption("displayName");
+  await page.getByRole("combobox", { name: "Direction" }).selectOption("asc");
+  await page.getByRole("button", { name: "Apply filters" }).click();
+
+  await expect(page).toHaveURL(
+    "/companies?q=Acme&companyType=agency&city=George+Town&sortBy=displayName&sortDirection=asc",
+  );
+  await expect(page.getByText("No matching companies")).toBeVisible();
+
+  await page.getByRole("link", { name: "Clear all filters" }).first().click();
+  await expect(page).toHaveURL(
+    "/companies?sortBy=displayName&sortDirection=asc",
+  );
+  await expect(page.getByText("No companies yet")).toBeVisible();
+});
+
+test("normalizes invalid Companies queries and keeps mobile filters usable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(
+    "/companies?q=%20&companyType=invalid&sortBy=fingerprint&sortDirection=sideways&page=-2",
+  );
+
+  await expect(page).toHaveURL("/companies");
+  await expect(page.getByRole("searchbox", { name: "Search companies" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Company type" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Industry" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "City" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "State" })).toBeVisible();
+
+  await page.goto("/companies?page=999");
+  await expect(page).toHaveURL("/companies");
 });
 
 test("renders the Companies create workflow on desktop and mobile", async ({

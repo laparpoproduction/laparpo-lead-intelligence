@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { CompanyDeleteDialog } from "@/components/companies/company-delete-dialog";
+import { CompanyPagination } from "@/components/companies/company-pagination";
+import type { CompanyQueryState } from "@/lib/companies/company-query";
 import type {
   Company,
   CompanyType,
@@ -26,6 +28,7 @@ type CompanyListProps = {
     PaginatedCompanies,
     "page" | "pageSize" | "total" | "totalPages"
   >;
+  query: CompanyQueryState;
 };
 
 function CompanyActions({ company, canDelete }: { company: Company; canDelete: boolean }) {
@@ -60,6 +63,7 @@ export function CompanyList({
   companies,
   canDelete,
   pagination,
+  query,
 }: CompanyListProps) {
   return (
     <section
@@ -69,9 +73,6 @@ export function CompanyList({
       data-page-size={pagination.pageSize}
       data-total-pages={pagination.totalPages}
     >
-      <p className="text-sm font-medium text-zinc-500">
-        Showing {companies.length} of {pagination.total} active companies
-      </p>
       <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[980px] border-collapse text-left">
@@ -137,6 +138,7 @@ export function CompanyList({
           ))}
         </ul>
       </div>
+      <CompanyPagination {...pagination} query={query} />
     </section>
   );
 }
