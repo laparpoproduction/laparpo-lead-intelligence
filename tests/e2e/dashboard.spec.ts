@@ -42,10 +42,11 @@ test("renders the Companies create workflow on desktop and mobile", async ({
 test("returns not found for an unavailable company details route", async ({
   page,
 }) => {
-  const response = await page.goto(
-    "/companies/22222222-2222-4222-8222-222222222222",
-  );
+  const companyDetailsUrl =
+    "/companies/22222222-2222-4222-8222-222222222222";
+  await page.goto(companyDetailsUrl);
 
-  expect(response?.status()).toBe(404);
+  await expect(page).toHaveURL(companyDetailsUrl);
   await expect(page.getByText("This page could not be found.")).toBeVisible();
+  await expect(page.getByText("Workspace ready")).toHaveCount(0);
 });
