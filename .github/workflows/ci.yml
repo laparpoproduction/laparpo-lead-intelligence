@@ -48,8 +48,10 @@ jobs:
           psql -f supabase/migrations/202607110004_companies_soft_delete.sql
           psql -f supabase/migrations/202607110005_companies_rls_and_duplicate_candidates.sql
           psql -f supabase/migrations/202607110006_company_mutation_idempotency.sql
+          psql -f supabase/migrations/202607110007_contacts_foundation.sql
           psql -f supabase/tests/rls_smoke.sql
           psql -f supabase/tests/companies_smoke.sql
+          psql -f supabase/tests/contacts_smoke.sql
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
