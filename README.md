@@ -149,8 +149,11 @@ The contact fingerprint is indexed but intentionally non-unique. A likely
 duplicate requires stronger corroboration: a matching work/personal email,
 LinkedIn profile or WhatsApp number, or the same normalized name together with
 the same company, public phone or mobile number. A shared name at different
-companies and a shared company main phone alone do not block a record. A future
-Contacts service may present these signals as a warning with a manual override.
+companies and a shared company main phone alone do not block a record. The
+Contacts repository uses the RLS-bound `find_contact_duplicate_candidates()`
+function to retrieve all targeted candidates in bounded pages; `ContactService`
+then applies the shared pairwise rule and raises a safe duplicate warning. A
+deliberate manual override remains reserved for the later server-actions task.
 
 RLS exposes active contacts to management and gives representatives read access
 when they created or were assigned the contact, or can access its company through
@@ -160,6 +163,15 @@ and unrelated users are denied. Ordinary table reads hide soft-deleted contacts
 and contacts whose company is soft-deleted; active CEO/Admin and Sales Manager
 users can retrieve archived records only through the explicit
 `list_archived_contacts()` function. Hard deletion is not permitted.
+
+All Supabase access for Contacts is isolated in `SupabaseContactRepository`.
+Ordinary reads exclude archived records, list/search queries are capped at 100
+records with a default of 25, and primary sorting always has an `id` tiebreaker.
+`ContactService` resolves business authorization before mutation: management can
+manage assignments, while representatives may update only records they created
+or are assigned and may self-assign only their own currently unassigned contact.
+Company- or Lead-derived visibility remains read-only, with RLS as the final
+database boundary.
 
 ## Quality checks
 
@@ -197,8 +209,8 @@ isolation and safe company relationships.
 
 - The company details route is a protected placeholder only; timeline, analytics
   and contact workflows are not implemented.
-- Contacts currently have database and normalization foundations only. Repository,
-  service, actions, UI and deliberate duplicate-override workflows remain out of
+- Contacts have database, normalization, repository and service foundations.
+  Server actions, UI and deliberate duplicate-override workflows remain out of
   scope.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
@@ -206,5 +218,5 @@ isolation and safe company relationships.
 
 ## Recommended next sprint
 
-Build the separately scoped Contacts repository and service layer without adding
-Contacts actions, UI, messaging, discovery or lead workflows.
+Build the separately scoped Contacts server actions and secure duplicate-confirmation
+workflow without adding Contacts UI, messaging, discovery or lead workflows.
