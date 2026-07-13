@@ -7,6 +7,7 @@ import {
 } from "./duplicate";
 import type {
   Company,
+  CompanyConfirmationContext,
   CompanyListOptions,
   CompanyLookupOptions,
   CompanySortField,
@@ -38,6 +39,20 @@ export class CompanyRepositoryNotFoundError extends CompanyRepositoryError {
 
 export interface CompanyRepository {
   create(input: ValidatedCreateCompanyInput, createdBy: string): Promise<Company>;
+  createConfirmed(
+    input: ValidatedCreateCompanyInput,
+    createdBy: string,
+    confirmation: CompanyConfirmationContext,
+  ): Promise<Company>;
+  getConfirmationResult(
+    confirmation: CompanyConfirmationContext,
+    actorId: string,
+  ): Promise<string | null>;
+  recordConfirmationResult(
+    confirmation: CompanyConfirmationContext,
+    actorId: string,
+    companyId: string,
+  ): Promise<void>;
   getById(id: string, includeDeleted?: boolean): Promise<Company | null>;
   findByFingerprint(fingerprint: string, options?: CompanyLookupOptions): Promise<Company[]>;
   findByDomain(domain: string, options?: CompanyLookupOptions): Promise<Company[]>;
@@ -85,6 +100,86 @@ export class SupabaseCompanyRepository implements CompanyRepository {
 
     if (error || !data) throw new CompanyRepositoryError("create", causeFrom(error));
     return mapCompanyRow(data as unknown as Parameters<typeof mapCompanyRow>[0]);
+  }
+
+  async createConfirmed(
+    input: ValidatedCreateCompanyInput,
+    createdBy: string,
+    confirmation: CompanyConfirmationContext,
+  ): Promise<Company> {
+    const { data, error } = await this.client.rpc(
+      "create_confirmed_duplicate_company",
+      {
+        target_confirmation_id: validateCompanyId(confirmation.confirmationId),
+        target_submission_hash: confirmation.submissionHash,
+        company_data: mapCompanyCreate(input, validateCompanyId(createdBy)),
+      },
+    );
+    if (error || !data) {
+      throw new CompanyRepositoryError("confirmed create", causeFrom(error));
+    }
+    return mapCompanyRow(data as unknown as Parameters<typeof mapCompanyRow>[0]);
+  }
+
+  async getConfirmationResult(
+    confirmation: CompanyConfirmationContext,
+    actorId: string,
+  ): Promise<string | null> {
+    const { data, error } = await this.client
+      .from("company_mutation_confirmations")
+      .select("actor_id, operation, company_id, submission_hash, consumed_at")
+      .eq("confirmation_id", validateCompanyId(confirmation.confirmationId))
+      .maybeSingle();
+    if (error) {
+      throw new CompanyRepositoryError("get confirmation result", causeFrom(error));
+    }
+    if (!data) return null;
+
+    const record = data as unknown as {
+      actor_id: string;
+      operation: string;
+      company_id: string | null;
+      submission_hash: string;
+      consumed_at: string | null;
+    };
+    if (
+      record.actor_id !== validateCompanyId(actorId) ||
+      record.operation !== confirmation.operation ||
+      record.submission_hash !== confirmation.submissionHash ||
+      (confirmation.companyId !== undefined &&
+        record.company_id !== validateCompanyId(confirmation.companyId))
+    ) {
+      throw new CompanyRepositoryError("confirmation binding");
+    }
+    return record.consumed_at ? record.company_id : null;
+  }
+
+  async recordConfirmationResult(
+    confirmation: CompanyConfirmationContext,
+    actorId: string,
+    companyId: string,
+  ): Promise<void> {
+    const validatedCompanyId = validateCompanyId(companyId);
+    const { error } = await this.client.from("company_mutation_confirmations").insert({
+      confirmation_id: validateCompanyId(confirmation.confirmationId),
+      actor_id: validateCompanyId(actorId),
+      operation: confirmation.operation,
+      company_id: validatedCompanyId,
+      submission_hash: confirmation.submissionHash,
+      consumed_at: new Date().toISOString(),
+    });
+    if (!error) return;
+
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "23505"
+    ) {
+      const existing = await this.getConfirmationResult(confirmation, actorId);
+      if (existing === validatedCompanyId) return;
+    }
+    throw new CompanyRepositoryError("record confirmation result", causeFrom(error));
   }
 
   async getById(id: string, includeDeleted = false): Promise<Company | null> {

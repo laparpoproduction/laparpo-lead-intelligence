@@ -3,9 +3,11 @@ import type { CompanyRepository } from "./company.repository";
 import type {
   Company,
   CompanyActor,
+  CompanyConfirmationContext,
   CompanyListOptions,
   CompanyLookupOptions,
   CreateCompanyInput,
+  ConfirmedCompanyMutationResult,
   PaginatedCompanies,
   UpdateCompanyInput,
   ValidatedCreateCompanyInput,
@@ -65,6 +67,30 @@ export class CompanyService {
     const validated = validateCompanyCreate(input);
     await this.verifyNoDuplicate(validated);
     return this.repository.create(validated, actor.userId);
+  }
+
+  async createConfirmedDuplicate(
+    input: CreateCompanyInput,
+    actor: CompanyActor,
+    confirmation: CompanyConfirmationContext,
+  ): Promise<ConfirmedCompanyMutationResult> {
+    this.requireActive(actor);
+    if (confirmation.operation !== "create" || confirmation.companyId !== undefined) {
+      throw new CompanyPermissionError("Invalid create confirmation binding");
+    }
+    const existing = await this.repository.getConfirmationResult(
+      confirmation,
+      actor.userId,
+    );
+    if (existing) return { status: "already_consumed", companyId: existing };
+
+    const validated = validateCompanyCreate(input);
+    const company = await this.repository.createConfirmed(
+      validated,
+      actor.userId,
+      confirmation,
+    );
+    return { status: "applied", companyId: company.id, company };
   }
 
   async getById(id: string, actor: CompanyActor): Promise<Company> {
@@ -128,6 +154,44 @@ export class CompanyService {
   }
 
   async update(id: string, input: UpdateCompanyInput, actor: CompanyActor): Promise<Company> {
+    return this.updateInternal(id, input, actor, true);
+  }
+
+  async updateConfirmedDuplicate(
+    id: string,
+    input: UpdateCompanyInput,
+    actor: CompanyActor,
+    confirmation: CompanyConfirmationContext,
+  ): Promise<ConfirmedCompanyMutationResult> {
+    const validatedId = validateCompanyId(id);
+    this.requireActive(actor);
+    if (
+      confirmation.operation !== "update" ||
+      confirmation.companyId !== validatedId
+    ) {
+      throw new CompanyPermissionError("Invalid update confirmation binding");
+    }
+    const existing = await this.repository.getConfirmationResult(
+      confirmation,
+      actor.userId,
+    );
+    if (existing) return { status: "already_consumed", companyId: existing };
+
+    const company = await this.updateInternal(validatedId, input, actor, false);
+    await this.repository.recordConfirmationResult(
+      confirmation,
+      actor.userId,
+      company.id,
+    );
+    return { status: "applied", companyId: company.id, company };
+  }
+
+  private async updateInternal(
+    id: string,
+    input: UpdateCompanyInput,
+    actor: CompanyActor,
+    verifyDuplicate: boolean,
+  ): Promise<Company> {
     this.requireActive(actor);
     const validatedId = validateCompanyId(id);
     await this.requireCompanyAccess(validatedId, actor);
@@ -135,7 +199,7 @@ export class CompanyService {
     if (!current) throw new CompanyNotFoundError();
 
     const validated = validateCompanyUpdate(input, current.country);
-    if (this.identityChanged(validated)) {
+    if (verifyDuplicate && this.identityChanged(validated)) {
       const merged = { ...current, ...validated };
       await this.verifyNoDuplicate(merged, current.id);
     }

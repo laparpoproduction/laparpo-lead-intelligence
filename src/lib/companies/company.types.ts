@@ -174,3 +174,16 @@ export type CompanyActor = {
   role: AppRole;
   isActive: boolean;
 };
+
+export type CompanyConfirmationContext = {
+  confirmationId: string;
+  submissionHash: string;
+  operation: "create" | "update";
+  companyId?: string;
+};
+
+export type ConfirmedCompanyMutationResult = {
+  status: "applied" | "already_consumed";
+  companyId: string;
+  company?: Company;
+};

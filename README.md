@@ -43,9 +43,14 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
 4. Create a Supabase project and fill in:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   - `COMPANY_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
 5. Apply migrations in filename order:
    - `202607110001_sprint_1_core_schema.sql`
    - `202607110002_align_foundation_schema.sql`
+   - `202607110003_crm_companies_foundation.sql`
+   - `202607110004_companies_soft_delete.sql`
+   - `202607110005_companies_rls_and_duplicate_candidates.sql`
+   - `202607110006_company_mutation_idempotency.sql`
 6. Create the first user through Supabase Auth and promote that account to `ceo_admin`.
 7. Start the app:
 
@@ -63,10 +68,15 @@ The dashboard shows a labelled setup preview when Supabase variables are absent.
 | --- | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Browser and server | Yes for auth | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser and server | Yes for auth | Supabase publishable or legacy anon key |
+| `COMPANY_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for company mutations | Signs short-lived duplicate confirmation tokens; use at least 32 random characters |
 | `OPENAI_API_KEY` | Server only | No | Reserved for a later AI sprint |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
+Production builds fail during Next.js configuration when
+`COMPANY_DUPLICATE_CONFIRMATION_SECRET` is missing or shorter than 32 characters.
+Tests and local development may omit it until duplicate confirmation is exercised;
+production-like local builds must provide an explicit test-only value.
 
 ## Database architecture
 
@@ -96,6 +106,14 @@ legitimate businesses may share a corporate website, phone or city. The database
 normalizes these fields for lookup, while `src/lib/companies/duplicate.ts` labels a
 record as a likely duplicate only when its normalized name matches together with a
 matching domain, Malaysian phone number, or complete city-and-state location.
+Create and update server actions return a duplicate warning before allowing an
+explicit override. The override token is short-lived and signed server-side, and is
+bound to the authenticated user, operation, company ID where applicable, and the
+canonical submitted fields.
+Confirmed duplicate mutations also carry a random idempotency ID. PostgreSQL
+records only that ID, the actor, operation, submission hash and resulting company
+ID; the form payload is never stored. Replayed creates return the original company,
+while replayed updates return a safe already-consumed result.
 
 ## Quality checks
 
@@ -125,7 +143,9 @@ source provenance, management creation, representative ownership and isolation.
 
 ## Known limitations
 
-- Module routes contain production-quality protected shells and empty states, not CRUD workflows.
+- Module routes contain protected shells and empty states. Companies now has
+  server-side mutation workflows, but listing, detail and full form interfaces are
+  intentionally not implemented yet.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders until lead-management workflows are delivered.
