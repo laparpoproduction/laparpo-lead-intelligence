@@ -1,0 +1,1 @@
+export const COMPANIES_DEFAULT_PAGE_SIZE = 25;

@@ -9,11 +9,14 @@ import {
   updateCompanyAction,
 } from "@/app/(dashboard)/companies/actions";
 import CompaniesError from "@/app/(dashboard)/companies/error";
+import CompanyDetailsLoading from "@/app/(dashboard)/companies/[id]/loading";
 import CompaniesLoading from "@/app/(dashboard)/companies/loading";
 import { CompanyDeleteDialog } from "./company-delete-dialog";
+import { CompanyDetailsPlaceholder } from "./company-details-placeholder";
 import { CompanyEmptyState } from "./company-empty-state";
 import { CompanyForm } from "./company-form";
 import { CompanyList } from "./company-list";
+import { COMPANIES_DEFAULT_PAGE_SIZE } from "@/lib/companies/company.constants";
 import { companyFixture, companyId } from "@/lib/companies/company.test-fixtures";
 
 const router = {
@@ -131,15 +134,54 @@ describe("Companies UI", () => {
   });
 
   it("renders list data, empty state, and loading state", () => {
-    const { rerender } = render(<CompanyList canDelete companies={[companyFixture]} />);
+    const { rerender } = render(
+      <CompanyList
+        canDelete
+        companies={[companyFixture]}
+        pagination={{
+          page: 1,
+          pageSize: COMPANIES_DEFAULT_PAGE_SIZE,
+          total: 1,
+          totalPages: 1,
+        }}
+      />,
+    );
     expect(screen.getAllByText(companyFixture.displayName).length).toBeGreaterThan(0);
     expect(screen.getAllByText(companyFixture.legalName).length).toBeGreaterThan(0);
+    expect(COMPANIES_DEFAULT_PAGE_SIZE).toBe(25);
+    expect(
+      screen
+        .getByRole("region", { name: "Companies list" })
+        .getAttribute("data-page-size"),
+    ).toBe("25");
+    expect(
+      screen.getAllByRole("link", {
+        name: `View ${companyFixture.displayName} details`,
+      })[0]?.getAttribute("href"),
+    ).toBe(`/companies/${companyId}`);
 
     rerender(<CompanyEmptyState />);
     expect(screen.getByText("No companies yet")).toBeDefined();
 
     rerender(<CompaniesLoading />);
     expect(screen.getByRole("status", { name: "Loading companies" })).toBeDefined();
+  });
+
+  it("renders the protected company details placeholder and loading state", () => {
+    const { rerender } = render(
+      <CompanyDetailsPlaceholder company={companyFixture} />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: companyFixture.displayName }),
+    ).toBeDefined();
+    expect(screen.getByText("Workspace ready")).toBeDefined();
+    expect(screen.queryByText("Timeline")).toBeNull();
+
+    rerender(<CompanyDetailsLoading />);
+    expect(
+      screen.getByRole("status", { name: "Loading company details" }),
+    ).toBeDefined();
   });
 
   it("renders a recoverable error state", async () => {

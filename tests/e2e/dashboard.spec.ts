@@ -38,3 +38,14 @@ test("renders the Companies create workflow on desktop and mobile", async ({
   await expect(page.getByLabel("Display name")).toBeVisible();
   await expect(page.getByRole("button", { name: "Create company" })).toBeVisible();
 });
+
+test("returns not found for an unavailable company details route", async ({
+  page,
+}) => {
+  const response = await page.goto(
+    "/companies/22222222-2222-4222-8222-222222222222",
+  );
+
+  expect(response?.status()).toBe(404);
+  await expect(page.getByText("This page could not be found.")).toBeVisible();
+});

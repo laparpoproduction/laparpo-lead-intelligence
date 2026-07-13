@@ -121,8 +121,10 @@ The protected Companies workspace now includes a responsive list, one reusable
 create/edit form, deliberate duplicate confirmation, and management-only
 soft-delete confirmation. Mutations continue to use the existing server actions;
 the interface does not introduce REST endpoints or client-side database access.
-The list shows up to the first 100 active companies until search and pagination
-are delivered in a later task.
+The list uses a configurable 25-record page size and carries pagination metadata
+for a later controls task. Company rows open a protected details route with a
+verified-record placeholder; timeline, analytics and contact workflows remain
+separately scoped.
 
 ## Quality checks
 
@@ -154,10 +156,10 @@ source provenance, management creation, representative ownership and isolation.
 
 ## Known limitations
 
-- Companies listing currently shows the first 100 active records without search,
-  filters or pagination; those workflows are intentionally deferred.
-- A standalone company details page is not implemented; list actions lead directly
-  to edit or soft-delete workflows.
+- Companies listing currently shows the first 25 active records without search,
+  filters or pagination controls; those workflows are intentionally deferred.
+- The company details route is a protected placeholder only; timeline, analytics
+  and contact workflows are not implemented.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders until lead-management workflows are delivered.
