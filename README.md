@@ -115,6 +115,15 @@ records only that ID, the actor, operation, submission hash and resulting compan
 ID; the form payload is never stored. Replayed creates return the original company,
 while replayed updates return a safe already-consumed result.
 
+### Companies interface
+
+The protected Companies workspace now includes a responsive list, one reusable
+create/edit form, deliberate duplicate confirmation, and management-only
+soft-delete confirmation. Mutations continue to use the existing server actions;
+the interface does not introduce REST endpoints or client-side database access.
+The list shows up to the first 100 active companies until search and pagination
+are delivered in a later task.
+
 ## Quality checks
 
 ```bash
@@ -140,16 +149,20 @@ source provenance, management creation, representative ownership and isolation.
 7. Verify a CEO/Admin can access every module and create sourced company, contact and lead records.
 8. Test duplicate name, domain, phone and location variations.
 9. Check loading, empty and error states on mobile and desktop.
+10. Create a sourced company, confirm a duplicate warning where applicable, edit
+    the company, then soft-delete it from the Companies list.
 
 ## Known limitations
 
-- Module routes contain protected shells and empty states. Companies now has
-  server-side mutation workflows, but listing, detail and full form interfaces are
-  intentionally not implemented yet.
+- Companies listing currently shows the first 100 active records without search,
+  filters or pagination; those workflows are intentionally deferred.
+- A standalone company details page is not implemented; list actions lead directly
+  to edit or soft-delete workflows.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders until lead-management workflows are delivered.
 
 ## Recommended next sprint
 
-Build lead management: sourced company/contact forms, pre-insert duplicate feedback, searchable tables, ownership assignment and sales status transitions.
+Add Companies search and pagination before beginning the separately scoped Contacts
+and Leads modules.
