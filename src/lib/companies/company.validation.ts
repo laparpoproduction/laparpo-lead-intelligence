@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COMPANIES_DEFAULT_PAGE_SIZE } from "./company.constants";
 import { normalizePublicPhone, normalizeWebsiteDomain } from "./duplicate";
 import {
   companySortFields,
@@ -80,7 +81,12 @@ const listSchema = z.object({
   createdBy: z.uuid().optional(),
   includeDeleted: z.boolean().default(false),
   page: z.number().int().positive().default(1),
-  pageSize: z.number().int().positive().max(100).default(25),
+  pageSize: z
+    .number()
+    .int()
+    .positive()
+    .max(100)
+    .default(COMPANIES_DEFAULT_PAGE_SIZE),
   sortBy: z.enum(companySortFields).default("createdAt"),
   sortDirection: z.enum(["asc", "desc"]).default("desc"),
 });
