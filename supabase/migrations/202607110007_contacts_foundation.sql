@@ -374,11 +374,19 @@ begin
   if new.deleted_at is distinct from old.deleted_at then
     raise exception 'deleted_at can only be changed by management' using errcode = '42501';
   end if;
-  if new.assigned_to is distinct from old.assigned_to
-    and new.assigned_to is not null
-    and new.assigned_to <> auth.uid() then
-    raise exception 'Representatives cannot assign contacts to other users'
+  if new.company_id is distinct from old.company_id then
+    raise exception 'Representatives cannot change a contact company'
       using errcode = '42501';
+  end if;
+  if new.assigned_to is distinct from old.assigned_to then
+    if not (
+      old.assigned_to is null
+      and new.assigned_to = auth.uid()
+      and old.created_by = auth.uid()
+    ) then
+      raise exception 'Representatives cannot change this contact assignment'
+        using errcode = '42501';
+    end if;
   end if;
   return new;
 end;
@@ -484,6 +492,29 @@ as $$
   );
 $$;
 
+-- Company and Lead access grant representatives read visibility only. Mutations
+-- require management access, direct creation, or direct assignment.
+create or replace function public.can_modify_contact(target_contact_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select public.is_active_user() and exists (
+    select 1
+    from public.contacts as contact
+    where contact.id = target_contact_id
+      and contact.deleted_at is null
+      and public.contact_company_is_active(contact.company_id)
+      and (
+        public.is_sales_management()
+        or contact.created_by = auth.uid()
+        or contact.assigned_to = auth.uid()
+      )
+  );
+$$;
+
 -- Archived access is deliberately explicit. Direct table reads expose active
 -- contacts only, including for management.
 create or replace function public.list_archived_contacts()
@@ -511,9 +542,11 @@ $$;
 revoke all on function public.contact_company_is_active(uuid) from public;
 revoke all on function public.can_link_contact_to_company(uuid) from public;
 revoke all on function public.can_access_contact(uuid) from public;
+revoke all on function public.can_modify_contact(uuid) from public;
 revoke all on function public.list_archived_contacts() from public;
 grant execute on function public.can_link_contact_to_company(uuid) to authenticated;
 grant execute on function public.can_access_contact(uuid) to authenticated;
+grant execute on function public.can_modify_contact(uuid) to authenticated;
 grant execute on function public.list_archived_contacts() to authenticated;
 
 drop policy if exists "users read permitted contacts" on public.contacts;
@@ -537,21 +570,20 @@ create policy "active users create sourced contacts"
 
 create policy "users update permitted active contacts"
   on public.contacts for update to authenticated
-  using (public.can_access_contact(id))
+  using (public.can_modify_contact(id))
   with check (
     public.is_active_user()
-    and public.can_link_contact_to_company(company_id)
     and (
-      public.is_sales_management()
+      (
+        public.is_sales_management()
+        and public.can_link_contact_to_company(company_id)
+      )
       or (
         deleted_at is null
+        and public.can_modify_contact(id)
         and (
           created_by = (select auth.uid())
           or assigned_to = (select auth.uid())
-          or (
-            company_id is not null
-            and public.can_access_company(company_id)
-          )
         )
       )
     )

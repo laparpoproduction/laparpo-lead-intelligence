@@ -531,17 +531,31 @@ insert into public.contacts (
   source_url,
   source_type,
   discovered_at,
-  created_by
-) values (
-  '20000000-0000-0000-0000-000000000025',
-  '10000000-0000-0000-0000-000000000012',
-  'Inactive User Contact',
-  'inactive@inactive-owner-company.test',
-  'https://inactive-owner-company.test/team',
-  'company_website',
-  now(),
-  '00000000-0000-0000-0000-000000000004'
-);
+  created_by,
+  assigned_to
+) values
+  (
+    '20000000-0000-0000-0000-000000000025',
+    '10000000-0000-0000-0000-000000000012',
+    'Inactive User Contact',
+    'inactive@inactive-owner-company.test',
+    'https://inactive-owner-company.test/team',
+    'company_website',
+    now(),
+    '00000000-0000-0000-0000-000000000004',
+    null
+  ),
+  (
+    '20000000-0000-0000-0000-000000000026',
+    '10000000-0000-0000-0000-000000000022',
+    'Creator With Another Assignee',
+    'creator-with-assignee@contact-representative.test',
+    'https://contact-representative.test/team/creator-with-assignee',
+    'company_website',
+    now(),
+    '00000000-0000-0000-0000-000000000002',
+    '00000000-0000-0000-0000-000000000003'
+  );
 
 set role authenticated;
 select set_config(
@@ -551,6 +565,8 @@ select set_config(
 );
 
 do $$
+declare
+  affected_rows integer;
 begin
   if not exists (
     select 1 from public.contacts
@@ -565,11 +581,53 @@ begin
     raise exception 'Representative cannot read a contact through an assigned lead';
   end if;
 
+  update public.contacts
+  set notes = 'Updated by creator'
+  where id = '20000000-0000-0000-0000-000000000020';
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 1 then
+    raise exception 'Contact creator could not update their contact';
+  end if;
+
+  update public.contacts
+  set notes = 'Updated by assignee'
+  where id = '20000000-0000-0000-0000-000000000022';
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 1 then
+    raise exception 'Contact assignee could not update their contact';
+  end if;
+
+  update public.contacts
+  set notes = 'Company access must remain read-only'
+  where id = '20000000-0000-0000-0000-000000000023';
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 0 then
+    raise exception 'Company or Lead access allowed a contact update';
+  end if;
+
   begin
     update public.contacts
     set created_by = '00000000-0000-0000-0000-000000000003'
     where id = '20000000-0000-0000-0000-000000000020';
     raise exception 'Representative manipulated contact created_by';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.contacts
+    set assigned_to = null
+    where id = '20000000-0000-0000-0000-000000000026';
+    raise exception 'Representative cleared another user assignment';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.contacts
+    set assigned_to = '00000000-0000-0000-0000-000000000002'
+    where id = '20000000-0000-0000-0000-000000000026';
+    raise exception 'Representative took over another user assignment';
   exception
     when insufficient_privilege then null;
   end;
@@ -623,6 +681,14 @@ begin
   get diagnostics affected_rows = row_count;
   if affected_rows <> 0 then
     raise exception 'Unrelated representative updated a contact';
+  end if;
+
+  update public.contacts
+  set assigned_to = '00000000-0000-0000-0000-000000000003'
+  where id = '20000000-0000-0000-0000-000000000020';
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 0 then
+    raise exception 'Unrelated representative changed contact assignment';
   end if;
 
   delete from public.contacts
@@ -788,12 +854,27 @@ select set_config(
 );
 
 do $$
+declare
+  affected_rows integer;
 begin
   if not exists (
     select 1 from public.list_archived_contacts()
     where id = '20000000-0000-0000-0000-000000000020'
   ) then
     raise exception 'Sales Manager could not retrieve an archived contact';
+  end if;
+
+  update public.contacts
+  set assigned_to = '00000000-0000-0000-0000-000000000002',
+      notes = 'Assignment changed by management'
+  where id = '20000000-0000-0000-0000-000000000026';
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 1 or not exists (
+    select 1 from public.contacts
+    where id = '20000000-0000-0000-0000-000000000026'
+      and assigned_to = '00000000-0000-0000-0000-000000000002'
+  ) then
+    raise exception 'Sales Manager could not change contact assignment';
   end if;
 end;
 $$;

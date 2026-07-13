@@ -152,11 +152,13 @@ the same company, public phone or mobile number. A shared name at different
 companies and a shared company main phone alone do not block a record. A future
 Contacts service may present these signals as a warning with a manual override.
 
-RLS exposes active contacts to management and to representatives who created or
-were assigned the contact, or who can access its company through ownership or an
-assigned lead. Inactive and unrelated users are denied. Ordinary table reads hide
-soft-deleted contacts and contacts whose company is soft-deleted; active CEO/Admin
-and Sales Manager users can retrieve archived records only through the explicit
+RLS exposes active contacts to management and gives representatives read access
+when they created or were assigned the contact, or can access its company through
+ownership or an assigned lead. Company/Lead-derived access is read-only;
+representatives may update only contacts they created or are assigned. Inactive
+and unrelated users are denied. Ordinary table reads hide soft-deleted contacts
+and contacts whose company is soft-deleted; active CEO/Admin and Sales Manager
+users can retrieve archived records only through the explicit
 `list_archived_contacts()` function. Hard deletion is not permitted.
 
 ## Quality checks
