@@ -25,6 +25,7 @@ jobs:
           --health-retries 5
     env:
       COMPANY_DUPLICATE_CONFIRMATION_SECRET: ci-only-company-confirmation-secret-2026
+      CONTACT_DUPLICATE_CONFIRMATION_SECRET: ci-only-contact-confirmation-secret-2026
       PGHOST: 127.0.0.1
       PGPORT: 5432
       PGUSER: postgres
@@ -50,9 +51,11 @@ jobs:
           psql -f supabase/migrations/202607110006_company_mutation_idempotency.sql
           psql -f supabase/migrations/202607110007_contacts_foundation.sql
           psql -f supabase/migrations/202607110008_contacts_duplicate_candidates.sql
+          psql -f supabase/migrations/202607110009_contact_mutation_idempotency.sql
           psql -f supabase/tests/rls_smoke.sql
           psql -f supabase/tests/companies_smoke.sql
           psql -f supabase/tests/contacts_smoke.sql
+          psql -f supabase/tests/contact_actions_smoke.sql
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

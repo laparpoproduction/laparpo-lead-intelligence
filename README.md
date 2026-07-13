@@ -44,6 +44,7 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `COMPANY_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
+   - `CONTACT_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
 5. Apply migrations in filename order:
    - `202607110001_sprint_1_core_schema.sql`
    - `202607110002_align_foundation_schema.sql`
@@ -52,6 +53,8 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `202607110005_companies_rls_and_duplicate_candidates.sql`
    - `202607110006_company_mutation_idempotency.sql`
    - `202607110007_contacts_foundation.sql`
+   - `202607110008_contacts_duplicate_candidates.sql`
+   - `202607110009_contact_mutation_idempotency.sql`
 6. Create the first user through Supabase Auth and promote that account to `ceo_admin`.
 7. Start the app:
 
@@ -70,13 +73,14 @@ The dashboard shows a labelled setup preview when Supabase variables are absent.
 | `NEXT_PUBLIC_SUPABASE_URL` | Browser and server | Yes for auth | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser and server | Yes for auth | Supabase publishable or legacy anon key |
 | `COMPANY_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for company mutations | Signs short-lived duplicate confirmation tokens; use at least 32 random characters |
+| `CONTACT_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for contact mutations | Signs namespaced, short-lived Contact confirmation tokens; use at least 32 random characters |
 | `OPENAI_API_KEY` | Server only | No | Reserved for a later AI sprint |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
 Production builds fail during Next.js configuration when
-`COMPANY_DUPLICATE_CONFIRMATION_SECRET` is missing or shorter than 32 characters.
-Tests and local development may omit it until duplicate confirmation is exercised;
+either duplicate-confirmation secret is missing or shorter than 32 characters.
+Tests and local development may omit them until duplicate confirmation is exercised;
 production-like local builds must provide an explicit test-only value.
 
 ## Database architecture
@@ -173,6 +177,20 @@ or are assigned and may self-assign only their own currently unassigned contact.
 Company- or Lead-derived visibility remains read-only, with RLS as the final
 database boundary.
 
+Contacts server actions resolve the authenticated profile and construct the
+`ContactActor` on the server before invoking `ContactService`; form values cannot
+provide role, creator or deletion authority. Create, update and soft-delete map
+validation, permission, duplicate and not-found failures into typed safe states
+and return cache-revalidation/redirect metadata without adding Contact UI routes.
+
+Likely duplicates receive a Contact-specific ten-minute HMAC token bound to the
+actor, operation, target Contact for updates, normalized payload hash and a
+unique confirmation UUID. Confirmed create and update use transaction-scoped,
+`SECURITY INVOKER` PostgreSQL functions. The confirmation ledger stores only
+bindings, a SHA-256 payload hash and the resulting Contact ID; successful retries
+return that original ID and never reapply the mutation. RLS and the existing
+assignment/company rules remain the final mutation boundary.
+
 ## Quality checks
 
 ```bash
@@ -184,7 +202,8 @@ npm run test:e2e
 ```
 
 GitHub Actions applies all migrations to PostgreSQL and runs the general RLS test,
-`supabase/tests/companies_smoke.sql` and `supabase/tests/contacts_smoke.sql`. The
+`supabase/tests/companies_smoke.sql`, `supabase/tests/contacts_smoke.sql` and
+`supabase/tests/contact_actions_smoke.sql`. The
 Contacts test verifies normalization, provenance, non-unique duplicate signals,
 nullable company relationships, management/representative access, archived-record
 isolation and safe company relationships.
@@ -209,14 +228,14 @@ isolation and safe company relationships.
 
 - The company details route is a protected placeholder only; timeline, analytics
   and contact workflows are not implemented.
-- Contacts have database, normalization, repository and service foundations.
-  Server actions, UI and deliberate duplicate-override workflows remain out of
-  scope.
+- Contacts have database, normalization, repository, service and secure server
+  mutation foundations. List/form/detail UI remains out of scope.
+- Contact confirmation ledger cleanup/retention automation is not yet scheduled.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders until lead-management workflows are delivered.
 
 ## Recommended next sprint
 
-Build the separately scoped Contacts server actions and secure duplicate-confirmation
-workflow without adding Contacts UI, messaging, discovery or lead workflows.
+Build the separately scoped Contacts user interface using the existing actions,
+without adding messaging, discovery, AI enrichment or lead workflows.

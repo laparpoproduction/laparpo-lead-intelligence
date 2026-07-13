@@ -47,10 +47,12 @@ const page = {
 function repositoryMock(overrides: Partial<ContactRepository> = {}): ContactRepository {
   return {
     create: vi.fn().mockResolvedValue(contactFixture),
+    createConfirmed: vi.fn().mockResolvedValue({ status: "applied", contactId }),
     getById: vi.fn().mockResolvedValue(contactFixture),
     list: vi.fn().mockResolvedValue(page),
     search: vi.fn().mockResolvedValue(page),
     update: vi.fn().mockResolvedValue(contactFixture),
+    updateConfirmed: vi.fn().mockResolvedValue({ status: "applied", contactId }),
     softDelete: vi.fn().mockResolvedValue(undefined),
     findDuplicateCandidates: vi.fn().mockResolvedValue([]),
     listArchived: vi.fn().mockResolvedValue(page),
@@ -68,6 +70,19 @@ const createInput = {
   sourceUrl: "https://example.my/team/nur-aisyah",
   sourceType: "company_website",
   discoveredAt: "2026-07-10T00:00:00.000Z",
+};
+
+const createConfirmation = {
+  confirmationId: "77777777-7777-4777-8777-777777777777",
+  submissionHash: "a".repeat(64),
+  operation: "create" as const,
+};
+
+const updateConfirmation = {
+  confirmationId: "88888888-8888-4888-8888-888888888888",
+  submissionHash: "b".repeat(64),
+  operation: "update" as const,
+  contactId,
 };
 
 describe("ContactService", () => {
@@ -91,6 +106,44 @@ describe("ContactService", () => {
       new ContactService(repository).create({ ...createInput, assignedTo: assigneeId }, creator),
     ).rejects.toBeInstanceOf(ContactPermissionError);
     expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it("orchestrates confirmed create without weakening assignment rules", async () => {
+    const repository = repositoryMock();
+    const service = new ContactService(repository);
+    await expect(
+      service.createConfirmedDuplicate(createInput, creator, createConfirmation),
+    ).resolves.toEqual({ status: "applied", contactId });
+    expect(repository.findDuplicateCandidates).not.toHaveBeenCalled();
+    expect(repository.createConfirmed).toHaveBeenCalledWith(
+      expect.objectContaining({ workEmail: "aisyah@example.my" }),
+      creatorId,
+      createConfirmation,
+    );
+
+    await expect(
+      service.createConfirmedDuplicate(
+        { ...createInput, assignedTo: assigneeId },
+        creator,
+        createConfirmation,
+      ),
+    ).rejects.toBeInstanceOf(ContactPermissionError);
+  });
+
+  it("returns the repository replay result for confirmed create", async () => {
+    const repository = repositoryMock({
+      createConfirmed: vi.fn().mockResolvedValue({
+        status: "already_processed",
+        contactId,
+      }),
+    });
+    await expect(
+      new ContactService(repository).createConfirmedDuplicate(
+        createInput,
+        creator,
+        createConfirmation,
+      ),
+    ).resolves.toEqual({ status: "already_processed", contactId });
   });
 
   it.each([
@@ -198,6 +251,70 @@ describe("ContactService", () => {
     const repository = repositoryMock();
     await new ContactService(repository).update(contactId, { assignedTo: creatorId }, manager);
     expect(repository.update).toHaveBeenCalledWith(contactId, { assignedTo: creatorId });
+  });
+
+  it("keeps permission and assignment checks during confirmed updates", async () => {
+    const repository = repositoryMock();
+    const service = new ContactService(repository);
+
+    await expect(
+      service.updateConfirmedDuplicate(
+        contactId,
+        { notes: "No access" },
+        unrelated,
+        updateConfirmation,
+      ),
+    ).rejects.toBeInstanceOf(ContactPermissionError);
+    await expect(
+      service.updateConfirmedDuplicate(
+        contactId,
+        { companyId: null },
+        creator,
+        updateConfirmation,
+      ),
+    ).rejects.toBeInstanceOf(ContactPermissionError);
+    await expect(
+      service.updateConfirmedDuplicate(
+        contactId,
+        { assignedTo: null },
+        creator,
+        updateConfirmation,
+      ),
+    ).rejects.toBeInstanceOf(ContactPermissionError);
+    expect(repository.updateConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("allows an authorized confirmed update and returns replay state", async () => {
+    const repository = repositoryMock({
+      updateConfirmed: vi.fn().mockResolvedValue({
+        status: "already_processed",
+        contactId,
+      }),
+    });
+    await expect(
+      new ContactService(repository).updateConfirmedDuplicate(
+        contactId,
+        { workEmail: "duplicate@example.my" },
+        creator,
+        updateConfirmation,
+      ),
+    ).resolves.toEqual({ status: "already_processed", contactId });
+    expect(repository.findDuplicateCandidates).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-operation and wrong-contact confirmation bindings", async () => {
+    const service = new ContactService(repositoryMock());
+    await expect(
+      service.createConfirmedDuplicate(createInput, creator, updateConfirmation),
+    ).rejects.toBeInstanceOf(ContactPermissionError);
+    await expect(
+      service.updateConfirmedDuplicate(
+        contactId,
+        { notes: "Changed" },
+        creator,
+        { ...updateConfirmation, contactId: companyId },
+      ),
+    ).rejects.toBeInstanceOf(ContactPermissionError);
   });
 
   it("checks duplicates only for identity-changing updates and excludes itself", async () => {
