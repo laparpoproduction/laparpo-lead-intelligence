@@ -121,10 +121,12 @@ The protected Companies workspace now includes a responsive list, one reusable
 create/edit form, deliberate duplicate confirmation, and management-only
 soft-delete confirmation. Mutations continue to use the existing server actions;
 the interface does not introduce REST endpoints or client-side database access.
-The list uses a configurable 25-record page size and carries pagination metadata
-for a later controls task. Company rows open a protected details route with a
-verified-record placeholder; timeline, analytics and contact workflows remain
-separately scoped.
+The list uses URL search parameters as its validated source of truth for company
+name or domain search, company type, industry, city and state filters, safe sorting,
+and deterministic 25-record server pagination. Empty and invalid parameters are
+canonicalized, filter changes reset to page one, and pagination links preserve the
+active query. Company rows open a protected details route with a verified-record
+placeholder; timeline, analytics and contact workflows remain separately scoped.
 
 ## Quality checks
 
@@ -153,11 +155,11 @@ source provenance, management creation, representative ownership and isolation.
 9. Check loading, empty and error states on mobile and desktop.
 10. Create a sourced company, confirm a duplicate warning where applicable, edit
     the company, then soft-delete it from the Companies list.
+11. Search and filter Companies, change its sort order, navigate between result
+    pages, and confirm that refreshing or sharing the URL restores the same state.
 
 ## Known limitations
 
-- Companies listing currently shows the first 25 active records without search,
-  filters or pagination controls; those workflows are intentionally deferred.
 - The company details route is a protected placeholder only; timeline, analytics
   and contact workflows are not implemented.
 - Account invitation, password reset and role-management screens are not implemented.
@@ -166,5 +168,5 @@ source provenance, management creation, representative ownership and isolation.
 
 ## Recommended next sprint
 
-Add Companies search and pagination before beginning the separately scoped Contacts
-and Leads modules.
+Begin the separately scoped Contacts foundation without expanding the Companies
+details placeholder into timeline, analytics or lead workflows.

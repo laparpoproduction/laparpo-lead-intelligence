@@ -14,9 +14,13 @@ import CompaniesLoading from "@/app/(dashboard)/companies/loading";
 import { CompanyDeleteDialog } from "./company-delete-dialog";
 import { CompanyDetailsPlaceholder } from "./company-details-placeholder";
 import { CompanyEmptyState } from "./company-empty-state";
+import { CompanyFilteredEmptyState } from "./company-filtered-empty-state";
 import { CompanyForm } from "./company-form";
 import { CompanyList } from "./company-list";
+import { CompanyListToolbar } from "./company-list-toolbar";
+import { CompanyPagination } from "./company-pagination";
 import { COMPANIES_DEFAULT_PAGE_SIZE } from "@/lib/companies/company.constants";
+import { parseCompanyQueryState } from "@/lib/companies/company-query";
 import { companyFixture, companyId } from "@/lib/companies/company.test-fixtures";
 
 const router = {
@@ -134,6 +138,7 @@ describe("Companies UI", () => {
   });
 
   it("renders list data, empty state, and loading state", () => {
+    const query = parseCompanyQueryState({});
     const { rerender } = render(
       <CompanyList
         canDelete
@@ -144,6 +149,7 @@ describe("Companies UI", () => {
           total: 1,
           totalPages: 1,
         }}
+        query={query}
       />,
     );
     expect(screen.getAllByText(companyFixture.displayName).length).toBeGreaterThan(0);
@@ -165,6 +171,108 @@ describe("Companies UI", () => {
 
     rerender(<CompaniesLoading />);
     expect(screen.getByRole("status", { name: "Loading companies" })).toBeDefined();
+  });
+
+  it("submits server-driven search and filters while resetting the page", async () => {
+    const query = parseCompanyQueryState({
+      state: "Penang",
+      sortBy: "displayName",
+      sortDirection: "asc",
+      page: "4",
+    });
+    render(<CompanyListToolbar query={query} />);
+
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search companies" }),
+      "Acme",
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Company type" }),
+      "agency",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    expect(router.push).toHaveBeenCalledWith(
+      "/companies?q=Acme&companyType=agency&state=Penang&sortBy=displayName&sortDirection=asc",
+    );
+    expect(screen.getByRole("link", { name: "Clear all filters" }).getAttribute("href")).toBe(
+      "/companies?sortBy=displayName&sortDirection=asc",
+    );
+  });
+
+  it("renders mobile-available filter controls and a distinct filtered empty state", () => {
+    const query = parseCompanyQueryState({ q: "No match", city: "Kuala Lumpur" });
+    const { rerender } = render(<CompanyListToolbar query={query} />);
+
+    expect(screen.getByRole("searchbox", { name: "Search companies" })).toBeDefined();
+    expect(screen.getByRole("textbox", { name: "Industry" })).toBeDefined();
+    expect(screen.getByRole("textbox", { name: "City" })).toBeDefined();
+    expect(screen.getByRole("textbox", { name: "State" })).toBeDefined();
+
+    rerender(<CompanyFilteredEmptyState query={query} />);
+    expect(screen.getByText("No matching companies")).toBeDefined();
+    expect(screen.getByRole("link", { name: "Clear all filters" })).toBeDefined();
+  });
+
+  it("preserves query state in deterministic previous and next links", () => {
+    const query = parseCompanyQueryState({
+      q: "Acme",
+      companyType: "hotel",
+      sortBy: "legalName",
+      sortDirection: "asc",
+      page: "2",
+    });
+    const { rerender } = render(
+      <CompanyPagination
+        page={2}
+        pageSize={25}
+        query={query}
+        total={51}
+        totalPages={3}
+      />,
+    );
+
+    expect(screen.getByText("Showing 26–50 of 51")).toBeDefined();
+    expect(
+      screen.getByRole("link", { name: "Previous companies page" }).getAttribute("href"),
+    ).toBe(
+      "/companies?q=Acme&companyType=hotel&sortBy=legalName&sortDirection=asc",
+    );
+    expect(
+      screen.getByRole("link", { name: "Next companies page" }).getAttribute("href"),
+    ).toBe(
+      "/companies?q=Acme&companyType=hotel&sortBy=legalName&sortDirection=asc&page=3",
+    );
+
+    rerender(
+      <CompanyPagination
+        page={1}
+        pageSize={25}
+        query={{ ...query, page: 1 }}
+        total={25}
+        totalPages={1}
+      />,
+    );
+    expect(
+      screen.getByLabelText("Previous companies page").getAttribute("aria-disabled"),
+    ).toBe("true");
+    expect(
+      screen.getByLabelText("Next companies page").getAttribute("aria-disabled"),
+    ).toBe("true");
+
+    rerender(
+      <CompanyPagination
+        page={3}
+        pageSize={25}
+        query={{ ...query, page: 3 }}
+        total={51}
+        totalPages={3}
+      />,
+    );
+    expect(screen.getByText("Showing 51–51 of 51")).toBeDefined();
+    expect(
+      screen.getByLabelText("Next companies page").getAttribute("aria-disabled"),
+    ).toBe("true");
   });
 
   it("renders the protected company details placeholder and loading state", () => {
