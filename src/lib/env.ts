@@ -8,6 +8,7 @@ const publicEnvSchema = z.object({
 const serverEnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1).optional(),
   COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
+  CONTACT_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
@@ -16,16 +17,20 @@ export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
 const productionCompanyMutationEnvSchema = z.object({
   COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32),
+  CONTACT_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32),
 });
 
 export function validateProductionServerEnvironment(input: {
   nodeEnv?: string;
   companyDuplicateConfirmationSecret?: string;
+  contactDuplicateConfirmationSecret?: string;
 }): void {
   if (input.nodeEnv !== "production") return;
   productionCompanyMutationEnvSchema.parse({
     COMPANY_DUPLICATE_CONFIRMATION_SECRET:
       input.companyDuplicateConfirmationSecret || undefined,
+    CONTACT_DUPLICATE_CONFIRMATION_SECRET:
+      input.contactDuplicateConfirmationSecret || undefined,
   });
 }
 
@@ -34,6 +39,8 @@ export function assertProductionServerEnvironment(): void {
     nodeEnv: process.env.NODE_ENV,
     companyDuplicateConfirmationSecret:
       process.env.COMPANY_DUPLICATE_CONFIRMATION_SECRET,
+    contactDuplicateConfirmationSecret:
+      process.env.CONTACT_DUPLICATE_CONFIRMATION_SECRET,
   });
 }
 
@@ -57,12 +64,16 @@ export function getServerEnv(): ServerEnv {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY || undefined,
     COMPANY_DUPLICATE_CONFIRMATION_SECRET:
       process.env.COMPANY_DUPLICATE_CONFIRMATION_SECRET || undefined,
+    CONTACT_DUPLICATE_CONFIRMATION_SECRET:
+      process.env.CONTACT_DUPLICATE_CONFIRMATION_SECRET || undefined,
     LOG_LEVEL: process.env.LOG_LEVEL,
   });
   validateProductionServerEnvironment({
     nodeEnv: process.env.NODE_ENV,
     companyDuplicateConfirmationSecret:
       env.COMPANY_DUPLICATE_CONFIRMATION_SECRET,
+    contactDuplicateConfirmationSecret:
+      env.CONTACT_DUPLICATE_CONFIRMATION_SECRET,
   });
   return env;
 }

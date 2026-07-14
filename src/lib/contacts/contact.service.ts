@@ -11,7 +11,9 @@ import {
 import type {
   Contact,
   ContactActor,
+  ContactConfirmationContext,
   ContactListOptions,
+  ConfirmedContactMutationResult,
   CreateContactInput,
   PaginatedContacts,
   UpdateContactInput,
@@ -100,6 +102,20 @@ export class ContactService {
     return this.repository.create(validated, actor.userId);
   }
 
+  async createConfirmedDuplicate(
+    input: CreateContactInput,
+    actor: ContactActor,
+    confirmation: ContactConfirmationContext,
+  ): Promise<ConfirmedContactMutationResult> {
+    this.requireActive(actor);
+    if (confirmation.operation !== "create" || confirmation.contactId !== undefined) {
+      throw new ContactPermissionError("Invalid create confirmation binding");
+    }
+    const validated = this.validate(() => validateContactCreate(input));
+    this.requireCreateAssignment(validated, actor);
+    return this.repository.createConfirmed(validated, actor.userId, confirmation);
+  }
+
   async getById(id: string, actor: ContactActor): Promise<Contact> {
     this.requireActive(actor);
     const contact = await this.repository.getById(this.contactId(id));
@@ -148,6 +164,29 @@ export class ContactService {
       if (error instanceof ContactRepositoryNotFoundError) throw new ContactNotFoundError();
       throw error;
     }
+  }
+
+  async updateConfirmedDuplicate(
+    id: string,
+    input: UpdateContactInput,
+    actor: ContactActor,
+    confirmation: ContactConfirmationContext,
+  ): Promise<ConfirmedContactMutationResult> {
+    this.requireActive(actor);
+    const validatedId = this.contactId(id);
+    if (
+      confirmation.operation !== "update" ||
+      confirmation.contactId !== validatedId
+    ) {
+      throw new ContactPermissionError("Invalid update confirmation binding");
+    }
+
+    const current = await this.repository.getById(validatedId);
+    if (!current) throw new ContactNotFoundError();
+    this.requireUpdateAccess(current, actor);
+    const validated = this.validate(() => validateContactUpdate(input, current));
+    this.requireRepresentativeUpdate(current, validated, actor);
+    return this.repository.updateConfirmed(validatedId, validated, confirmation);
   }
 
   async softDelete(id: string, actor: ContactActor): Promise<void> {

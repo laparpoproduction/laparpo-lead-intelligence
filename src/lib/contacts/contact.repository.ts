@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 import { mapContactCreate, mapContactRow, mapContactUpdate } from "./contact.mapper";
 import type { ContactDuplicateInput } from "./contact-normalization";
 import {
@@ -9,6 +10,8 @@ import {
 } from "./contact-normalization";
 import type {
   Contact,
+  ContactConfirmationContext,
+  ConfirmedContactMutationResult,
   ContactDuplicateCandidate,
   ContactListOptions,
   ContactSortField,
@@ -38,10 +41,20 @@ export class ContactRepositoryNotFoundError extends ContactRepositoryError {
 
 export interface ContactRepository {
   create(input: ValidatedCreateContactInput, createdBy: string): Promise<Contact>;
+  createConfirmed(
+    input: ValidatedCreateContactInput,
+    createdBy: string,
+    confirmation: ContactConfirmationContext,
+  ): Promise<ConfirmedContactMutationResult>;
   getById(id: string): Promise<Contact | null>;
   list(options?: ContactListOptions): Promise<PaginatedContacts>;
   search(options: ContactListOptions): Promise<PaginatedContacts>;
   update(id: string, input: UpdateContactInput): Promise<Contact>;
+  updateConfirmed(
+    id: string,
+    input: UpdateContactInput,
+    confirmation: ContactConfirmationContext,
+  ): Promise<ConfirmedContactMutationResult>;
   softDelete(id: string): Promise<void>;
   findDuplicateCandidates(input: ContactDuplicateInput): Promise<ContactDuplicateCandidate[]>;
   listArchived(options?: ContactListOptions): Promise<PaginatedContacts>;
@@ -88,6 +101,19 @@ function toDuplicateCandidate(contact: Contact): ContactDuplicateCandidate {
   };
 }
 
+const confirmedMutationResultSchema = z.object({
+  contact_id: z.uuid(),
+  already_processed: z.boolean(),
+});
+
+function mapConfirmedMutationResult(value: unknown): ConfirmedContactMutationResult {
+  const parsed = confirmedMutationResultSchema.parse(value);
+  return {
+    status: parsed.already_processed ? "already_processed" : "applied",
+    contactId: parsed.contact_id,
+  };
+}
+
 export class SupabaseContactRepository implements ContactRepository {
   constructor(private readonly client: DatabaseClient) {}
 
@@ -100,6 +126,32 @@ export class SupabaseContactRepository implements ContactRepository {
 
     if (error || !data) throw new ContactRepositoryError("create", causeFrom(error));
     return mapContactRow(data);
+  }
+
+  async createConfirmed(
+    input: ValidatedCreateContactInput,
+    createdBy: string,
+    confirmation: ContactConfirmationContext,
+  ): Promise<ConfirmedContactMutationResult> {
+    const { data, error } = await this.client.rpc(
+      "create_confirmed_duplicate_contact",
+      {
+        target_confirmation_id: validateContactId(confirmation.confirmationId),
+        target_submission_hash: confirmation.submissionHash,
+        contact_data: mapContactCreate(input, validateContactId(createdBy)),
+      },
+    );
+    if (error || !data) {
+      throw new ContactRepositoryError("confirmed create", causeFrom(error));
+    }
+    try {
+      return mapConfirmedMutationResult(data);
+    } catch (mappingError) {
+      throw new ContactRepositoryError(
+        "confirmed create response",
+        causeFrom(mappingError),
+      );
+    }
   }
 
   async getById(id: string): Promise<Contact | null> {
@@ -134,6 +186,34 @@ export class SupabaseContactRepository implements ContactRepository {
     if (error) throw new ContactRepositoryError("update", causeFrom(error));
     if (!data) throw new ContactRepositoryNotFoundError("update");
     return mapContactRow(data);
+  }
+
+  async updateConfirmed(
+    id: string,
+    input: UpdateContactInput,
+    confirmation: ContactConfirmationContext,
+  ): Promise<ConfirmedContactMutationResult> {
+    const validatedId = validateContactId(id);
+    const { data, error } = await this.client.rpc(
+      "update_confirmed_duplicate_contact",
+      {
+        target_confirmation_id: validateContactId(confirmation.confirmationId),
+        target_submission_hash: confirmation.submissionHash,
+        target_contact_id: validatedId,
+        contact_updates: mapContactUpdate(input),
+      },
+    );
+    if (error || !data) {
+      throw new ContactRepositoryError("confirmed update", causeFrom(error));
+    }
+    try {
+      return mapConfirmedMutationResult(data);
+    } catch (mappingError) {
+      throw new ContactRepositoryError(
+        "confirmed update response",
+        causeFrom(mappingError),
+      );
+    }
   }
 
   async softDelete(id: string): Promise<void> {

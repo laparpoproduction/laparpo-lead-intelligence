@@ -89,6 +89,72 @@ describe("SupabaseContactRepository", () => {
     });
   });
 
+  it("maps atomic confirmed-create and concurrent replay results", async () => {
+    const input = validateContactCreate({
+      companyId,
+      fullName: contactFixture.fullName,
+      workEmail: contactFixture.workEmail,
+      sourceUrl: contactFixture.sourceUrl,
+      sourceType: contactFixture.sourceType,
+      discoveredAt: contactFixture.discoveredAt,
+    });
+    const confirmation = {
+      confirmationId: "77777777-7777-4777-8777-777777777777",
+      submissionHash: "a".repeat(64),
+      operation: "create" as const,
+    };
+    const { repository, calls } = setup(
+      { data: null, error: null },
+      [
+        { data: { contact_id: contactId, already_processed: false }, error: null },
+        { data: { contact_id: contactId, already_processed: true }, error: null },
+      ],
+    );
+
+    const [first, replay] = await Promise.all([
+      repository.createConfirmed(input, creatorId, confirmation),
+      repository.createConfirmed(input, creatorId, confirmation),
+    ]);
+    expect(first).toEqual({ status: "applied", contactId });
+    expect(replay).toEqual({ status: "already_processed", contactId });
+    expect(
+      calls.filter(
+        (call) => call.method === "rpc" &&
+          call.args[0] === "create_confirmed_duplicate_contact",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("uses the atomic confirmed-update RPC and maps replay state", async () => {
+    const confirmation = {
+      confirmationId: "88888888-8888-4888-8888-888888888888",
+      submissionHash: "b".repeat(64),
+      operation: "update" as const,
+      contactId,
+    };
+    const { repository, calls } = setup(
+      { data: null, error: null },
+      { data: { contact_id: contactId, already_processed: true }, error: null },
+    );
+    await expect(
+      repository.updateConfirmed(
+        contactId,
+        { workEmail: "duplicate@example.my" },
+        confirmation,
+      ),
+    ).resolves.toEqual({ status: "already_processed", contactId });
+    expect(calls).toContainEqual({
+      method: "rpc",
+      args: [
+        "update_confirmed_duplicate_contact",
+        expect.objectContaining({
+          target_contact_id: contactId,
+          contact_updates: { work_email: "duplicate@example.my" },
+        }),
+      ],
+    });
+  });
+
   it("returns null for an inaccessible or missing active Contact", async () => {
     const { repository, calls } = setup({ data: null, error: null });
     await expect(repository.getById(contactId)).resolves.toBeNull();

@@ -160,6 +160,18 @@ export type ContactActor = {
   isActive: boolean;
 };
 
+export type ContactConfirmationContext = {
+  confirmationId: string;
+  submissionHash: string;
+  operation: "create" | "update";
+  contactId?: string;
+};
+
+export type ConfirmedContactMutationResult = {
+  status: "applied" | "already_processed";
+  contactId: string;
+};
+
 export type ContactDuplicateCandidate = Pick<
   Contact,
   | "id"
