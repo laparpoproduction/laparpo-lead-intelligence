@@ -181,7 +181,7 @@ Contacts server actions resolve the authenticated profile and construct the
 `ContactActor` on the server before invoking `ContactService`; form values cannot
 provide role, creator or deletion authority. Create, update and soft-delete map
 validation, permission, duplicate and not-found failures into typed safe states
-and return cache-revalidation/redirect metadata without adding Contact UI routes.
+and return cache-revalidation/redirect metadata consumed by the Contact UI.
 
 Likely duplicates receive a Contact-specific ten-minute HMAC token bound to the
 actor, operation, target Contact for updates, normalized payload hash and a
@@ -190,6 +190,13 @@ unique confirmation UUID. Confirmed create and update use transaction-scoped,
 bindings, a SHA-256 payload hash and the resulting Contact ID; successful retries
 return that original ID and never reapply the mutation. RLS and the existing
 assignment/company rules remain the final mutation boundary.
+
+The protected Contact UI provides `/contacts`, `/contacts/new`,
+`/contacts/[contactId]` and `/contacts/[contactId]/edit`. Its initial active list
+is server-driven and bounded to 25 records. Create and edit share one accessible
+form, duplicate warnings expose candidate IDs only and require explicit signed
+confirmation, and successful or replayed mutations navigate to the original
+Contact result. Archive remains an explicit management-only soft-delete action.
 
 ## Quality checks
 
@@ -223,13 +230,17 @@ isolation and safe company relationships.
     the company, then soft-delete it from the Companies list.
 11. Search and filter Companies, change its sort order, navigate between result
     pages, and confirm that refreshing or sharing the URL restores the same state.
+12. Create and edit a sourced Contact, review an intentional duplicate warning,
+    confirm or revise it, open the details route, and archive as management.
 
 ## Known limitations
 
 - The company details route is a protected placeholder only; timeline, analytics
   and contact workflows are not implemented.
-- Contacts have database, normalization, repository, service and secure server
-  mutation foundations. List/form/detail UI remains out of scope.
+- Contacts listing is intentionally limited to the first 25 active records until
+  the separately scoped search/filter/pagination task.
+- Company and assignee controls use validated UUID inputs. Bounded searchable
+  selectors and profile display names remain deferred to avoid full-table reads.
 - Contact confirmation ledger cleanup/retention automation is not yet scheduled.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
@@ -237,5 +248,5 @@ isolation and safe company relationships.
 
 ## Recommended next sprint
 
-Build the separately scoped Contacts user interface using the existing actions,
-without adding messaging, discovery, AI enrichment or lead workflows.
+Build separately scoped Contacts search, filters and pagination without adding
+messaging, discovery, AI enrichment or Lead workflows.
