@@ -98,3 +98,53 @@ test("returns not found for an unavailable company details route", async ({
   await expect(page.getByRole("link", { name: "Back to Companies" })).toBeVisible();
   await expect(page.getByText("Workspace ready")).toHaveCount(0);
 });
+
+test("opens the bounded Contacts list and empty create path", async ({ page }) => {
+  await page.goto("/contacts");
+
+  await expect(
+    page.getByRole("heading", { name: "Contacts", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("No contacts yet")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Add contact" })).toHaveAttribute(
+    "href",
+    "/contacts/new",
+  );
+  await page.getByRole("link", { name: "Add contact" }).click();
+  await expect(page).toHaveURL("/contacts/new");
+  await expect(page.getByRole("heading", { name: "Add contact" })).toBeVisible();
+});
+
+test("renders the Contacts create workflow on desktop and mobile", async ({
+  page,
+}) => {
+  await page.goto("/contacts/new");
+
+  await expect(page.getByLabel("Full name")).toBeVisible();
+  await expect(page.getByLabel("Work email")).toBeVisible();
+  await expect(page.getByLabel("WhatsApp phone")).toBeVisible();
+  await expect(page.getByLabel("Contact status")).toHaveValue("discovered");
+  await expect(page.getByLabel("Source URL")).toBeVisible();
+  await expect(page.getByLabel("Discovered at")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create contact" })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByLabel("Full name")).toBeVisible();
+  await expect(page.getByLabel("Company ID")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Source provenance" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create contact" })).toBeVisible();
+});
+
+test("returns not found for an inaccessible Contact details route", async ({
+  page,
+}) => {
+  const contactDetailsUrl = "/contacts/22222222-2222-4222-8222-222222222222";
+  await page.goto(contactDetailsUrl);
+
+  await expect(page).toHaveURL(contactDetailsUrl);
+  await expect(page.getByRole("heading", { name: "Contact not found" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to Contacts" })).toBeVisible();
+  await expect(page.getByText("Contact workspace ready")).toHaveCount(0);
+});
