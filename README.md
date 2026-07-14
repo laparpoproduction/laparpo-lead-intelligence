@@ -55,6 +55,7 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `202607110007_contacts_foundation.sql`
    - `202607110008_contacts_duplicate_candidates.sql`
    - `202607110009_contact_mutation_idempotency.sql`
+   - `202607140010_leads_foundation.sql`
 6. Create the first user through Supabase Auth and promote that account to `ceo_admin`.
 7. Start the app:
 
@@ -93,11 +94,17 @@ The migrations provide:
 - `contacts` with optional company ownership, public professional details,
   source provenance, assignment, lifecycle status, soft delete and a non-unique
   duplicate signal
-- `leads` with ownership, score confidence, value, service and follow-up fields
+- `leads` with pre-Opportunity stages, qualification, ownership, provenance,
+  sales context, outcome consistency, soft delete and duplicate signals
 - `lead_signals`, `lead_activities` and `sales_tasks`
 - compatibility tables for `lead_sources` and `opportunities`
 
-Every new company requires a public source URL and discovery timestamp. Every lead remains tied to a matching company source. RLS lets management see the sales workspace while representatives see records they created, own or are assigned.
+Every new company requires a public source URL and discovery timestamp. Leads
+retain direct source type and discovery provenance; public-directory, website and
+social sources require URLs, while referrals, campaigns and signals require their
+corresponding evidence when a URL is unavailable. RLS lets management see the
+sales workspace while representatives see records they created, are assigned, or
+may read through an accessible Company.
 
 ### Duplicate protection
 
@@ -202,6 +209,41 @@ candidate IDs only and require explicit signed confirmation, and successful or
 replayed mutations navigate to the original Contact result. Archive remains an
 explicit management-only soft-delete action.
 
+### Leads database foundation
+
+A Lead is a potential sale before it becomes an Opportunity. Its pipeline stages
+are `new`, `researching`, `ready_to_contact`, `contacted`, `replied`, `qualified`,
+`meeting_scheduled`, `quotation_requested`, `quotation_sent`, `negotiation`,
+`converted`, `lost` and `disqualified`. `converted` means ready for future
+Opportunity creation; deposits, shooting, editing and delivery are deliberately
+excluded. Operational status (`active`, `paused`, `closed`), qualification and
+soft deletion remain separate concepts. Priority is `low`, `normal`, `high` or
+`urgent`; score is nullable and constrained to 0–100, and optional money uses a
+non-negative numeric value with an uppercase three-letter currency defaulting to
+`MYR`.
+
+`company_id` is nullable for legitimate independent inbound or referral prospects.
+Linked Companies use `ON DELETE RESTRICT`; an optional primary Contact must be
+active and have exactly the same Company relationship, while Contact deletion
+only clears that optional link. The legacy `primary_source_id` remains nullable
+for compatibility, while new provenance is stored directly on the Lead. Outcome
+timestamps and reasons are constrained so converted, lost and disqualified states
+cannot overlap.
+
+Lead fingerprints are indexed but non-unique. Title or Company alone never marks
+an exact duplicate. Likely-duplicate evidence combines Company with campaign,
+source, Contact, service or normalized title; explicitly different campaigns are
+not blindly merged. This preserves multiple legitimate needs per Company and a
+future manual override workflow.
+
+Ordinary RLS reads expose active Leads only. Company-derived representative access
+is read-only; representatives need creator or assignee ownership to update and may
+only self-assign an unassigned Lead they created. Management may assign active
+profiles and archive Leads. Archived Leads, including those hidden by an archived
+Company, are available only through `list_archived_leads()`. Hard delete has no
+authenticated policy, and existing Signals, Activities, Tasks and Opportunities
+use restrictive Lead foreign keys to preserve sales history.
+
 ## Quality checks
 
 ```bash
@@ -214,7 +256,8 @@ npm run test:e2e
 
 GitHub Actions applies all migrations to PostgreSQL and runs the general RLS test,
 `supabase/tests/companies_smoke.sql`, `supabase/tests/contacts_smoke.sql` and
-`supabase/tests/contact_actions_smoke.sql`. The
+`supabase/tests/contact_actions_smoke.sql`, plus the Lead legacy migration fixture
+and `supabase/tests/leads_smoke.sql`. The
 Contacts test verifies normalization, provenance, non-unique duplicate signals,
 nullable company relationships, management/representative access, archived-record
 isolation and safe company relationships.
@@ -246,11 +289,14 @@ isolation and safe company relationships.
 - Company and assignee controls use validated UUID inputs. Bounded searchable
   selectors and profile display names remain deferred to avoid full-table reads.
 - Contact confirmation ledger cleanup/retention automation is not yet scheduled.
+- Leads currently have database, normalization, duplicate-safety and RLS
+  foundations only. Repository, service, actions, UI, scoring, Opportunity
+  conversion, quotations, follow-up reminders and activity workflows are not built.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders until lead-management workflows are delivered.
 
 ## Recommended next sprint
 
-Plan the separately scoped Leads CRM foundation without adding messaging,
-discovery, AI enrichment or unrelated Contacts features.
+Build the separately scoped Leads repository and service layer without beginning
+actions, UI, Opportunity conversion, messaging, discovery or AI enrichment.
