@@ -90,18 +90,28 @@ insert into public.lead_sources (
 
 insert into public.leads (
   id,
+  title,
   company_id,
   primary_source_id,
-  owner_id,
+  assigned_to,
+  created_by,
   category,
-  reason_selected
+  reason_selected,
+  source_type,
+  source_url,
+  discovered_at
 ) values (
   '40000000-0000-0000-0000-000000000001',
+  'Sample Food marketing campaign',
   '10000000-0000-0000-0000-000000000001',
   '30000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-0000-0000-000000000001',
   'fnb',
-  'Public website lists a marketing contact'
+  'Public website lists a marketing contact',
+  'company_website',
+  'https://sample-food.test/contact',
+  now()
 );
 
 reset role;
