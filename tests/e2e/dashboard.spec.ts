@@ -131,7 +131,9 @@ test("renders the Contacts create workflow on desktop and mobile", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByLabel("Full name")).toBeVisible();
   await expect(page.getByLabel("Company ID")).toBeVisible();
-  await expect(page.getByText("Source provenance")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Source provenance" }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Create contact" })).toBeVisible();
 });
 
