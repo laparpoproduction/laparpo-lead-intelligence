@@ -12,13 +12,23 @@ import ContactsError from "@/app/(dashboard)/contacts/error";
 import ContactDetailsLoading from "@/app/(dashboard)/contacts/[contactId]/loading";
 import ContactNotFound from "@/app/(dashboard)/contacts/[contactId]/not-found";
 import ContactsLoading from "@/app/(dashboard)/contacts/loading";
-import { contactFixture, contactId, creatorId } from "@/lib/contacts/contact.test-fixtures";
+import { parseContactQueryState } from "@/lib/contacts/contact-query";
+import {
+  assigneeId,
+  companyId,
+  contactFixture,
+  contactId,
+  creatorId,
+} from "@/lib/contacts/contact.test-fixtures";
 import type { ContactActor } from "@/lib/contacts/contact.types";
 import { ContactDeleteDialog } from "./contact-delete-dialog";
 import { ContactDetailsPlaceholder } from "./contact-details-placeholder";
 import { ContactEmptyState } from "./contact-empty-state";
+import { ContactFilteredEmptyState } from "./contact-filtered-empty-state";
 import { ContactForm } from "./contact-form";
 import { ContactList } from "./contact-list";
+import { ContactListToolbar } from "./contact-list-toolbar";
+import { ContactPagination } from "./contact-pagination";
 
 const router = {
   push: vi.fn(),
@@ -66,12 +76,13 @@ afterEach(cleanup);
 
 describe("Contacts UI", () => {
   it("renders a bounded desktop list and mobile cards with details navigation", () => {
+    const query = parseContactQueryState({});
     render(
       <ContactList
         actor={manager}
         contacts={[contactFixture]}
-        pageSize={25}
-        total={1}
+        pagination={{ page: 1, pageSize: 25, total: 1, totalPages: 1 }}
+        query={query}
       />,
     );
 
@@ -82,6 +93,122 @@ describe("Contacts UI", () => {
     const links = screen.getAllByRole("link", { name: `View ${contactFixture.fullName} details` });
     expect(links.length).toBe(2);
     expect(links[0]?.getAttribute("href")).toBe(`/contacts/${contactId}`);
+  });
+
+  it("submits server-driven search and every filter while resetting the page", async () => {
+    const query = parseContactQueryState({
+      companyId,
+      assignedTo: assigneeId,
+      createdBy: creatorId,
+      sortBy: "fullName",
+      sortDirection: "asc",
+      page: "4",
+    });
+    render(<ContactListToolbar query={query} />);
+
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search contacts" }),
+      "Aisyah",
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Contact status" }),
+      "verified",
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Primary contact" }),
+      "false",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    expect(router.push).toHaveBeenCalledWith(
+      `/contacts?q=Aisyah&companyId=${companyId}&assignedTo=${assigneeId}&createdBy=${creatorId}&contactStatus=verified&isPrimaryContact=false&sortBy=fullName&sortDirection=asc`,
+    );
+    expect(
+      screen.getByRole("link", { name: "Clear all filters" }).getAttribute("href"),
+    ).toBe("/contacts?sortBy=fullName&sortDirection=asc");
+  });
+
+  it("renders every filter for mobile layouts and a distinct filtered empty state", () => {
+    const query = parseContactQueryState({
+      q: "No match",
+      contactStatus: "qualified",
+      isPrimaryContact: "true",
+    });
+    const { rerender } = render(<ContactListToolbar query={query} />);
+
+    expect(screen.getByRole("searchbox", { name: "Search contacts" })).toBeDefined();
+    expect(screen.getByRole("combobox", { name: "Contact status" })).toBeDefined();
+    expect(screen.getByRole("combobox", { name: "Primary contact" })).toBeDefined();
+    expect(screen.getByRole("textbox", { name: "Company ID" })).toBeDefined();
+    expect(screen.getByRole("textbox", { name: "Assigned profile ID" })).toBeDefined();
+    expect(screen.getByRole("textbox", { name: "Creator profile ID" })).toBeDefined();
+
+    rerender(<ContactFilteredEmptyState query={query} />);
+    expect(screen.getByText("No matching contacts")).toBeDefined();
+    expect(screen.getByRole("link", { name: "Clear all filters" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "Add contact" }).getAttribute("href")).toBe("/contacts/new");
+  });
+
+  it("preserves query state in deterministic previous and next links", () => {
+    const query = parseContactQueryState({
+      q: "Aisyah",
+      contactStatus: "verified",
+      isPrimaryContact: "true",
+      sortBy: "fullName",
+      sortDirection: "asc",
+      page: "2",
+    });
+    const { rerender } = render(
+      <ContactPagination
+        page={2}
+        pageSize={25}
+        query={query}
+        total={51}
+        totalPages={3}
+      />,
+    );
+
+    expect(screen.getByText("Showing 26–50 of 51")).toBeDefined();
+    expect(
+      screen.getByRole("link", { name: "Previous contacts page" }).getAttribute("href"),
+    ).toBe(
+      "/contacts?q=Aisyah&contactStatus=verified&isPrimaryContact=true&sortBy=fullName&sortDirection=asc",
+    );
+    expect(
+      screen.getByRole("link", { name: "Next contacts page" }).getAttribute("href"),
+    ).toBe(
+      "/contacts?q=Aisyah&contactStatus=verified&isPrimaryContact=true&sortBy=fullName&sortDirection=asc&page=3",
+    );
+
+    rerender(
+      <ContactPagination
+        page={1}
+        pageSize={25}
+        query={{ ...query, page: 1 }}
+        total={25}
+        totalPages={1}
+      />,
+    );
+    expect(
+      screen.getByLabelText("Previous contacts page").getAttribute("aria-disabled"),
+    ).toBe("true");
+    expect(
+      screen.getByLabelText("Next contacts page").getAttribute("aria-disabled"),
+    ).toBe("true");
+
+    rerender(
+      <ContactPagination
+        page={3}
+        pageSize={25}
+        query={{ ...query, page: 3 }}
+        total={51}
+        totalPages={3}
+      />,
+    );
+    expect(screen.getByText("Showing 51–51 of 51")).toBeDefined();
+    expect(
+      screen.getByLabelText("Next contacts page").getAttribute("aria-disabled"),
+    ).toBe("true");
   });
 
   it("renders the database-empty and list loading states", () => {
@@ -204,7 +331,14 @@ describe("Contacts UI", () => {
     expect(screen.getByText(/Assignment is locked/)).toBeDefined();
 
     cleanup();
-    render(<ContactList actor={{ ...representative, userId: "55555555-5555-4555-8555-555555555555" }} contacts={[contactFixture]} pageSize={25} total={1} />);
+    render(
+      <ContactList
+        actor={{ ...representative, userId: "55555555-5555-4555-8555-555555555555" }}
+        contacts={[contactFixture]}
+        pagination={{ page: 1, pageSize: 25, total: 1, totalPages: 1 }}
+        query={parseContactQueryState({})}
+      />,
+    );
     expect(screen.getAllByText("Read only").length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
   });

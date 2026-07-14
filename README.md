@@ -192,11 +192,15 @@ return that original ID and never reapply the mutation. RLS and the existing
 assignment/company rules remain the final mutation boundary.
 
 The protected Contact UI provides `/contacts`, `/contacts/new`,
-`/contacts/[contactId]` and `/contacts/[contactId]/edit`. Its initial active list
-is server-driven and bounded to 25 records. Create and edit share one accessible
-form, duplicate warnings expose candidate IDs only and require explicit signed
-confirmation, and successful or replayed mutations navigate to the original
-Contact result. Archive remains an explicit management-only soft-delete action.
+`/contacts/[contactId]` and `/contacts/[contactId]/edit`. The active list uses
+canonical URL state and bounded 25-record server pages. Search covers names,
+public emails, phones, WhatsApp and LinkedIn; filters cover status, Company,
+assignee, creator and primary-contact state. Safe sorting supports name, job
+title, department, status and Contact timestamps, with deterministic `id`
+tiebreaking. Create and edit share one accessible form, duplicate warnings expose
+candidate IDs only and require explicit signed confirmation, and successful or
+replayed mutations navigate to the original Contact result. Archive remains an
+explicit management-only soft-delete action.
 
 ## Quality checks
 
@@ -232,13 +236,13 @@ isolation and safe company relationships.
     pages, and confirm that refreshing or sharing the URL restores the same state.
 12. Create and edit a sourced Contact, review an intentional duplicate warning,
     confirm or revise it, open the details route, and archive as management.
+13. Search and filter Contacts, change sorting, navigate pages, refresh the page
+    and confirm the canonical URL restores the same result state.
 
 ## Known limitations
 
 - The company details route is a protected placeholder only; timeline, analytics
   and contact workflows are not implemented.
-- Contacts listing is intentionally limited to the first 25 active records until
-  the separately scoped search/filter/pagination task.
 - Company and assignee controls use validated UUID inputs. Bounded searchable
   selectors and profile display names remain deferred to avoid full-table reads.
 - Contact confirmation ledger cleanup/retention automation is not yet scheduled.
@@ -248,5 +252,5 @@ isolation and safe company relationships.
 
 ## Recommended next sprint
 
-Build separately scoped Contacts search, filters and pagination without adding
-messaging, discovery, AI enrichment or Lead workflows.
+Plan the separately scoped Leads CRM foundation without adding messaging,
+discovery, AI enrichment or unrelated Contacts features.

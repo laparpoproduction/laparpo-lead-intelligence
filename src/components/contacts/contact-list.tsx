@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { ContactDeleteDialog } from "./contact-delete-dialog";
+import { ContactPagination } from "./contact-pagination";
+import type { ContactQueryState } from "@/lib/contacts/contact-query";
 import { canArchiveContact, canEditContact, contactDisplayName } from "@/lib/contacts/contact-ui";
-import type { Contact, ContactActor, ContactStatus } from "@/lib/contacts/contact.types";
+import type {
+  Contact,
+  ContactActor,
+  ContactStatus,
+  PaginatedContacts,
+} from "@/lib/contacts/contact.types";
 
 const statusLabels: Record<ContactStatus, string> = {
   discovered: "Discovered",
@@ -70,20 +77,25 @@ function CompanyIndicator({ contact }: { contact: Contact }) {
 export function ContactList({
   contacts,
   actor,
-  pageSize,
-  total,
+  pagination,
+  query,
 }: {
   contacts: Contact[];
   actor: ContactActor;
-  pageSize: number;
-  total: number;
+  pagination: Pick<
+    PaginatedContacts,
+    "page" | "pageSize" | "total" | "totalPages"
+  >;
+  query: ContactQueryState;
 }) {
   return (
     <section
       aria-label="Contacts list"
       className="space-y-3"
-      data-page-size={pageSize}
-      data-total={total}
+      data-page={pagination.page}
+      data-page-size={pagination.pageSize}
+      data-total={pagination.total}
+      data-total-pages={pagination.totalPages}
     >
       <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="hidden overflow-x-auto md:block">
@@ -161,9 +173,7 @@ export function ContactList({
           })}
         </ul>
       </div>
-      <p className="text-xs text-zinc-500">
-        Showing {contacts.length} of {total} active contact{total === 1 ? "" : "s"}. Search and pagination controls are scheduled separately.
-      </p>
+      <ContactPagination {...pagination} query={query} />
     </section>
   );
 }
