@@ -1,13 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { contactFixture, creatorId } from "@/lib/contacts/contact.test-fixtures";
+import {
+  assigneeId,
+  companyId,
+  contactFixture,
+  creatorId,
+} from "@/lib/contacts/contact.test-fixtures";
 import { CONTACTS_DEFAULT_PAGE_SIZE } from "@/lib/contacts/contact.validation";
 
 const mocks = vi.hoisted(() => ({
+  redirect: vi.fn(),
   requireDashboardUser: vi.fn(),
-  serviceList: vi.fn(),
+  serviceSearch: vi.fn(),
   createContactMutationContext: vi.fn(),
 }));
 
+vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/auth/session", () => ({
   requireDashboardUser: mocks.requireDashboardUser,
 }));
@@ -25,6 +32,9 @@ const actor = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.redirect.mockImplementation((href: string) => {
+    throw new Error(`redirect:${href}`);
+  });
   mocks.requireDashboardUser.mockResolvedValue({
     id: creatorId,
     fullName: "Sales Manager",
@@ -34,9 +44,9 @@ beforeEach(() => {
   });
   mocks.createContactMutationContext.mockResolvedValue({
     actor,
-    service: { list: mocks.serviceList },
+    service: { search: mocks.serviceSearch },
   });
-  mocks.serviceList.mockResolvedValue({
+  mocks.serviceSearch.mockResolvedValue({
     items: [contactFixture],
     page: 1,
     pageSize: CONTACTS_DEFAULT_PAGE_SIZE,
@@ -46,18 +56,77 @@ beforeEach(() => {
 });
 
 describe("Contacts list page", () => {
-  it("loads only the deterministic bounded first page through ContactService", async () => {
-    await ContactsPage();
+  it("passes search, every filter, sorting and pagination to ContactService", async () => {
+    mocks.serviceSearch.mockResolvedValueOnce({
+      items: [contactFixture],
+      page: 2,
+      pageSize: 25,
+      total: 40,
+      totalPages: 2,
+    });
+    await ContactsPage({
+      searchParams: Promise.resolve({
+        q: "Aisyah",
+        companyId,
+        assignedTo: assigneeId,
+        createdBy: creatorId,
+        contactStatus: "verified",
+        isPrimaryContact: "false",
+        sortBy: "fullName",
+        sortDirection: "asc",
+        page: "2",
+      }),
+    });
 
-    expect(mocks.serviceList).toHaveBeenCalledWith(
+    expect(mocks.serviceSearch).toHaveBeenCalledWith(
       {
-        page: 1,
+        query: "Aisyah",
+        companyId,
+        assignedTo: assigneeId,
+        createdBy: creatorId,
+        contactStatus: "verified",
+        isPrimaryContact: false,
+        page: 2,
         pageSize: 25,
-        sortBy: "createdAt",
-        sortDirection: "desc",
+        sortBy: "fullName",
+        sortDirection: "asc",
       },
       actor,
     );
+  });
+
+  it("normalizes a page beyond the final result page", async () => {
+    mocks.serviceSearch.mockResolvedValueOnce({
+      items: [],
+      page: 9,
+      pageSize: 25,
+      total: 40,
+      totalPages: 2,
+    });
+
+    await expect(
+      ContactsPage({
+        searchParams: Promise.resolve({ q: "Aisyah", page: "9" }),
+      }),
+    ).rejects.toThrow("redirect:/contacts?q=Aisyah&page=2");
+  });
+
+  it("canonicalizes invalid parameters before querying the service", async () => {
+    await expect(
+      ContactsPage({
+        searchParams: Promise.resolve({
+          q: " ",
+          companyId: "invalid",
+          contactStatus: "unknown",
+          isPrimaryContact: "maybe",
+          sortBy: "unsafe",
+          sortDirection: "sideways",
+          page: "0",
+        }),
+      }),
+    ).rejects.toThrow("redirect:/contacts");
+
+    expect(mocks.serviceSearch).not.toHaveBeenCalled();
   });
 
   it("uses the empty preview without creating a Supabase read context", async () => {
@@ -69,7 +138,7 @@ describe("Contacts list page", () => {
       demoMode: true,
     });
 
-    const page = await ContactsPage();
+    const page = await ContactsPage({ searchParams: Promise.resolve({}) });
     expect(page).toBeDefined();
     expect(mocks.createContactMutationContext).not.toHaveBeenCalled();
   });

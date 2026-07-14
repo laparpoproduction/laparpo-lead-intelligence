@@ -105,6 +105,8 @@ test("opens the bounded Contacts list and empty create path", async ({ page }) =
   await expect(
     page.getByRole("heading", { name: "Contacts", exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "Search contacts" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Apply filters" })).toBeVisible();
   await expect(page.getByText("No contacts yet")).toBeVisible();
   await expect(page.getByRole("link", { name: "Add contact" })).toHaveAttribute(
     "href",
@@ -113,6 +115,57 @@ test("opens the bounded Contacts list and empty create path", async ({ page }) =
   await page.getByRole("link", { name: "Add contact" }).click();
   await expect(page).toHaveURL("/contacts/new");
   await expect(page.getByRole("heading", { name: "Add contact" })).toBeVisible();
+});
+
+test("drives Contacts search, filters and sorting through canonical URL state", async ({
+  page,
+}) => {
+  const companyId = "11111111-1111-4111-8111-111111111111";
+  await page.goto("/contacts");
+
+  await page.getByRole("searchbox", { name: "Search contacts" }).fill("Aisyah");
+  await page.getByRole("combobox", { name: "Contact status" }).selectOption("verified");
+  await page.getByRole("combobox", { name: "Primary contact" }).selectOption("true");
+  await page.getByRole("textbox", { name: "Company ID" }).fill(companyId);
+  await page.getByRole("combobox", { name: "Sort by" }).selectOption("fullName");
+  await page.getByRole("combobox", { name: "Direction" }).selectOption("asc");
+  await page.getByRole("button", { name: "Apply filters" }).click();
+
+  await expect(page).toHaveURL(
+    `/contacts?q=Aisyah&companyId=${companyId}&contactStatus=verified&isPrimaryContact=true&sortBy=fullName&sortDirection=asc`,
+  );
+  await expect(page.getByText("No matching contacts")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole("searchbox", { name: "Search contacts" })).toHaveValue("Aisyah");
+  await expect(page.getByRole("combobox", { name: "Contact status" })).toHaveValue("verified");
+  await expect(page.getByRole("combobox", { name: "Primary contact" })).toHaveValue("true");
+
+  await page.getByRole("link", { name: "Clear all filters" }).first().click();
+  await expect(page).toHaveURL(
+    "/contacts?sortBy=fullName&sortDirection=asc",
+  );
+  await expect(page.getByText("No contacts yet")).toBeVisible();
+});
+
+test("normalizes invalid Contacts queries and keeps mobile filters usable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(
+    "/contacts?q=%20&companyId=invalid&contactStatus=unknown&isPrimaryContact=maybe&sortBy=workEmail&sortDirection=sideways&page=-2",
+  );
+
+  await expect(page).toHaveURL("/contacts");
+  await expect(page.getByRole("searchbox", { name: "Search contacts" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Contact status" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Primary contact" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Company ID" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Assigned profile ID" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Creator profile ID" })).toBeVisible();
+
+  await page.goto("/contacts?page=999");
+  await expect(page).toHaveURL("/contacts");
 });
 
 test("renders the Contacts create workflow on desktop and mobile", async ({
