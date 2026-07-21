@@ -46,6 +46,11 @@ grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 
+-- Generic fixture grants must not undo the production ledger boundary added by
+-- migration 011.
+revoke insert, update, delete, truncate, references, trigger
+  on public.lead_mutation_confirmations from authenticated;
+
 -- A representative-created Company provides Company-derived, read-only access.
 set role authenticated;
 select set_config('request.jwt.claim.sub', '71000000-0000-4000-8000-000000000005', false);

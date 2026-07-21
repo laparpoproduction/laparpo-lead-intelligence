@@ -62,8 +62,8 @@ beforeEach(() => {
   service = {
     create: vi.fn().mockResolvedValue({ id: "11111111-1111-4111-8111-111111111111" }),
     update: vi.fn().mockResolvedValue({ id: "11111111-1111-4111-8111-111111111111" }),
-    createConfirmedDuplicate: vi.fn().mockResolvedValue({ leadId: "11111111-1111-4111-8111-111111111111" }),
-    updateConfirmedDuplicate: vi.fn().mockResolvedValue({ leadId: "11111111-1111-4111-8111-111111111111" }),
+    createConfirmedDuplicate: vi.fn().mockResolvedValue({ status: "applied", leadId: "11111111-1111-4111-8111-111111111111" }),
+    updateConfirmedDuplicate: vi.fn().mockResolvedValue({ status: "applied", leadId: "11111111-1111-4111-8111-111111111111" }),
     softDelete: vi.fn().mockResolvedValue(undefined),
     restore: vi.fn().mockResolvedValue(undefined),
   };
@@ -133,6 +133,25 @@ describe("Leads server actions", () => {
     const confirmed = await createLeadAction(initialLeadFormState, confirmedForm);
     expect(confirmed.status).toBe("success");
     expect(service.createConfirmedDuplicate).toHaveBeenCalled();
+  });
+
+  it("returns an idempotent state for a replayed confirmed mutation", async () => {
+    vi.mocked(service.createConfirmedDuplicate).mockResolvedValueOnce({
+      status: "already_processed",
+      leadId: "11111111-1111-4111-8111-111111111111",
+    });
+    const form = createForm();
+    form.set("confirmationToken", "token");
+    vi.mocked(verifyLeadConfirmationToken).mockReturnValueOnce({
+      confirmationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      submissionHash: "a".repeat(64),
+      actorId: actor.userId,
+      operation: "create",
+    });
+    await expect(createLeadAction(initialLeadFormState, form)).resolves.toMatchObject({
+      status: "already_processed",
+      leadId: "11111111-1111-4111-8111-111111111111",
+    });
   });
 
   it("returns permission and not-found states for archive and restore", async () => {

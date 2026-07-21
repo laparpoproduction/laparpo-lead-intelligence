@@ -6,6 +6,7 @@ export const leadFormStatuses = [
   "not_found",
   "error",
   "success",
+  "already_processed",
 ] as const;
 
 export type LeadFormStatus = (typeof leadFormStatuses)[number];

@@ -57,6 +57,7 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `202607110008_contacts_duplicate_candidates.sql`
    - `202607110009_contact_mutation_idempotency.sql`
    - `202607140010_leads_foundation.sql`
+   - `202607140011_lead_mutation_idempotency.sql`
 6. Create the first user through Supabase Auth and promote that account to `ceo_admin`.
 7. Start the app:
 
@@ -246,6 +247,20 @@ Company, are available only through `list_archived_leads()`. Hard delete has no
 authenticated policy, and existing Signals, Activities, Tasks and Opportunities
 use restrictive Lead foreign keys to preserve sales history.
 
+### Leads server actions
+
+Lead create, update, archive and restore mutations resolve the authenticated actor
+on the server and call `LeadService`; client input never supplies role, ownership or
+archive fields. Likely duplicates return candidate IDs and a short-lived HMAC token
+bound to actor, operation, target Lead and the canonical normalized payload.
+
+Confirmed duplicate mutations use `create_confirmed_duplicate_lead` and
+`update_confirmed_duplicate_lead`. These SECURITY INVOKER RPCs keep Lead writes
+RLS-bound while locked-down trigger helpers atomically claim and finalize a
+persistent confirmation ledger in the same transaction. Replays return the
+original Lead ID, failed mutations roll back their claim, and no form payload is
+stored in the ledger.
+
 ## Quality checks
 
 ```bash
@@ -259,8 +274,10 @@ npm run test:e2e
 GitHub Actions applies all migrations to PostgreSQL and runs the general RLS test,
 `supabase/tests/companies_smoke.sql`, `supabase/tests/contacts_smoke.sql` and
 `supabase/tests/contact_actions_smoke.sql`, plus the Lead legacy migration fixture
-and `supabase/tests/leads_smoke.sql`. The
-Contacts test verifies normalization, provenance, non-unique duplicate signals,
+and `supabase/tests/leads_smoke.sql`. The workflow also runs
+`supabase/tests/lead_actions_smoke.sql` for atomic confirmation, replay, ledger
+isolation and failed-mutation rollback. The Contacts test verifies normalization,
+provenance, non-unique duplicate signals,
 nullable company relationships, management/representative access, archived-record
 isolation and safe company relationships.
 
@@ -291,14 +308,14 @@ isolation and safe company relationships.
 - Company and assignee controls use validated UUID inputs. Bounded searchable
   selectors and profile display names remain deferred to avoid full-table reads.
 - Contact confirmation ledger cleanup/retention automation is not yet scheduled.
-- Leads currently have database, normalization, duplicate-safety and RLS
-  foundations only. Repository, service, actions, UI, scoring, Opportunity
-  conversion, quotations, follow-up reminders and activity workflows are not built.
+- Leads now have database, repository/service and server-action foundations.
+  Leads UI, scoring, Opportunity conversion, quotations, follow-up reminders and
+  activity workflows are not built.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders until lead-management workflows are delivered.
 
 ## Recommended next sprint
 
-Build the separately scoped Leads repository and service layer without beginning
-actions, UI, Opportunity conversion, messaging, discovery or AI enrichment.
+Build the separately scoped Leads user interface without beginning Opportunity
+conversion, messaging, discovery or AI enrichment.

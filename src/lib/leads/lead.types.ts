@@ -259,6 +259,11 @@ export type LeadConfirmationContext = {
   leadId?: string;
 };
 
+export type ConfirmedLeadMutationResult = {
+  status: "applied" | "already_processed";
+  leadId: string;
+};
+
 export type LeadDuplicateCandidate = Pick<
   Lead,
   | "id"

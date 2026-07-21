@@ -60,8 +60,10 @@ const leadFixture = {
 function repositoryMock(overrides: Record<string, unknown> = {}) {
   return {
     create: vi.fn().mockResolvedValue(leadFixture),
+    createConfirmed: vi.fn().mockResolvedValue({ status: "applied", leadId: leadFixture.id }),
     getById: vi.fn().mockResolvedValue(leadFixture),
     update: vi.fn().mockResolvedValue(leadFixture),
+    updateConfirmed: vi.fn().mockResolvedValue({ status: "applied", leadId: leadFixture.id }),
     softDelete: vi.fn().mockResolvedValue(undefined),
     restore: vi.fn().mockResolvedValue(undefined),
     list: vi.fn().mockResolvedValue({ items: [leadFixture], page: 1, pageSize: 25, total: 1, totalPages: 1 }),
@@ -130,10 +132,14 @@ describe("LeadService", () => {
     await expect(service.list({}, { ...representative, isActive: false })).rejects.toBeInstanceOf(LeadPermissionError);
   });
 
-  it("consumes confirmed create and update confirmations only once", async () => {
+  it("delegates confirmed create and update to mandatory atomic repository operations", async () => {
     const repository = repositoryMock({
-      getConfirmationResult: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce("11111111-1111-4111-8111-111111111111"),
-      recordConfirmationResult: vi.fn().mockResolvedValue(undefined),
+      createConfirmed: vi.fn()
+        .mockResolvedValueOnce({ status: "applied", leadId: leadFixture.id })
+        .mockResolvedValueOnce({ status: "already_processed", leadId: leadFixture.id }),
+      updateConfirmed: vi.fn()
+        .mockResolvedValueOnce({ status: "applied", leadId: leadFixture.id })
+        .mockResolvedValueOnce({ status: "already_processed", leadId: leadFixture.id }),
     });
     const service = new LeadService(repository as never);
     const confirmation: LeadConfirmationContext = {
@@ -143,8 +149,9 @@ describe("LeadService", () => {
       operation: "create",
     };
 
-    await expect(service.createConfirmedDuplicate({ title: "Lead", sourceType: "company_website", discoveredAt: "2026-06-01T00:00:00.000Z" }, representative, confirmation)).resolves.toEqual({ leadId: leadFixture.id });
-    await expect(service.createConfirmedDuplicate({ title: "Lead", sourceType: "company_website", discoveredAt: "2026-06-01T00:00:00.000Z" }, representative, confirmation)).resolves.toEqual({ leadId: leadFixture.id });
+    const createInput = { title: "Lead", sourceType: "manual" as const, discoveredAt: "2026-06-01T00:00:00.000Z" };
+    await expect(service.createConfirmedDuplicate(createInput, representative, confirmation)).resolves.toEqual({ status: "applied", leadId: leadFixture.id });
+    await expect(service.createConfirmedDuplicate(createInput, representative, confirmation)).resolves.toEqual({ status: "already_processed", leadId: leadFixture.id });
 
     const updateConfirmation: LeadConfirmationContext = {
       confirmationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -153,6 +160,103 @@ describe("LeadService", () => {
       operation: "update",
       leadId: leadFixture.id,
     };
-    await expect(service.updateConfirmedDuplicate(leadFixture.id, { title: "Updated" }, representative, updateConfirmation)).resolves.toEqual({ leadId: leadFixture.id });
+    await expect(service.updateConfirmedDuplicate(leadFixture.id, { title: "Updated" }, representative, updateConfirmation)).resolves.toEqual({ status: "applied", leadId: leadFixture.id });
+    await expect(service.updateConfirmedDuplicate(leadFixture.id, { title: "Updated" }, representative, updateConfirmation)).resolves.toEqual({ status: "already_processed", leadId: leadFixture.id });
+    expect(repository.create).not.toHaveBeenCalled();
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it("does not rerun duplicate rejection after a valid confirmation", async () => {
+    const repository = repositoryMock({
+      findDuplicateCandidates: vi.fn().mockResolvedValue([leadFixture]),
+    });
+    const service = new LeadService(repository as never);
+    await expect(service.createConfirmedDuplicate(
+      { title: "KFC Ramadan", sourceType: "company_website", sourceUrl: "https://example.my/lead", discoveredAt: "2026-06-01T00:00:00.000Z" },
+      representative,
+      {
+        confirmationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        submissionHash: "a".repeat(64),
+        actorId: representative.userId,
+        operation: "create",
+      },
+    )).resolves.toMatchObject({ status: "applied", leadId: leadFixture.id });
+    expect(repository.findDuplicateCandidates).not.toHaveBeenCalled();
+  });
+
+  it("rejects confirmations bound to another actor, operation, or target lead", async () => {
+    const repository = repositoryMock();
+    const service = new LeadService(repository as never);
+    const createInput = { title: "Lead", sourceType: "manual" as const, discoveredAt: "2026-06-01T00:00:00.000Z" };
+    await expect(service.createConfirmedDuplicate(createInput, representative, {
+      confirmationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      submissionHash: "a".repeat(64),
+      actorId: manager.userId,
+      operation: "create",
+    })).rejects.toBeInstanceOf(LeadPermissionError);
+    await expect(service.createConfirmedDuplicate(createInput, representative, {
+      confirmationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      submissionHash: "a".repeat(64),
+      actorId: representative.userId,
+      operation: "update",
+      leadId: leadFixture.id,
+    })).rejects.toBeInstanceOf(LeadPermissionError);
+    await expect(service.updateConfirmedDuplicate(leadFixture.id, { title: "Updated" }, representative, {
+      confirmationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      submissionHash: "b".repeat(64),
+      actorId: representative.userId,
+      operation: "update",
+      leadId: "22222222-2222-4222-8222-222222222222",
+    })).rejects.toBeInstanceOf(LeadPermissionError);
+    expect(repository.createConfirmed).not.toHaveBeenCalled();
+    expect(repository.updateConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("keeps representative, management, and inactive authorization on confirmed mutations", async () => {
+    const otherLead = { ...leadFixture, createdBy: manager.userId, assignedTo: manager.userId };
+    const repository = repositoryMock({ getById: vi.fn().mockResolvedValue(otherLead) });
+    const service = new LeadService(repository as never);
+    const updateConfirmation: LeadConfirmationContext = {
+      confirmationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      submissionHash: "b".repeat(64),
+      actorId: representative.userId,
+      operation: "update",
+      leadId: leadFixture.id,
+    };
+    await expect(service.updateConfirmedDuplicate(leadFixture.id, { title: "Updated" }, representative, updateConfirmation)).rejects.toBeInstanceOf(LeadPermissionError);
+    await expect(service.updateConfirmedDuplicate(leadFixture.id, { assignedTo: representative.userId }, manager, {
+      ...updateConfirmation,
+      actorId: manager.userId,
+    })).resolves.toMatchObject({ status: "applied" });
+    await expect(service.createConfirmedDuplicate(
+      { title: "Lead", sourceType: "manual", discoveredAt: "2026-06-01T00:00:00.000Z" },
+      { ...representative, isActive: false },
+      { ...updateConfirmation, operation: "create", leadId: undefined },
+    )).rejects.toBeInstanceOf(LeadPermissionError);
+  });
+
+  it("relies on one atomic repository call for simultaneous confirmed requests", async () => {
+    const repository = repositoryMock({
+      createConfirmed: vi.fn()
+        .mockResolvedValueOnce({ status: "applied", leadId: leadFixture.id })
+        .mockResolvedValueOnce({ status: "already_processed", leadId: leadFixture.id }),
+    });
+    const service = new LeadService(repository as never);
+    const confirmation: LeadConfirmationContext = {
+      confirmationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      submissionHash: "a".repeat(64),
+      actorId: representative.userId,
+      operation: "create",
+    };
+    const input = { title: "Lead", sourceType: "manual" as const, discoveredAt: "2026-06-01T00:00:00.000Z" };
+    const results = await Promise.all([
+      service.createConfirmedDuplicate(input, representative, confirmation),
+      service.createConfirmedDuplicate(input, representative, confirmation),
+    ]);
+    expect(results).toEqual([
+      { status: "applied", leadId: leadFixture.id },
+      { status: "already_processed", leadId: leadFixture.id },
+    ]);
+    expect(repository.createConfirmed).toHaveBeenCalledTimes(2);
   });
 });

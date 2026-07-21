@@ -128,12 +128,20 @@ export async function createLeadAction(_state: LeadFormState, formData: FormData
     if (parsed.confirmationToken) {
       const verified = verifyLeadConfirmationToken(parsed.confirmationToken, binding);
       if (!verified) return invalidConfirmationState();
-      const result = await service.createConfirmedDuplicate?.(parsed.input, actor, {
+      const result = await service.createConfirmedDuplicate(parsed.input, actor, {
         ...verified,
         operation: "create",
       });
-      if (!result) return unexpectedErrorState("create", new Error("confirmation flow unavailable"), actor.userId);
       leadId = result.leadId;
+      revalidatePath("/leads");
+      return {
+        status: result.status === "already_processed" ? "already_processed" : "success",
+        message: result.status === "already_processed"
+          ? "This confirmed lead was already created."
+          : "Lead created successfully.",
+        leadId,
+        redirectTo: `/leads/${leadId}`,
+      };
     } else {
       leadId = (await service.create(parsed.input, actor)).id;
     }
@@ -174,13 +182,21 @@ export async function updateLeadAction(_state: LeadFormState, formData: FormData
     if (parsed.confirmationToken) {
       const verified = verifyLeadConfirmationToken(parsed.confirmationToken, binding);
       if (!verified) return invalidConfirmationState();
-      const result = await service.updateConfirmedDuplicate?.(parsed.leadId, parsed.input, actor, {
+      const result = await service.updateConfirmedDuplicate(parsed.leadId, parsed.input, actor, {
         ...verified,
         operation: "update",
         leadId: parsed.leadId,
       });
-      if (!result) return unexpectedErrorState("update", new Error("confirmation flow unavailable"), actor.userId);
       leadId = result.leadId;
+      revalidatePath("/leads");
+      revalidatePath(`/leads/${leadId}`);
+      return {
+        status: result.status === "already_processed" ? "already_processed" : "success",
+        message: result.status === "already_processed"
+          ? "This confirmed lead update was already applied."
+          : "Lead updated successfully.",
+        leadId,
+      };
     } else {
       leadId = (await service.update(parsed.leadId, parsed.input, actor)).id;
     }
