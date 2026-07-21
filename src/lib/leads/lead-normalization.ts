@@ -15,6 +15,10 @@ export function normalizeLeadText(value: string | null | undefined): string | nu
   return normalized || null;
 }
 
+export function normalizeLeadName(value: string | null | undefined): string | null {
+  return normalizeLeadText(value);
+}
+
 export function normalizeLeadKey(value: string | null | undefined): string | null {
   const normalized = normalizeLeadText(value)
     ?.toLocaleLowerCase("en")
