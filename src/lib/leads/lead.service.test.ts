@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { LeadRepositoryNotFoundError } from "./lead.repository";
 import { LeadDuplicateError, LeadNotFoundError, LeadPermissionError, LeadService } from "./lead.service";
-import type { LeadActor } from "./lead.types";
+import type { LeadActor, LeadConfirmationContext } from "./lead.types";
 
 const representative: LeadActor = {
   userId: "44444444-4444-4444-8444-444444444444",
@@ -128,5 +128,31 @@ describe("LeadService", () => {
   it("rejects inactive users", async () => {
     const service = new LeadService(repositoryMock() as never);
     await expect(service.list({}, { ...representative, isActive: false })).rejects.toBeInstanceOf(LeadPermissionError);
+  });
+
+  it("consumes confirmed create and update confirmations only once", async () => {
+    const repository = repositoryMock({
+      getConfirmationResult: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce("11111111-1111-4111-8111-111111111111"),
+      recordConfirmationResult: vi.fn().mockResolvedValue(undefined),
+    });
+    const service = new LeadService(repository as never);
+    const confirmation: LeadConfirmationContext = {
+      confirmationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      submissionHash: "a".repeat(64),
+      actorId: representative.userId,
+      operation: "create",
+    };
+
+    await expect(service.createConfirmedDuplicate({ title: "Lead", sourceType: "company_website", discoveredAt: "2026-06-01T00:00:00.000Z" }, representative, confirmation)).resolves.toEqual({ leadId: leadFixture.id });
+    await expect(service.createConfirmedDuplicate({ title: "Lead", sourceType: "company_website", discoveredAt: "2026-06-01T00:00:00.000Z" }, representative, confirmation)).resolves.toEqual({ leadId: leadFixture.id });
+
+    const updateConfirmation: LeadConfirmationContext = {
+      confirmationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      submissionHash: "b".repeat(64),
+      actorId: representative.userId,
+      operation: "update",
+      leadId: leadFixture.id,
+    };
+    await expect(service.updateConfirmedDuplicate(leadFixture.id, { title: "Updated" }, representative, updateConfirmation)).resolves.toEqual({ leadId: leadFixture.id });
   });
 });

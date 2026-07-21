@@ -11,6 +11,7 @@ describe("production server environment", () => {
         nodeEnv: "production",
         companyDuplicateConfirmationSecret: "too-short",
         contactDuplicateConfirmationSecret: "too-short",
+        leadDuplicateConfirmationSecret: "too-short",
       }),
     ).toThrow();
   });
@@ -23,6 +24,8 @@ describe("production server environment", () => {
           "production-company-confirmation-secret-32",
         contactDuplicateConfirmationSecret:
           "production-contact-confirmation-secret-32",
+        leadDuplicateConfirmationSecret:
+          "production-lead-confirmation-secret-32",
       }),
     ).not.toThrow();
   });
@@ -33,6 +36,8 @@ describe("production server environment", () => {
         nodeEnv: "production",
         companyDuplicateConfirmationSecret:
           "production-company-confirmation-secret-32",
+        leadDuplicateConfirmationSecret:
+          "production-lead-confirmation-secret-32",
       }),
     ).toThrow();
     expect(() =>
@@ -40,6 +45,8 @@ describe("production server environment", () => {
         nodeEnv: "production",
         contactDuplicateConfirmationSecret:
           "production-contact-confirmation-secret-32",
+        leadDuplicateConfirmationSecret:
+          "production-lead-confirmation-secret-32",
       }),
     ).toThrow();
   });

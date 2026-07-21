@@ -45,6 +45,7 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `COMPANY_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
    - `CONTACT_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
+   - `LEAD_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
 5. Apply migrations in filename order:
    - `202607110001_sprint_1_core_schema.sql`
    - `202607110002_align_foundation_schema.sql`
@@ -75,12 +76,13 @@ The dashboard shows a labelled setup preview when Supabase variables are absent.
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser and server | Yes for auth | Supabase publishable or legacy anon key |
 | `COMPANY_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for company mutations | Signs short-lived duplicate confirmation tokens; use at least 32 random characters |
 | `CONTACT_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for contact mutations | Signs namespaced, short-lived Contact confirmation tokens; use at least 32 random characters |
+| `LEAD_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for lead mutations | Signs namespaced, short-lived lead confirmation tokens; use at least 32 random characters |
 | `OPENAI_API_KEY` | Server only | No | Reserved for a later AI sprint |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
 Production builds fail during Next.js configuration when
-either duplicate-confirmation secret is missing or shorter than 32 characters.
+any duplicate-confirmation secret is missing or shorter than 32 characters.
 Tests and local development may omit them until duplicate confirmation is exercised;
 production-like local builds must provide an explicit test-only value.
 

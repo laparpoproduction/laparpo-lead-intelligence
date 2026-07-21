@@ -3,6 +3,7 @@ import { mapLeadCreate, mapLeadRow, mapLeadUpdate } from "./lead.mapper";
 import { buildLeadFingerprint } from "./lead-normalization";
 import type {
   Lead,
+  LeadConfirmationContext,
   LeadDuplicateCandidate,
   LeadListOptions,
   LeadSortField,
@@ -42,6 +43,8 @@ export interface LeadRepository {
   findDuplicateCandidates(input: { title: string; companyId?: string | null; primaryContactId?: string | null; serviceInterest?: string | null; sourceUrl?: string | null; sourceCampaign?: string | null; sourceSignalId?: string | null }): Promise<LeadDuplicateCandidate[]>;
   canAccess(id: string): Promise<boolean>;
   canModify(id: string): Promise<boolean>;
+  getConfirmationResult?(confirmation: LeadConfirmationContext, actorId: string): Promise<string | null>;
+  recordConfirmationResult?(confirmation: LeadConfirmationContext, actorId: string, leadId: string): Promise<void>;
 }
 
 type DatabaseClient = Pick<SupabaseClient, "from" | "rpc">;
@@ -59,6 +62,11 @@ const sortColumns: Record<LeadSortField, string> = {
 };
 
 const duplicateCandidatePageSize = 100;
+const confirmationResults = new Map<string, string>();
+
+function confirmationKey(confirmation: LeadConfirmationContext, actorId: string): string {
+  return `${actorId}:${confirmation.operation}:${confirmation.leadId ?? "create"}:${confirmation.confirmationId}`;
+}
 
 function quotePostgrestValue(value: string): string {
   const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -244,6 +252,14 @@ export class SupabaseLeadRepository implements LeadRepository {
     });
     if (error) throw new LeadRepositoryError("permission check", causeFrom(error));
     return data === true;
+  }
+
+  async getConfirmationResult(confirmation: LeadConfirmationContext, actorId: string): Promise<string | null> {
+    return confirmationResults.get(confirmationKey(confirmation, actorId)) ?? null;
+  }
+
+  async recordConfirmationResult(confirmation: LeadConfirmationContext, actorId: string, leadId: string): Promise<void> {
+    confirmationResults.set(confirmationKey(confirmation, actorId), leadId);
   }
 
   private async listFrom(
