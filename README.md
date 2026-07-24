@@ -45,6 +45,7 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `COMPANY_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
    - `CONTACT_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
+   - `LEAD_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
 5. Apply migrations in filename order:
    - `202607110001_sprint_1_core_schema.sql`
    - `202607110002_align_foundation_schema.sql`
@@ -56,6 +57,7 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `202607110008_contacts_duplicate_candidates.sql`
    - `202607110009_contact_mutation_idempotency.sql`
    - `202607140010_leads_foundation.sql`
+   - `202607140011_lead_mutation_idempotency.sql`
 6. Create the first user through Supabase Auth and promote that account to `ceo_admin`.
 7. Start the app:
 
@@ -75,12 +77,13 @@ The dashboard shows a labelled setup preview when Supabase variables are absent.
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser and server | Yes for auth | Supabase publishable or legacy anon key |
 | `COMPANY_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for company mutations | Signs short-lived duplicate confirmation tokens; use at least 32 random characters |
 | `CONTACT_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for contact mutations | Signs namespaced, short-lived Contact confirmation tokens; use at least 32 random characters |
+| `LEAD_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for lead mutations | Signs namespaced, short-lived lead confirmation tokens; use at least 32 random characters |
 | `OPENAI_API_KEY` | Server only | No | Reserved for a later AI sprint |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
 Production builds fail during Next.js configuration when
-either duplicate-confirmation secret is missing or shorter than 32 characters.
+any duplicate-confirmation secret is missing or shorter than 32 characters.
 Tests and local development may omit them until duplicate confirmation is exercised;
 production-like local builds must provide an explicit test-only value.
 
@@ -244,6 +247,20 @@ Company, are available only through `list_archived_leads()`. Hard delete has no
 authenticated policy, and existing Signals, Activities, Tasks and Opportunities
 use restrictive Lead foreign keys to preserve sales history.
 
+### Leads server actions
+
+Lead create, update, archive and restore mutations resolve the authenticated actor
+on the server and call `LeadService`; client input never supplies role, ownership or
+archive fields. Likely duplicates return candidate IDs and a short-lived HMAC token
+bound to actor, operation, target Lead and the canonical normalized payload.
+
+Confirmed duplicate mutations use `create_confirmed_duplicate_lead` and
+`update_confirmed_duplicate_lead`. These SECURITY INVOKER RPCs keep Lead writes
+RLS-bound while locked-down trigger helpers atomically claim and finalize a
+persistent confirmation ledger in the same transaction. Replays return the
+original Lead ID, failed mutations roll back their claim, and no form payload is
+stored in the ledger.
+
 ## Quality checks
 
 ```bash
@@ -257,8 +274,10 @@ npm run test:e2e
 GitHub Actions applies all migrations to PostgreSQL and runs the general RLS test,
 `supabase/tests/companies_smoke.sql`, `supabase/tests/contacts_smoke.sql` and
 `supabase/tests/contact_actions_smoke.sql`, plus the Lead legacy migration fixture
-and `supabase/tests/leads_smoke.sql`. The
-Contacts test verifies normalization, provenance, non-unique duplicate signals,
+and `supabase/tests/leads_smoke.sql`. The workflow also runs
+`supabase/tests/lead_actions_smoke.sql` for atomic confirmation, replay, ledger
+isolation and failed-mutation rollback. The Contacts test verifies normalization,
+provenance, non-unique duplicate signals,
 nullable company relationships, management/representative access, archived-record
 isolation and safe company relationships.
 
@@ -289,14 +308,14 @@ isolation and safe company relationships.
 - Company and assignee controls use validated UUID inputs. Bounded searchable
   selectors and profile display names remain deferred to avoid full-table reads.
 - Contact confirmation ledger cleanup/retention automation is not yet scheduled.
-- Leads currently have database, normalization, duplicate-safety and RLS
-  foundations only. Repository, service, actions, UI, scoring, Opportunity
-  conversion, quotations, follow-up reminders and activity workflows are not built.
+- Leads now have database, repository/service and server-action foundations.
+  Leads UI, scoring, Opportunity conversion, quotations, follow-up reminders and
+  activity workflows are not built.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders until lead-management workflows are delivered.
 
 ## Recommended next sprint
 
-Build the separately scoped Leads repository and service layer without beginning
-actions, UI, Opportunity conversion, messaging, discovery or AI enrichment.
+Build the separately scoped Leads user interface without beginning Opportunity
+conversion, messaging, discovery or AI enrichment.

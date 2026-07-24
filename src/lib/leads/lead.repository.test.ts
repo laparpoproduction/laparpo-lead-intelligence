@@ -118,6 +118,81 @@ describe("SupabaseLeadRepository", () => {
     });
   });
 
+  it("uses mandatory atomic RPCs for confirmed create and update", async () => {
+    const createConfirmation = {
+      confirmationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      submissionHash: "a".repeat(64),
+      actorId: "44444444-4444-4444-8444-444444444444",
+      operation: "create" as const,
+    };
+    const created = setup(
+      { data: null, error: null },
+      { data: { lead_id: leadRowFixture.id, already_processed: false }, error: null },
+    );
+    await expect(
+      created.repository.createConfirmed(
+        validateLeadCreate({
+          title: "KFC Ramadan",
+          sourceType: "company_website",
+          sourceUrl: "https://example.my/lead",
+          discoveredAt: "2026-06-01T00:00:00.000Z",
+        }),
+        createConfirmation.actorId,
+        createConfirmation,
+      ),
+    ).resolves.toEqual({ status: "applied", leadId: leadRowFixture.id });
+    expect(created.calls).toContainEqual({
+      method: "rpc",
+      args: ["create_confirmed_duplicate_lead", expect.objectContaining({
+        target_confirmation_id: createConfirmation.confirmationId,
+        target_submission_hash: createConfirmation.submissionHash,
+      })],
+    });
+
+    const updateConfirmation = {
+      ...createConfirmation,
+      confirmationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      operation: "update" as const,
+      leadId: leadRowFixture.id,
+    };
+    const replayed = setup(
+      { data: null, error: null },
+      { data: { lead_id: leadRowFixture.id, already_processed: true }, error: null },
+    );
+    await expect(
+      replayed.repository.updateConfirmed(
+        leadRowFixture.id,
+        { title: "Updated" },
+        updateConfirmation,
+      ),
+    ).resolves.toEqual({ status: "already_processed", leadId: leadRowFixture.id });
+    expect(replayed.calls).toContainEqual({
+      method: "rpc",
+      args: ["update_confirmed_duplicate_lead", expect.objectContaining({
+        target_lead_id: leadRowFixture.id,
+      })],
+    });
+  });
+
+  it("rejects malformed atomic confirmation responses", async () => {
+    const { repository } = setup(
+      { data: null, error: null },
+      { data: { lead_id: "not-a-uuid", already_processed: false }, error: null },
+    );
+    await expect(
+      repository.createConfirmed(
+        validateLeadCreate({ title: "Lead", sourceType: "manual", discoveredAt: "2026-06-01T00:00:00.000Z" }),
+        "44444444-4444-4444-8444-444444444444",
+        {
+          confirmationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          submissionHash: "a".repeat(64),
+          actorId: "44444444-4444-4444-8444-444444444444",
+          operation: "create",
+        },
+      ),
+    ).rejects.toThrow("confirmed create response");
+  });
+
   it("gets an active lead by id", async () => {
     const { repository, calls } = setup({ data: leadRowFixture, error: null });
     await expect(repository.getById("11111111-1111-4111-8111-111111111111")).resolves.toMatchObject({

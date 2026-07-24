@@ -251,6 +251,19 @@ export type LeadActor = {
   isActive: boolean;
 };
 
+export type LeadConfirmationContext = {
+  confirmationId: string;
+  submissionHash: string;
+  actorId: string;
+  operation: "create" | "update";
+  leadId?: string;
+};
+
+export type ConfirmedLeadMutationResult = {
+  status: "applied" | "already_processed";
+  leadId: string;
+};
+
 export type LeadDuplicateCandidate = Pick<
   Lead,
   | "id"

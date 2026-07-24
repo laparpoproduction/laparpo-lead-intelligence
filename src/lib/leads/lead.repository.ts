@@ -1,8 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 import { mapLeadCreate, mapLeadRow, mapLeadUpdate } from "./lead.mapper";
 import { buildLeadFingerprint } from "./lead-normalization";
 import type {
   Lead,
+  LeadConfirmationContext,
+  ConfirmedLeadMutationResult,
   LeadDuplicateCandidate,
   LeadListOptions,
   LeadSortField,
@@ -29,10 +32,20 @@ export class LeadRepositoryNotFoundError extends LeadRepositoryError {
 
 export interface LeadRepository {
   create(input: ValidatedCreateLeadInput, createdBy: string): Promise<Lead>;
+  createConfirmed(
+    input: ValidatedCreateLeadInput,
+    createdBy: string,
+    confirmation: LeadConfirmationContext,
+  ): Promise<ConfirmedLeadMutationResult>;
   getById(id: string, includeDeleted?: boolean): Promise<Lead | null>;
   list(options?: LeadListOptions): Promise<PaginatedLeads>;
   search(options: LeadListOptions): Promise<PaginatedLeads>;
   update(id: string, input: UpdateLeadInput): Promise<Lead>;
+  updateConfirmed(
+    id: string,
+    input: UpdateLeadInput,
+    confirmation: LeadConfirmationContext,
+  ): Promise<ConfirmedLeadMutationResult>;
   softDelete(id: string): Promise<void>;
   restore(id: string): Promise<void>;
   listArchived(options?: LeadListOptions): Promise<PaginatedLeads>;
@@ -59,6 +72,19 @@ const sortColumns: Record<LeadSortField, string> = {
 };
 
 const duplicateCandidatePageSize = 100;
+
+const confirmedMutationResultSchema = z.object({
+  lead_id: z.uuid(),
+  already_processed: z.boolean(),
+});
+
+function mapConfirmedMutationResult(value: unknown): ConfirmedLeadMutationResult {
+  const parsed = confirmedMutationResultSchema.parse(value);
+  return {
+    status: parsed.already_processed ? "already_processed" : "applied",
+    leadId: parsed.lead_id,
+  };
+}
 
 function quotePostgrestValue(value: string): string {
   const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -97,6 +123,32 @@ export class SupabaseLeadRepository implements LeadRepository {
     return mapLeadRow(data as unknown as Parameters<typeof mapLeadRow>[0]);
   }
 
+  async createConfirmed(
+    input: ValidatedCreateLeadInput,
+    createdBy: string,
+    confirmation: LeadConfirmationContext,
+  ): Promise<ConfirmedLeadMutationResult> {
+    const { data, error } = await this.client.rpc(
+      "create_confirmed_duplicate_lead",
+      {
+        target_confirmation_id: validateLeadId(confirmation.confirmationId),
+        target_submission_hash: confirmation.submissionHash,
+        lead_data: mapLeadCreate(input, validateLeadId(createdBy)),
+      },
+    );
+    if (error || !data) {
+      throw new LeadRepositoryError("confirmed create", causeFrom(error));
+    }
+    try {
+      return mapConfirmedMutationResult(data);
+    } catch (mappingError) {
+      throw new LeadRepositoryError(
+        "confirmed create response",
+        causeFrom(mappingError),
+      );
+    }
+  }
+
   async getById(id: string, includeDeleted = false): Promise<Lead | null> {
     let query = this.client.from("leads").select("*").eq("id", validateLeadId(id));
     if (!includeDeleted) query = query.is("deleted_at", null);
@@ -126,6 +178,34 @@ export class SupabaseLeadRepository implements LeadRepository {
     if (error) throw new LeadRepositoryError("update", causeFrom(error));
     if (!data) throw new LeadRepositoryNotFoundError("update");
     return mapLeadRow(data as unknown as Parameters<typeof mapLeadRow>[0]);
+  }
+
+  async updateConfirmed(
+    id: string,
+    input: UpdateLeadInput,
+    confirmation: LeadConfirmationContext,
+  ): Promise<ConfirmedLeadMutationResult> {
+    const validatedId = validateLeadId(id);
+    const { data, error } = await this.client.rpc(
+      "update_confirmed_duplicate_lead",
+      {
+        target_confirmation_id: validateLeadId(confirmation.confirmationId),
+        target_submission_hash: confirmation.submissionHash,
+        target_lead_id: validatedId,
+        lead_updates: mapLeadUpdate(input),
+      },
+    );
+    if (error || !data) {
+      throw new LeadRepositoryError("confirmed update", causeFrom(error));
+    }
+    try {
+      return mapConfirmedMutationResult(data);
+    } catch (mappingError) {
+      throw new LeadRepositoryError(
+        "confirmed update response",
+        causeFrom(mappingError),
+      );
+    }
   }
 
   async softDelete(id: string): Promise<void> {

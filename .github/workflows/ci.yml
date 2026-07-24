@@ -26,6 +26,7 @@ jobs:
     env:
       COMPANY_DUPLICATE_CONFIRMATION_SECRET: ci-only-company-confirmation-secret-2026
       CONTACT_DUPLICATE_CONFIRMATION_SECRET: ci-only-contact-confirmation-secret-2026
+      LEAD_DUPLICATE_CONFIRMATION_SECRET: ci-only-lead-confirmation-secret-2026
       PGHOST: 127.0.0.1
       PGPORT: 5432
       PGUSER: postgres
@@ -54,11 +55,13 @@ jobs:
           psql -f supabase/migrations/202607110009_contact_mutation_idempotency.sql
           psql -f supabase/tests/leads_legacy_fixture.sql
           psql -f supabase/migrations/202607140010_leads_foundation.sql
+          psql -f supabase/migrations/202607140011_lead_mutation_idempotency.sql
           psql -f supabase/tests/rls_smoke.sql
           psql -f supabase/tests/companies_smoke.sql
           psql -f supabase/tests/contacts_smoke.sql
           psql -f supabase/tests/contact_actions_smoke.sql
           psql -f supabase/tests/leads_smoke.sql
+          psql -f supabase/tests/lead_actions_smoke.sql
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

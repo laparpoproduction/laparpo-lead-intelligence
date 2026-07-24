@@ -4,6 +4,8 @@ import { LeadRepositoryNotFoundError, type LeadRepository } from "./lead.reposit
 import type {
   Lead,
   LeadActor,
+  LeadConfirmationContext,
+  ConfirmedLeadMutationResult,
   LeadListOptions,
   PaginatedLeads,
   UpdateLeadInput,
@@ -83,6 +85,25 @@ export class LeadService {
     return this.repository.create(validated, actor.userId);
   }
 
+  async createConfirmedDuplicate(
+    input: CreateLeadInput,
+    actor: LeadActor,
+    confirmation: LeadConfirmationContext,
+  ): Promise<ConfirmedLeadMutationResult> {
+    this.requireActive(actor);
+    if (
+      confirmation.actorId !== actor.userId ||
+      confirmation.operation !== "create" ||
+      confirmation.leadId !== undefined
+    ) {
+      throw new LeadPermissionError("Invalid create confirmation binding");
+    }
+
+    const validated = this.validate(() => validateLeadCreate(input));
+    this.requireCreateAssignment(validated, actor);
+    return this.repository.createConfirmed(validated, actor.userId, confirmation);
+  }
+
   async getById(id: string, actor: LeadActor): Promise<Lead> {
     this.requireActive(actor);
     const validatedId = this.leadId(id);
@@ -133,6 +154,31 @@ export class LeadService {
       if (error instanceof LeadRepositoryNotFoundError) throw new LeadNotFoundError();
       throw error;
     }
+  }
+
+  async updateConfirmedDuplicate(
+    id: string,
+    input: UpdateLeadInput,
+    actor: LeadActor,
+    confirmation: LeadConfirmationContext,
+  ): Promise<ConfirmedLeadMutationResult> {
+    this.requireActive(actor);
+    const validatedId = this.leadId(id);
+    if (
+      confirmation.actorId !== actor.userId ||
+      confirmation.operation !== "update" ||
+      confirmation.leadId !== validatedId
+    ) {
+      throw new LeadPermissionError("Invalid update confirmation binding");
+    }
+
+    const current = await this.repository.getById(validatedId);
+    if (!current) throw new LeadNotFoundError();
+    this.requireUpdateAccess(current, actor);
+
+    const validated = this.validate(() => validateLeadUpdate(input));
+    this.requireRepresentativeMutation(current, validated, actor);
+    return this.repository.updateConfirmed(validatedId, validated, confirmation);
   }
 
   async softDelete(id: string, actor: LeadActor): Promise<void> {

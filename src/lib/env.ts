@@ -9,6 +9,7 @@ const serverEnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1).optional(),
   COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   CONTACT_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
+  LEAD_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
@@ -18,12 +19,14 @@ export type ServerEnv = z.infer<typeof serverEnvSchema>;
 const productionCompanyMutationEnvSchema = z.object({
   COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32),
   CONTACT_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32),
+  LEAD_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32),
 });
 
 export function validateProductionServerEnvironment(input: {
   nodeEnv?: string;
   companyDuplicateConfirmationSecret?: string;
   contactDuplicateConfirmationSecret?: string;
+  leadDuplicateConfirmationSecret?: string;
 }): void {
   if (input.nodeEnv !== "production") return;
   productionCompanyMutationEnvSchema.parse({
@@ -31,6 +34,8 @@ export function validateProductionServerEnvironment(input: {
       input.companyDuplicateConfirmationSecret || undefined,
     CONTACT_DUPLICATE_CONFIRMATION_SECRET:
       input.contactDuplicateConfirmationSecret || undefined,
+    LEAD_DUPLICATE_CONFIRMATION_SECRET:
+      input.leadDuplicateConfirmationSecret || undefined,
   });
 }
 
@@ -41,6 +46,8 @@ export function assertProductionServerEnvironment(): void {
       process.env.COMPANY_DUPLICATE_CONFIRMATION_SECRET,
     contactDuplicateConfirmationSecret:
       process.env.CONTACT_DUPLICATE_CONFIRMATION_SECRET,
+    leadDuplicateConfirmationSecret:
+      process.env.LEAD_DUPLICATE_CONFIRMATION_SECRET,
   });
 }
 
@@ -66,6 +73,8 @@ export function getServerEnv(): ServerEnv {
       process.env.COMPANY_DUPLICATE_CONFIRMATION_SECRET || undefined,
     CONTACT_DUPLICATE_CONFIRMATION_SECRET:
       process.env.CONTACT_DUPLICATE_CONFIRMATION_SECRET || undefined,
+    LEAD_DUPLICATE_CONFIRMATION_SECRET:
+      process.env.LEAD_DUPLICATE_CONFIRMATION_SECRET || undefined,
     LOG_LEVEL: process.env.LOG_LEVEL,
   });
   validateProductionServerEnvironment({
@@ -74,6 +83,8 @@ export function getServerEnv(): ServerEnv {
       env.COMPANY_DUPLICATE_CONFIRMATION_SECRET,
     contactDuplicateConfirmationSecret:
       env.CONTACT_DUPLICATE_CONFIRMATION_SECRET,
+    leadDuplicateConfirmationSecret:
+      env.LEAD_DUPLICATE_CONFIRMATION_SECRET,
   });
   return env;
 }
