@@ -117,7 +117,7 @@ export class LeadActivityService {
   async softDelete(
     id: string,
     actor: LeadActivityActor,
-  ): Promise<void> {
+  ): Promise<LeadActivity> {
     this.requireActive(actor);
     const validatedId = this.activityId(id);
     const current = await this.repository.getById(validatedId);
@@ -126,6 +126,7 @@ export class LeadActivityService {
     this.requireActivityOwnership(current, actor);
     try {
       await this.repository.softDelete(validatedId);
+      return current;
     } catch (error) {
       if (error instanceof LeadActivityRepositoryNotFoundError) {
         throw new LeadActivityNotFoundError();
@@ -134,7 +135,10 @@ export class LeadActivityService {
     }
   }
 
-  async restore(id: string, actor: LeadActivityActor): Promise<void> {
+  async restore(
+    id: string,
+    actor: LeadActivityActor,
+  ): Promise<LeadActivity> {
     this.requireActive(actor);
     if (!isManagement(actor)) {
       throw new LeadActivityPermissionError(
@@ -147,6 +151,7 @@ export class LeadActivityService {
     await this.requireLeadModify(activity.leadId);
     try {
       await this.repository.restore(validatedId);
+      return activity;
     } catch (error) {
       if (error instanceof LeadActivityRepositoryNotFoundError) {
         throw new LeadActivityNotFoundError();
