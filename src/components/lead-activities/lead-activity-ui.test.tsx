@@ -128,6 +128,68 @@ describe("Lead Activity timeline UI", () => {
     ).toContain("long public URL");
   });
 
+  it("renders upcoming follow-up state for an active Activity", () => {
+    renderTimeline({
+      result: {
+        ...result,
+        items: [
+          {
+            ...activity,
+            nextFollowUpAt: "2026-07-25T08:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(screen.getByText("Upcoming follow-up")).toBeDefined();
+    expect(screen.queryByText("Follow-up date")).toBeNull();
+  });
+
+  it("renders an archived past follow-up as neutral historical metadata", () => {
+    renderTimeline({
+      archived: true,
+      result: {
+        ...result,
+        items: [
+          {
+            ...activity,
+            deletedAt: "2026-07-25T08:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(screen.queryByText("Overdue follow-up")).toBeNull();
+    expect(screen.queryByText("Upcoming follow-up")).toBeNull();
+    expect(screen.getByText("Follow-up date")).toBeDefined();
+    expect(
+      screen.getByText("Follow-up date").nextElementSibling?.querySelector("time")
+        ?.dateTime,
+    ).toBe(activity.nextFollowUpAt);
+  });
+
+  it("renders an archived future follow-up as neutral historical metadata", () => {
+    const futureFollowUp = "2026-07-25T08:00:00.000Z";
+    renderTimeline({
+      archived: true,
+      result: {
+        ...result,
+        items: [
+          {
+            ...activity,
+            nextFollowUpAt: futureFollowUp,
+            deletedAt: "2026-07-25T09:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(screen.queryByText("Overdue follow-up")).toBeNull();
+    expect(screen.queryByText("Upcoming follow-up")).toBeNull();
+    expect(screen.getByText("Follow-up date")).toBeDefined();
+    expect(
+      screen.getByText("Follow-up date").nextElementSibling?.querySelector("time")
+        ?.dateTime,
+    ).toBe(futureFollowUp);
+  });
+
   it("preserves the deterministic server order and renders pagination", () => {
     const newer = { ...activity, id: "55555555-5555-4555-8555-555555555555", subject: "Newest" };
     const older = { ...activity, id: "66666666-6666-4666-8666-666666666666", subject: "Older" };
@@ -206,6 +268,50 @@ describe("Lead Activity timeline UI", () => {
     expect(await screen.findByText("Subject is invalid")).toBeDefined();
     expect(subject).toHaveProperty("value", "Keep this value");
     expect(document.activeElement).toBe(subject);
+  });
+
+  it("associates Activity type and description validation errors accessibly", async () => {
+    vi.mocked(createLeadActivityAction).mockResolvedValueOnce({
+      status: "validation_error",
+      message: "Check the highlighted activity fields.",
+      fieldErrors: {
+        activityType: ["Activity type is invalid"],
+        description: ["Description is too long"],
+      },
+    });
+    renderTimeline();
+    await userEvent.click(screen.getByRole("button", { name: "Add Activity" }));
+    const dialog = screen.getByRole("dialog", { name: "Add Activity" });
+    const activityType = within(dialog).getByRole("combobox", {
+      name: "Activity type",
+    });
+    const description = within(dialog).getByRole("textbox", {
+      name: "Description",
+    });
+
+    expect(activityType.getAttribute("aria-invalid")).toBe("false");
+    expect(description.getAttribute("aria-invalid")).toBe("false");
+    expect(activityType.hasAttribute("aria-describedby")).toBe(false);
+    expect(description.hasAttribute("aria-describedby")).toBe(false);
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Add activity" }),
+    );
+
+    const activityTypeError = await screen.findByText(
+      "Activity type is invalid",
+    );
+    const descriptionError = screen.getByText("Description is too long");
+    expect(activityType.getAttribute("aria-invalid")).toBe("true");
+    expect(description.getAttribute("aria-invalid")).toBe("true");
+    expect(activityType.getAttribute("aria-describedby")).toBe(
+      activityTypeError.id,
+    );
+    expect(description.getAttribute("aria-describedby")).toBe(
+      descriptionError.id,
+    );
+    expect(activityTypeError.id).not.toBe(descriptionError.id);
+    expect(document.activeElement).toBe(activityType);
   });
 
   it("disables create submission while processing to prevent double submit", async () => {

@@ -105,7 +105,9 @@ function ActivityCard({
   defaultActivityAt: string;
   nowIso: string;
 }) {
-  const followUp = followUpState(activity.nextFollowUpAt, nowIso);
+  const followUp = archived
+    ? null
+    : followUpState(activity.nextFollowUpAt, nowIso);
   const canModify = canModifyLeadActivity(activity, actor, canModifyLead);
   const subject =
     activity.subject ?? humanizeActivityType(activity.activityType);
@@ -155,17 +157,25 @@ function ActivityCard({
           {activity.nextFollowUpAt ? (
             <div
               className={`rounded-xl border p-3 ${
-                followUp === "overdue"
+                archived
+                  ? "border-zinc-200 bg-zinc-50"
+                  : followUp === "overdue"
                   ? "border-red-200 bg-red-50"
                   : "border-amber-200 bg-amber-50"
               }`}
             >
               <dt
                 className={`text-xs font-black uppercase tracking-[0.08em] ${
-                  followUp === "overdue" ? "text-red-700" : "text-amber-700"
+                  archived
+                    ? "text-zinc-500"
+                    : followUp === "overdue"
+                      ? "text-red-700"
+                      : "text-amber-700"
                 }`}
               >
-                {followUp === "overdue"
+                {archived
+                  ? "Follow-up date"
+                  : followUp === "overdue"
                   ? "Overdue follow-up"
                   : "Upcoming follow-up"}
               </dt>

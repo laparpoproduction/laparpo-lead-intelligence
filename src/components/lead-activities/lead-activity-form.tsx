@@ -287,6 +287,11 @@ export function LeadActivityForm({
                 </span>
               </label>
               <select
+                aria-describedby={
+                  invalid("activityType")
+                    ? `${fieldId("activityType")}-error`
+                    : undefined
+                }
                 aria-invalid={invalid("activityType")}
                 className={inputClass}
                 id={fieldId("activityType")}
@@ -335,6 +340,11 @@ export function LeadActivityForm({
                 Description
               </label>
               <textarea
+                aria-describedby={
+                  invalid("description")
+                    ? `${fieldId("description")}-error`
+                    : undefined
+                }
                 aria-invalid={invalid("description")}
                 className={`${inputClass} min-h-28 py-3`}
                 id={fieldId("description")}
@@ -378,6 +388,12 @@ export function LeadActivityForm({
                   <p className="text-sm font-bold text-zinc-800">Assignment</p>
                   <label className="mt-2 flex min-h-11 items-center gap-3 rounded-xl border border-zinc-200 px-3.5 text-sm text-zinc-700">
                     <input
+                      aria-describedby={
+                        invalid("assignedTo")
+                          ? `${fieldId("assignedTo")}-error`
+                          : undefined
+                      }
+                      aria-invalid={invalid("assignedTo")}
                       className="size-4 accent-[#e5222a]"
                       checked={values.assignedTo === actor.userId}
                       name="assignedTo"
