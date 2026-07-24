@@ -122,17 +122,16 @@ export class SupabaseLeadActivityRepository
   }
 
   async softDelete(id: string): Promise<void> {
-    const { data, error } = await this.client
-      .from("lead_activities")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", validateLeadActivityId(id))
-      .is("deleted_at", null)
-      .select("id")
-      .maybeSingle();
+    const validatedId = validateLeadActivityId(id);
+    const { data, error } = await this.client.rpc("archive_lead_activity", {
+      target_activity_id: validatedId,
+    });
     if (error) {
       throw new LeadActivityRepositoryError("soft delete", causeFrom(error));
     }
-    if (!data) throw new LeadActivityRepositoryNotFoundError("soft delete");
+    if (data !== validatedId) {
+      throw new LeadActivityRepositoryNotFoundError("soft delete");
+    }
   }
 
   async restore(id: string): Promise<void> {

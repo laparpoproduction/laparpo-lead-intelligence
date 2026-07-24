@@ -141,11 +141,15 @@ describe("SupabaseLeadActivityRepository", () => {
     ).resolves.toMatchObject({ outcome: "Qualified" });
     expect(update.calls.some((call) => call.method === "update")).toBe(true);
 
-    const remove = setup({ data: { id: row.id }, error: null });
-    await expect(remove.repository.softDelete(row.id)).resolves.toBeUndefined();
-    expect(remove.calls.find((call) => call.method === "update")?.args[0]).toEqual(
-      expect.objectContaining({ deleted_at: expect.any(String) }),
+    const remove = setup(
+      { data: null, error: null },
+      { data: row.id, error: null },
     );
+    await expect(remove.repository.softDelete(row.id)).resolves.toBeUndefined();
+    expect(remove.calls).toContainEqual({
+      method: "rpc",
+      args: ["archive_lead_activity", { target_activity_id: row.id }],
+    });
 
     const restore = setup(
       { data: null, error: null },
@@ -172,7 +176,10 @@ describe("SupabaseLeadActivityRepository", () => {
   });
 
   it("reports zero-row mutations as not found", async () => {
-    const { repository } = setup({ data: null, error: null });
+    const { repository } = setup(
+      { data: null, error: null },
+      { data: null, error: null },
+    );
     await expect(
       repository.update(row.id, { subject: "Missing" }),
     ).rejects.toBeInstanceOf(LeadActivityRepositoryNotFoundError);

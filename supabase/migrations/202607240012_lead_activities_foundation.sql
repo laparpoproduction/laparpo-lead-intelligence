@@ -174,10 +174,43 @@ begin
 end;
 $$;
 
+create or replace function public.archive_lead_activity(
+  target_activity_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  archived_id uuid;
+begin
+  if not public.is_active_user() then
+    raise exception 'Active authenticated access is required' using errcode = '42501';
+  end if;
+
+  update public.lead_activities as activity
+  set deleted_at = now()
+  where activity.id = target_activity_id
+    and activity.deleted_at is null
+    and public.can_modify_lead(activity.lead_id)
+    and (
+      public.is_sales_management()
+      or activity.created_by = auth.uid()
+      or activity.assigned_to = auth.uid()
+    )
+  returning activity.id into archived_id;
+
+  return archived_id;
+end;
+$$;
+
 revoke all on function public.list_archived_lead_activities() from public;
 revoke all on function public.restore_lead_activity(uuid) from public;
+revoke all on function public.archive_lead_activity(uuid) from public;
 grant execute on function public.list_archived_lead_activities() to authenticated;
 grant execute on function public.restore_lead_activity(uuid) to authenticated;
+grant execute on function public.archive_lead_activity(uuid) to authenticated;
 
 drop policy if exists "users read permitted lead activities" on public.lead_activities;
 drop policy if exists "users create permitted lead activities" on public.lead_activities;
@@ -245,5 +278,7 @@ comment on function public.list_archived_lead_activities() is
   'Explicit management-only access to archived activities and activities hidden by archived Leads or Companies.';
 comment on function public.restore_lead_activity(uuid) is
   'Management-only restore path for activity rows intentionally hidden by ordinary SELECT RLS.';
+comment on function public.archive_lead_activity(uuid) is
+  'Owner-or-management soft-delete transition for activity rows that become hidden by ordinary SELECT RLS.';
 
 commit;

@@ -155,9 +155,9 @@ select set_config('request.jwt.claim.sub', '71000000-0000-4000-8000-000000000003
 update public.lead_activities
 set outcome = '  Proposal sent  '
 where id = '75000000-0000-4000-8000-000000000001';
-update public.lead_activities
-set deleted_at = now()
-where id = '75000000-0000-4000-8000-000000000001';
+select public.archive_lead_activity(
+  '75000000-0000-4000-8000-000000000001'
+);
 
 do $$
 begin
