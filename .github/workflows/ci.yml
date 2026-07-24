@@ -57,6 +57,7 @@ jobs:
           psql -f supabase/migrations/202607140010_leads_foundation.sql
           psql -f supabase/migrations/202607140011_lead_mutation_idempotency.sql
           psql -f supabase/migrations/202607240012_lead_activities_foundation.sql
+          psql -f supabase/migrations/202607240013_lead_activity_opportunity_integrity.sql
           psql -f supabase/tests/rls_smoke.sql
           psql -f supabase/tests/companies_smoke.sql
           psql -f supabase/tests/contacts_smoke.sql
