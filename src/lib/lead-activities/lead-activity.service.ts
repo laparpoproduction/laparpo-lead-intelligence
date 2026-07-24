@@ -175,6 +175,25 @@ export class LeadActivityService {
     );
   }
 
+  async listArchivedByLead(
+    leadId: string,
+    options: LeadActivityListOptions,
+    actor: LeadActivityActor,
+  ): Promise<PaginatedLeadActivities> {
+    this.requireActive(actor);
+    if (!isManagement(actor)) {
+      throw new LeadActivityPermissionError(
+        "Only management can access archived Lead activities",
+      );
+    }
+    const validatedLeadId = this.activityId(leadId);
+    await this.requireLeadAccess(validatedLeadId);
+    return this.repository.listArchivedByLead(
+      validatedLeadId,
+      this.validate(() => validateLeadActivityListOptions(options)),
+    );
+  }
+
   private requireActive(actor: LeadActivityActor): void {
     try {
       validateLeadActivityId(actor.userId);
