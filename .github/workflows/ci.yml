@@ -56,12 +56,15 @@ jobs:
           psql -f supabase/tests/leads_legacy_fixture.sql
           psql -f supabase/migrations/202607140010_leads_foundation.sql
           psql -f supabase/migrations/202607140011_lead_mutation_idempotency.sql
+          psql -f supabase/migrations/202607240012_lead_activities_foundation.sql
+          psql -f supabase/migrations/202607240013_lead_activity_opportunity_integrity.sql
           psql -f supabase/tests/rls_smoke.sql
           psql -f supabase/tests/companies_smoke.sql
           psql -f supabase/tests/contacts_smoke.sql
           psql -f supabase/tests/contact_actions_smoke.sql
           psql -f supabase/tests/leads_smoke.sql
           psql -f supabase/tests/lead_actions_smoke.sql
+          psql -f supabase/tests/lead_activities_smoke.sql
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
