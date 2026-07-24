@@ -166,7 +166,7 @@ describe("LeadActivityService", () => {
     ).resolves.toEqual(activity);
     await expect(
       service.softDelete(activity.id, representative),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual(activity);
   });
 
   it("keeps archived listing and restore management-only", async () => {
@@ -184,6 +184,6 @@ describe("LeadActivityService", () => {
     await expect(service.listArchived({}, manager)).resolves.toMatchObject({
       total: 1,
     });
-    await expect(service.restore(activity.id, manager)).resolves.toBeUndefined();
+    await expect(service.restore(activity.id, manager)).resolves.toEqual(activity);
   });
 });
