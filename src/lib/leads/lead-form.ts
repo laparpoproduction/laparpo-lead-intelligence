@@ -6,6 +6,16 @@ const optionalNullableString = z.preprocess(
   z.string().trim().nullable().optional(),
 );
 
+const optionalNullableUuid = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.uuid().nullable().optional(),
+);
+
+const optionalServiceInterest = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.enum(leadServiceInterestValues).nullable().optional(),
+);
+
 const optionalString = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
   z.string().trim().optional(),
@@ -27,8 +37,8 @@ const optionalDate = z.preprocess(
 );
 
 const leadFormFields = {
-  companyId: z.uuid().nullable().optional(),
-  primaryContactId: z.uuid().nullable().optional(),
+  companyId: optionalNullableUuid,
+  primaryContactId: optionalNullableUuid,
   title: z.string().trim().min(1, "Title is required"),
   stage: z.enum(leadStageValues).optional(),
   leadStatus: z.enum(leadStatusValues).optional(),
@@ -36,18 +46,18 @@ const leadFormFields = {
   priority: z.enum(leadPriorityValues).optional(),
   leadScore: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? null : value),
-    z.number().int().nonnegative().max(100).nullable().optional(),
+    z.coerce.number().int().nonnegative().max(100).nullable().optional(),
   ),
   estimatedValue: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? null : value),
-    z.number().nonnegative().nullable().optional(),
+    z.coerce.number().nonnegative().nullable().optional(),
   ),
   currency: optionalString,
-  serviceInterest: z.enum(leadServiceInterestValues).nullable().optional(),
-  assignedTo: z.uuid().nullable().optional(),
+  serviceInterest: optionalServiceInterest,
+  assignedTo: optionalNullableUuid,
   sourceType: z.enum(leadSourceTypeValues).optional(),
   sourceUrl: optionalNullableString,
-  sourceSignalId: z.uuid().nullable().optional(),
+  sourceSignalId: optionalNullableUuid,
   sourceCampaign: optionalNullableString,
   referralName: optionalNullableString,
   discoveredAt: optionalTimestamp,
