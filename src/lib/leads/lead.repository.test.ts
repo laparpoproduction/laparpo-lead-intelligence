@@ -209,6 +209,8 @@ describe("SupabaseLeadRepository", () => {
       assignedTo: "33333333-3333-4333-8333-333333333333",
       stage: "new",
       leadStatus: "active",
+      qualificationStatus: "potentially_qualified",
+      priority: "high",
       page: 2,
       pageSize: 10,
       sortBy: "title",
@@ -217,6 +219,16 @@ describe("SupabaseLeadRepository", () => {
 
     expect(result).toMatchObject({ page: 2, pageSize: 10, total: 26, totalPages: 3 });
     expect(calls).toContainEqual({ method: "range", args: [10, 19] });
+    expect(calls).toEqual(expect.arrayContaining([
+      { method: "eq", args: ["qualification_status", "potentially_qualified"] },
+      { method: "eq", args: ["priority", "high"] },
+      {
+        method: "or",
+        args: [
+          'title.ilike."%KFC%",service_interest.ilike."%KFC%",source_campaign.ilike."%KFC%"',
+        ],
+      },
+    ]));
     expect(calls.filter((call) => call.method === "order")).toEqual([
       { method: "order", args: ["title", { ascending: true }] },
       { method: "order", args: ["id", { ascending: true }] },

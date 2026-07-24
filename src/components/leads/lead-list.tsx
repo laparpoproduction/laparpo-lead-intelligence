@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LeadArchiveDialog } from "./lead-archive-dialog";
 import { LeadPagination } from "./lead-pagination";
 import { LeadRestoreButton } from "./lead-restore-button";
+import type { LeadQueryState } from "@/lib/leads/lead-query";
 import { canArchiveLead, canEditLead, humanizeLeadValue } from "@/lib/leads/lead-ui";
 import type { Lead, LeadActor, PaginatedLeads } from "@/lib/leads/lead.types";
 
@@ -31,11 +32,13 @@ export function LeadList({
   leads,
   actor,
   pagination,
+  query,
   archived = false,
 }: {
   leads: Lead[];
   actor: LeadActor;
   pagination: Pick<PaginatedLeads, "page" | "pageSize" | "total" | "totalPages">;
+  query: LeadQueryState;
   archived?: boolean;
 }) {
   return (
@@ -79,7 +82,14 @@ export function LeadList({
           </li>)}
         </ul>
       </div>
-      <LeadPagination archived={archived} page={pagination.page} totalPages={pagination.totalPages} />
+      <LeadPagination
+        archived={archived}
+        page={pagination.page}
+        pageSize={pagination.pageSize}
+        query={query}
+        total={pagination.total}
+        totalPages={pagination.totalPages}
+      />
     </section>
   );
 }

@@ -112,8 +112,11 @@ describe("LeadService", () => {
     const repository = repositoryMock();
     const service = new LeadService(repository as never);
     await expect(service.list({ includeDeleted: true }, representative)).rejects.toBeInstanceOf(LeadPermissionError);
+    await expect(service.search({ includeDeleted: true }, representative)).rejects.toBeInstanceOf(LeadPermissionError);
     await expect(service.list({ includeDeleted: true }, manager)).resolves.toMatchObject({ total: 1 });
+    await expect(service.search({ includeDeleted: true }, manager)).resolves.toMatchObject({ total: 1 });
     expect(repository.list).toHaveBeenCalledWith(expect.objectContaining({ includeDeleted: true }));
+    expect(repository.search).toHaveBeenCalledWith(expect.objectContaining({ includeDeleted: true }));
   });
 
   it("prevents representatives from changing assignment without ownership", async () => {

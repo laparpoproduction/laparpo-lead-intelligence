@@ -6,12 +6,15 @@ import userEvent from "@testing-library/user-event";
 import { archiveLeadAction, createLeadAction, restoreLeadAction, updateLeadAction } from "@/app/(dashboard)/leads/actions";
 import LeadNotFound from "@/app/(dashboard)/leads/[leadId]/not-found";
 import { parseCreateLeadForm } from "@/lib/leads/lead-form";
+import { parseLeadQueryState } from "@/lib/leads/lead-query";
 import type { Lead, LeadActor } from "@/lib/leads/lead.types";
 import { LeadArchiveDialog } from "./lead-archive-dialog";
 import { LeadDetails } from "./lead-details";
 import { LeadEmptyState } from "./lead-empty-state";
+import { LeadFilteredEmptyState } from "./lead-filtered-empty-state";
 import { LeadForm } from "./lead-form";
 import { LeadList } from "./lead-list";
+import { LeadListToolbar } from "./lead-list-toolbar";
 
 const leadId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
@@ -64,6 +67,7 @@ const lead: Lead = {
 const manager: LeadActor = { userId: actorId, role: "sales_manager", isActive: true };
 const representative: LeadActor = { userId: otherId, role: "sales_representative", isActive: true };
 const router = { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() };
+const defaultQuery = parseLeadQueryState({});
 
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("@/app/(dashboard)/leads/actions", () => ({
@@ -90,7 +94,7 @@ afterEach(cleanup);
 
 describe("Leads UI", () => {
   it("renders the production list fields with page size 25", () => {
-    render(<LeadList actor={manager} leads={[lead]} pagination={{ page: 1, pageSize: 25, total: 1, totalPages: 1 }} />);
+    render(<LeadList actor={manager} leads={[lead]} pagination={{ page: 1, pageSize: 25, total: 1, totalPages: 1 }} query={defaultQuery} />);
     expect(screen.getByRole("region", { name: "Leads list" }).getAttribute("data-page-size")).toBe("25");
     expect(screen.getAllByText(lead.title).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Qualified").length).toBeGreaterThan(0);
@@ -102,6 +106,71 @@ describe("Leads UI", () => {
     render(<LeadEmptyState />);
     expect(screen.getByText("No leads yet")).toBeDefined();
     expect(screen.getByRole("link", { name: "Add first lead" }).getAttribute("href")).toBe("/leads/new");
+  });
+
+  it("distinguishes no search results from an empty CRM", () => {
+    const query = parseLeadQueryState({
+      q: "no match",
+      stage: "negotiation",
+    });
+    render(<LeadFilteredEmptyState query={query} />);
+    expect(screen.getByText("No matching leads")).toBeDefined();
+    expect(
+      screen.getByRole("link", { name: "Clear all filters" }).getAttribute("href"),
+    ).toBe("/leads");
+  });
+
+  it("resets page when search, filters or sorting are submitted", async () => {
+    const query = parseLeadQueryState({
+      q: "old search",
+      stage: "new",
+      sortBy: "createdAt",
+      page: "7",
+    });
+    render(<LeadListToolbar query={query} />);
+
+    const search = screen.getByRole("searchbox", { name: "Search leads" });
+    await userEvent.clear(search);
+    await userEvent.type(search, "new campaign");
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Stage" }),
+      "qualified",
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Sort by" }),
+      "priority",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    await waitFor(() =>
+      expect(router.push).toHaveBeenCalledWith(
+        "/leads?q=new+campaign&stage=qualified&sortBy=priority",
+      ),
+    );
+  });
+
+  it("preserves active query state through pagination", () => {
+    const query = parseLeadQueryState({
+      q: "campaign",
+      priority: "urgent",
+      sortBy: "title",
+      sortDirection: "asc",
+      page: "2",
+    });
+    render(
+      <LeadList
+        actor={manager}
+        leads={[lead]}
+        pagination={{ page: 2, pageSize: 25, total: 70, totalPages: 3 }}
+        query={query}
+      />,
+    );
+    const nextLinks = screen.getAllByRole("link", {
+      name: "Next leads page",
+    });
+    expect(nextLinks[0]?.getAttribute("href")).toBe(
+      "/leads?q=campaign&priority=urgent&sortBy=title&sortDirection=asc&page=3",
+    );
   });
 
   it("renders create fields and sends browser numeric values through the form contract", () => {
@@ -153,7 +222,7 @@ describe("Leads UI", () => {
   });
 
   it("shows archive only to management and archives after confirmation", async () => {
-    const { rerender } = render(<LeadList actor={representative} leads={[lead]} pagination={{ page: 1, pageSize: 25, total: 1, totalPages: 1 }} />);
+    const { rerender } = render(<LeadList actor={representative} leads={[lead]} pagination={{ page: 1, pageSize: 25, total: 1, totalPages: 1 }} query={defaultQuery} />);
     expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
 
@@ -166,7 +235,7 @@ describe("Leads UI", () => {
 
   it("restores archived Leads through the management view", async () => {
     vi.mocked(restoreLeadAction).mockResolvedValueOnce({ status: "success", leadId, redirectTo: "/leads" });
-    render(<LeadList actor={manager} archived leads={[{ ...lead, deletedAt: "2026-07-24T00:00:00.000Z" }]} pagination={{ page: 1, pageSize: 25, total: 1, totalPages: 1 }} />);
+    render(<LeadList actor={manager} archived leads={[{ ...lead, deletedAt: "2026-07-24T00:00:00.000Z" }]} pagination={{ page: 1, pageSize: 25, total: 1, totalPages: 1 }} query={defaultQuery} />);
     expect(screen.queryByRole("link", { name: `View ${lead.title} details` })).toBeNull();
     await userEvent.click(screen.getAllByRole("button", { name: "Restore" })[0]!);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/leads"));
