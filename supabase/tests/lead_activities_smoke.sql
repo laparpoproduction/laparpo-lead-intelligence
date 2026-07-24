@@ -41,7 +41,7 @@ insert into public.lead_activities (
   id, lead_id, activity_type, activity_at, created_by, assigned_to
 ) values (
   '75000000-0000-4000-8000-000000000002',
-  '74000000-0000-4000-8000-000000000001',
+  '74000000-0000-4000-8000-000000000002',
   'meeting',
   now(),
   '71000000-0000-4000-8000-000000000002',
