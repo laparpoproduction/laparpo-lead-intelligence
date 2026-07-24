@@ -274,6 +274,9 @@ describe("Lead activity server actions", () => {
     expect(service.softDelete).toHaveBeenCalledWith(activityId, actor);
     expect(state).toMatchObject({ status: "success", activityId, leadId });
     expect(revalidatePath).toHaveBeenCalledWith("/leads/archived");
+    expect(revalidatePath).toHaveBeenCalledWith(
+      `/leads/${leadId}/activities/archived`,
+    );
     expect(service).not.toHaveProperty("hardDelete");
   });
 
@@ -306,6 +309,9 @@ describe("Lead activity server actions", () => {
     expect(service.restore).toHaveBeenCalledWith(activityId, actor);
     expect(state).toMatchObject({ status: "success", activityId, leadId });
     expect(revalidatePath).toHaveBeenCalledWith("/leads/archived");
+    expect(revalidatePath).toHaveBeenCalledWith(
+      `/leads/${leadId}/activities/archived`,
+    );
   });
 
   it("preserves representative restore and archived-parent denials", async () => {
