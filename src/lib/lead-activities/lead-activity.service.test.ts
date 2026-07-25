@@ -54,6 +54,13 @@ function activityRepository(overrides: Record<string, unknown> = {}) {
       total: 1,
       totalPages: 1,
     }),
+    listArchivedByLead: vi.fn().mockResolvedValue({
+      items: [activity],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      totalPages: 1,
+    }),
     ...overrides,
   };
 }
@@ -184,6 +191,16 @@ describe("LeadActivityService", () => {
     await expect(service.listArchived({}, manager)).resolves.toMatchObject({
       total: 1,
     });
+    await expect(
+      service.listArchivedByLead(leadId, {}, representative),
+    ).rejects.toBeInstanceOf(LeadActivityPermissionError);
+    await expect(
+      service.listArchivedByLead(leadId, {}, manager),
+    ).resolves.toMatchObject({ total: 1 });
+    expect(repository.listArchivedByLead).toHaveBeenCalledWith(
+      leadId,
+      expect.objectContaining({ page: 1, pageSize: 25 }),
+    );
     await expect(service.restore(activity.id, manager)).resolves.toEqual(activity);
   });
 });

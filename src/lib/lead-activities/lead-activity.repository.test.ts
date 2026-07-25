@@ -175,6 +175,27 @@ describe("SupabaseLeadActivityRepository", () => {
     });
   });
 
+  it("scopes archived activity retrieval to one Lead", async () => {
+    const { repository, calls } = setup(
+      { data: [], error: null },
+      {
+        data: [{ ...row, deleted_at: "2026-07-25T00:00:00.000Z" }],
+        error: null,
+        count: 1,
+      },
+    );
+    await expect(
+      repository.listArchivedByLead(row.lead_id, {
+        page: 1,
+        pageSize: 25,
+      }),
+    ).resolves.toMatchObject({ total: 1 });
+    expect(calls).toContainEqual({
+      method: "eq",
+      args: ["lead_id", row.lead_id],
+    });
+  });
+
   it("reports zero-row mutations as not found", async () => {
     const { repository } = setup(
       { data: null, error: null },

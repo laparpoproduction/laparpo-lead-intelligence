@@ -134,6 +134,7 @@ function revalidateActiveLead(leadId: string): void {
 function revalidateArchivedLead(leadId: string): void {
   revalidateActiveLead(leadId);
   revalidatePath("/leads/archived");
+  revalidatePath(`/leads/${leadId}/activities/archived`);
 }
 
 export async function createLeadActivityAction(

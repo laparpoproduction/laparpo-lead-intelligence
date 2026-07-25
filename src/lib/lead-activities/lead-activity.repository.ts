@@ -46,6 +46,10 @@ export interface LeadActivityRepository {
   listArchived(
     options?: LeadActivityListOptions,
   ): Promise<PaginatedLeadActivities>;
+  listArchivedByLead(
+    leadId: string,
+    options?: LeadActivityListOptions,
+  ): Promise<PaginatedLeadActivities>;
 }
 
 type DatabaseClient = Pick<SupabaseClient, "from" | "rpc">;
@@ -154,6 +158,18 @@ export class SupabaseLeadActivityRepository
       this.client.rpc("list_archived_lead_activities"),
       options,
       undefined,
+      true,
+    );
+  }
+
+  listArchivedByLead(
+    leadId: string,
+    options: LeadActivityListOptions = {},
+  ): Promise<PaginatedLeadActivities> {
+    return this.listFrom(
+      this.client.rpc("list_archived_lead_activities"),
+      options,
+      validateLeadActivityId(leadId),
       true,
     );
   }

@@ -19,7 +19,17 @@ function Timestamp({ value }: { value: string | null }) {
   return value ? <time dateTime={value}>{dateTime.format(new Date(value))}</time> : null;
 }
 
-export function LeadDetails({ lead, canEdit, canArchive }: { lead: Lead; canEdit: boolean; canArchive: boolean }) {
+export function LeadDetails({
+  lead,
+  canEdit,
+  canArchive,
+  activityTimeline,
+}: {
+  lead: Lead;
+  canEdit: boolean;
+  canArchive: boolean;
+  activityTimeline?: React.ReactNode;
+}) {
   return (
     <section className="mx-auto max-w-6xl">
       <LeadPageHeader actionHref={canEdit ? `/leads/${lead.id}/edit` : undefined} actionLabel={canEdit ? "Edit lead" : undefined} backHref="/leads" description="Qualification, sales context, provenance and follow-up in one CRM workspace." title={lead.title} />
@@ -73,6 +83,7 @@ export function LeadDetails({ lead, canEdit, canArchive }: { lead: Lead; canEdit
           {canArchive ? <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"><p className="mb-3 text-xs font-bold uppercase tracking-[0.08em] text-zinc-400">Management</p><LeadArchiveDialog leadId={lead.id} title={lead.title} /></div> : null}
         </aside>
       </div>
+      {activityTimeline ? <div className="mt-6">{activityTimeline}</div> : null}
     </section>
   );
 }
