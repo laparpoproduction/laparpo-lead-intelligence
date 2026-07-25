@@ -204,6 +204,11 @@ select * from public.convert_lead_to_opportunity(
 
 -- Company-derived read access is not conversion permission.
 reset role;
+select set_config(
+  'request.jwt.claim.sub',
+  '71000000-0000-4000-8000-000000000001',
+  false
+);
 update public.leads
 set company_id = '72000000-0000-4000-8000-000000000001'
 where id = '77000000-0000-4000-8000-000000000009';
