@@ -190,7 +190,9 @@ function OpportunityCard({
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-bold text-zinc-700">
-          {opportunity.isConversion ? "Conversion" : "Ordinary"}
+          {opportunity.isConversion
+            ? "Conversion Opportunity"
+            : "Ordinary Opportunity"}
         </span>
       </div>
       <p className="break-words text-sm font-semibold text-zinc-600">

@@ -208,8 +208,8 @@ describe("Opportunity pipeline UI", () => {
       convertedAt: null,
     };
     renderBoard(makeBoard({ won: [won], lost: [lost] }));
-    expect(screen.getByText("Conversion")).toBeDefined();
-    expect(screen.getByText("Ordinary")).toBeDefined();
+    expect(screen.getByText("Conversion Opportunity")).toBeDefined();
+    expect(screen.getByText("Ordinary Opportunity")).toBeDefined();
     expect(screen.getByText("Won date")).toBeDefined();
     expect(screen.getByText("Lost date")).toBeDefined();
     expect(screen.getByText("Other")).toBeDefined();
