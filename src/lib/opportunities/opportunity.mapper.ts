@@ -5,6 +5,8 @@ import {
   type LeadConversionRecordRow,
   type LeadConversionResult,
   type Opportunity,
+  type OpportunityListItem,
+  type OpportunityListRow,
   type OpportunityRow,
 } from "./opportunity.types";
 
@@ -46,6 +48,19 @@ export function mapOpportunityRow(row: OpportunityRow): Opportunity {
     depositReceivedAt: row.deposit_received_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+export function mapOpportunityListRow(
+  row: OpportunityListRow,
+): OpportunityListItem {
+  return {
+    ...mapOpportunityRow(row),
+    leadTitle: z.string().min(1).parse(row.lead_title),
+    companyId: z.uuid().nullable().parse(row.company_id),
+    companyName: z.string().nullable().parse(row.company_name),
+    isConversion: z.boolean().parse(row.conversion_opportunity),
+    convertedAt: z.iso.datetime({ offset: true }).nullable().parse(row.converted_at),
   };
 }
 

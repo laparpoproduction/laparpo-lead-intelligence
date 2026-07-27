@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   mapLeadConversionRecord,
   mapLeadConversionResult,
+  mapOpportunityListRow,
   mapOpportunityRow,
 } from "./opportunity.mapper";
 import type {
@@ -9,12 +10,18 @@ import type {
   LeadConversionRecordRow,
   LeadConversionResult,
   Opportunity,
+  OpportunityListItem,
+  OpportunityListOptions,
+  OpportunityListRow,
   OpportunityRow,
+  OpportunitySort,
+  PaginatedOpportunities,
   ValidatedConvertLeadInput,
 } from "./opportunity.types";
 import {
   validateLeadConversion,
   validateOpportunityId,
+  validateOpportunityListOptions,
 } from "./opportunity.validation";
 
 export type OpportunityRepositoryFailure =
@@ -44,6 +51,7 @@ export interface OpportunityRepository {
   getConversionByLead(leadId: string): Promise<LeadConversionRecord | null>;
   getById(id: string): Promise<Opportunity | null>;
   listByLead(leadId: string): Promise<Opportunity[]>;
+  list(options?: OpportunityListOptions): Promise<PaginatedOpportunities>;
 }
 
 type DatabaseClient = Pick<SupabaseClient, "from" | "rpc">;
@@ -88,6 +96,52 @@ function classifyFailure(error: unknown): OpportunityRepositoryFailure {
 function safeCause(error: unknown): Error | undefined {
   if (!error) return undefined;
   return new Error("Database conversion request failed");
+}
+
+const opportunityListColumns = [
+  "id",
+  "lead_id",
+  "service",
+  "estimated_value_myr",
+  "quotation_number",
+  "quotation_sent_at",
+  "meeting_at",
+  "deposit_amount_myr",
+  "deposit_received_at",
+  "created_at",
+  "updated_at",
+  "lead_title",
+  "company_id",
+  "company_name",
+  "conversion_opportunity",
+  "converted_at",
+].join(", ");
+
+const opportunitySortColumns: Record<
+  OpportunitySort,
+  {
+    column: "created_at" | "estimated_value_myr";
+    ascending: boolean;
+    nullsFirst?: boolean;
+  }
+> = {
+  newest: { column: "created_at", ascending: false },
+  oldest: { column: "created_at", ascending: true },
+  value_desc: {
+    column: "estimated_value_myr",
+    ascending: false,
+    nullsFirst: false,
+  },
+  value_asc: {
+    column: "estimated_value_myr",
+    ascending: true,
+    nullsFirst: false,
+  },
+};
+
+function quotePostgrestValue(value: string): string {
+  const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"%${escaped}%"`;
 }
 
 export class SupabaseOpportunityRepository implements OpportunityRepository {
@@ -174,5 +228,77 @@ export class SupabaseOpportunityRepository implements OpportunityRepository {
       );
     }
     return (data ?? []).map((row) => mapOpportunityRow(row as OpportunityRow));
+  }
+
+  async list(
+    options: OpportunityListOptions = {},
+  ): Promise<PaginatedOpportunities> {
+    const parsed = validateOpportunityListOptions(options);
+    const start = (parsed.page - 1) * parsed.pageSize;
+    const end = start + parsed.pageSize - 1;
+    let query = this.client
+      .from("opportunity_list_read_model")
+      .select(opportunityListColumns, { count: "exact" });
+
+    if (parsed.query) {
+      const search = quotePostgrestValue(parsed.query);
+      const predicates = [
+        `lead_title.ilike.${search}`,
+        `company_name.ilike.${search}`,
+      ];
+      try {
+        predicates.push(`id.eq.${validateOpportunityId(parsed.query)}`);
+      } catch {
+        // Non-UUID search remains a safe title/company search.
+      }
+      query = query.or(predicates.join(","));
+    }
+    if (parsed.service) query = query.eq("service", parsed.service);
+    if (parsed.kind !== "all") {
+      query = query.eq(
+        "conversion_opportunity",
+        parsed.kind === "conversion",
+      );
+    }
+
+    const sort = opportunitySortColumns[parsed.sort];
+    const { data, error, count } = await query
+      .order(sort.column, {
+        ascending: sort.ascending,
+        nullsFirst: sort.nullsFirst,
+      })
+      .order("id", { ascending: true })
+      .range(start, end);
+
+    if (error) {
+      throw new OpportunityRepositoryError(
+        "global list",
+        classifyFailure(error),
+        safeCause(error),
+      );
+    }
+
+    const total = count ?? 0;
+    let items: OpportunityListItem[];
+    try {
+      items = (data ?? []).map((row) =>
+        mapOpportunityListRow(row as unknown as OpportunityListRow),
+      );
+    } catch (mappingError) {
+      throw new OpportunityRepositoryError(
+        "global list response",
+        "unknown",
+        mappingError instanceof Error
+          ? new Error("Opportunity read model response was invalid")
+          : undefined,
+      );
+    }
+    return {
+      items,
+      page: parsed.page,
+      pageSize: parsed.pageSize,
+      total,
+      totalPages: total === 0 ? 0 : Math.ceil(total / parsed.pageSize),
+    };
   }
 }

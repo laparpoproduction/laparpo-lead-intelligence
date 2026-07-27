@@ -27,6 +27,13 @@ class QueryBuilder implements PromiseLike<Response> {
   order(...args: unknown[]) {
     return this.record("order", args);
   }
+  or(...args: unknown[]) {
+    return this.record("or", args);
+  }
+  range(...args: unknown[]) {
+    this.record("range", args);
+    return Promise.resolve(this.response);
+  }
   maybeSingle() {
     this.record("maybeSingle", []);
     return Promise.resolve(this.response);
@@ -75,6 +82,15 @@ const row = {
   deposit_received_at: null,
   created_at: "2026-07-25T00:00:00.000Z",
   updated_at: "2026-07-25T00:00:00.000Z",
+};
+
+const listRow = {
+  ...row,
+  lead_title: "Domino's festive campaign",
+  company_id: "33333333-3333-4333-8333-333333333333",
+  company_name: "Domino's Malaysia",
+  conversion_opportunity: true,
+  converted_at: "2026-07-25T00:00:00.000Z",
 };
 
 describe("SupabaseOpportunityRepository", () => {
@@ -187,5 +203,93 @@ describe("SupabaseOpportunityRepository", () => {
       args: ["lead_conversions"],
     });
     expect(calls).toContainEqual({ method: "eq", args: ["lead_id", leadId] });
+  });
+
+  it("lists a page from the RLS-backed read model without loading all rows", async () => {
+    const { repository, calls } = setup([
+      { data: [listRow], error: null, count: 31 } as Response,
+    ]);
+    await expect(
+      repository.list({
+        query: " Domino's ",
+        service: "food_review",
+        kind: "conversion",
+        sort: "newest",
+        page: 2,
+        pageSize: 25,
+      }),
+    ).resolves.toMatchObject({
+      items: [
+        {
+          id: opportunityId,
+          leadTitle: "Domino's festive campaign",
+          companyName: "Domino's Malaysia",
+          isConversion: true,
+        },
+      ],
+      page: 2,
+      pageSize: 25,
+      total: 31,
+      totalPages: 2,
+    });
+    expect(calls).toContainEqual({
+      method: "from",
+      args: ["opportunity_list_read_model"],
+    });
+    expect(calls).toContainEqual({
+      method: "eq",
+      args: ["conversion_opportunity", true],
+    });
+    expect(calls).toContainEqual({ method: "range", args: [25, 49] });
+  });
+
+  it.each([
+    ["newest", "created_at", false, undefined],
+    ["oldest", "created_at", true, undefined],
+    ["value_desc", "estimated_value_myr", false, false],
+    ["value_asc", "estimated_value_myr", true, false],
+  ] as const)(
+    "applies allow-listed stable %s ordering",
+    async (sort, column, ascending, nullsFirst) => {
+      const { repository, calls } = setup([
+        { data: [], error: null, count: 0 } as Response,
+      ]);
+      await repository.list({ sort });
+      expect(calls).toContainEqual({
+        method: "order",
+        args: [column, { ascending, nullsFirst }],
+      });
+      expect(calls).toContainEqual({
+        method: "order",
+        args: ["id", { ascending: true }],
+      });
+    },
+  );
+
+  it("adds exact UUID search only for valid UUID input", async () => {
+    const { repository, calls } = setup([
+      { data: [], error: null, count: 0 } as Response,
+    ]);
+    await repository.list({ query: opportunityId });
+    const searchCall = calls.find(({ method }) => method === "or");
+    expect(searchCall?.args[0]).toContain(`id.eq.${opportunityId}`);
+    expect(searchCall?.args[0]).toContain("lead_title.ilike.");
+    expect(searchCall?.args[0]).toContain("company_name.ilike.");
+  });
+
+  it("maps list failures without retaining raw database details", async () => {
+    const { repository } = setup([
+      {
+        data: null,
+        error: { message: "secret SQL and policy name" },
+      },
+    ]);
+    const error = await repository.list().catch((caught) => caught);
+    expect(error).toBeInstanceOf(OpportunityRepositoryError);
+    expect((error as Error).message).not.toContain("secret");
+    expect((error as Error).cause).not.toHaveProperty(
+      "message",
+      "secret SQL and policy name",
+    );
   });
 });
