@@ -214,10 +214,9 @@ test("opens the read-only Opportunities list and canonical filters", async ({
     page.getByRole("searchbox", { name: "Search opportunities" }),
   ).toBeVisible();
   await expect(page.getByText("No opportunities yet")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Opportunities" })).toHaveAttribute(
-    "href",
-    "/opportunities",
-  );
+  await expect(
+    page.getByRole("link", { name: "Opportunities", exact: true }),
+  ).toHaveAttribute("href", "/opportunities");
   await expect(page.getByRole("link", { name: /Add opportunity/i })).toHaveCount(0);
 
   await page
