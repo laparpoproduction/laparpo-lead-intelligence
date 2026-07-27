@@ -276,5 +276,7 @@ test("returns the same safe not-found workspace for an unavailable Opportunity d
   await expect(
     page.getByRole("link", { name: "Back to Opportunities" }),
   ).toHaveAttribute("href", "/opportunities");
-  await expect(page.getByRole("link", { name: "Opportunities" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Opportunities", exact: true }),
+  ).toBeVisible();
 });
