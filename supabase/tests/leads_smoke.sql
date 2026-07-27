@@ -437,25 +437,30 @@ begin
 end;
 $$;
 
--- Outcome models permit valid atomic outcomes.
+-- Outcome models preserve the pre-015 legacy converted fixture and permit
+-- valid non-conversion terminal outcomes.
 reset role;
 set role authenticated;
 select set_config('request.jwt.claim.sub', '71000000-0000-4000-8000-000000000001', false);
-insert into public.leads (
-  id, title, company_id, stage, lead_status, qualification_status,
-  created_by, source_type, discovered_at, converted_at
-) values (
-  '74000000-0000-4000-8000-000000000010',
-  'Converted Lead',
-  '72000000-0000-4000-8000-000000000002',
-  'converted',
-  'closed',
-  'qualified',
-  '71000000-0000-4000-8000-000000000001',
-  'inbound',
-  now(),
-  now()
-);
+do $$
+begin
+  if not exists (
+    select 1 from public.leads
+    where id = '74000000-0000-4000-8000-000000000010'
+      and stage = 'converted'
+      and lead_status = 'closed'
+      and converted_at is not null
+  ) then
+    raise exception 'Legacy converted Lead was not preserved by migration 015';
+  end if;
+  if exists (
+    select 1 from public.lead_conversions
+    where lead_id = '74000000-0000-4000-8000-000000000010'
+  ) then
+    raise exception 'Migration 015 guessed a historical conversion relationship';
+  end if;
+end;
+$$;
 insert into public.leads (
   id, title, company_id, stage, lead_status, created_by,
   source_type, referral_name, discovered_at, lost_at, lost_reason
