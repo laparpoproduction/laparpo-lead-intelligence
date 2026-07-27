@@ -50,6 +50,7 @@ const opportunityListSchema = z.object({
   query: z.string().trim().min(1).max(200).optional(),
   service: z.enum(opportunityServiceValues).optional(),
   kind: z.enum(opportunityKindValues).default("all"),
+  pipelineStage: z.enum(opportunityPipelineStageValues).optional(),
   sort: z.enum(opportunitySortValues).default("newest"),
   page: z.number().int().positive().max(1_000_000).default(1),
   pageSize: z.number().int().positive().max(100).default(25),

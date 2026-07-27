@@ -1,8 +1,17 @@
 import Link from "next/link";
-import type { OpportunityDetail } from "@/lib/opportunities/opportunity.types";
+import { OpportunityPipelineManager } from "./opportunity-pipeline-manager";
+import type { AppRole } from "@/lib/auth/permissions";
+import type {
+  OpportunityDetail,
+  OpportunityOwnerProfile,
+} from "@/lib/opportunities/opportunity.types";
 import {
+  compactOpportunityId,
   formatOpportunityMyr,
+  isOpportunityOverdue,
+  opportunityLossReasonLabel,
   opportunityServiceLabel,
+  opportunityStageLabel,
 } from "@/lib/opportunities/opportunity-ui";
 
 const date = new Intl.DateTimeFormat("en-MY", {
@@ -56,10 +65,25 @@ const linkClass =
   "inline-flex min-h-11 items-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-bold text-zinc-800 transition hover:border-zinc-400 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e5222a] focus-visible:ring-offset-2";
 
 export function OpportunityDetails({
+  actorId,
+  actorRole,
+  canModify,
   opportunity,
+  ownerProfiles,
 }: {
+  actorId: string;
+  actorRole: AppRole;
+  canModify: boolean;
   opportunity: OpportunityDetail;
+  ownerProfiles: OpportunityOwnerProfile[];
 }) {
+  const owner = ownerProfiles.find(
+    (profile) => profile.id === opportunity.ownerId,
+  );
+  const overdue = isOpportunityOverdue(
+    opportunity.expectedCloseDate,
+    opportunity.pipelineStage,
+  );
   return (
     <article className="min-w-0 space-y-5">
       <header className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-7">
@@ -88,6 +112,9 @@ export function OpportunityDetails({
         <div className="mt-6 flex flex-wrap gap-3">
           <Link className={linkClass} href="/opportunities">
             Back to Opportunities
+          </Link>
+          <Link className={linkClass} href="/opportunities/pipeline">
+            Open Pipeline
           </Link>
           <Link className={linkClass} href={`/leads/${opportunity.leadId}`}>
             Open parent Lead
@@ -143,6 +170,96 @@ export function OpportunityDetails({
             )}
           </Field>
         </dl>
+      </section>
+
+      <section
+        aria-labelledby="pipeline-heading"
+        className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-7"
+      >
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 flex-1">
+            <h2
+              className="text-lg font-black text-zinc-950"
+              id="pipeline-heading"
+            >
+              Pipeline
+            </h2>
+            <dl className="mt-5 grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              <Field label="Current stage">
+                {opportunityStageLabel(opportunity.pipelineStage)}
+              </Field>
+              <Field label="Probability">
+                {opportunity.probabilityPercent}% —{" "}
+                {opportunity.probabilityOverridden
+                  ? "Manual override"
+                  : "Stage default"}
+              </Field>
+              <Field label="Owner">
+                {opportunity.ownerId
+                  ? owner?.fullName ??
+                    `Team member ${compactOpportunityId(opportunity.ownerId)}`
+                  : "Unassigned"}
+              </Field>
+              <Field label="Expected close">
+                {opportunity.expectedCloseDate ? (
+                  <>
+                    <TimeValue
+                      empty="Not recorded"
+                      includeTime={false}
+                      value={opportunity.expectedCloseDate}
+                    />
+                    {overdue ? (
+                      <span className="ml-2 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">
+                        Overdue
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  "Not recorded"
+                )}
+              </Field>
+              {opportunity.pipelineStage === "won" ? (
+                <Field label="Won date">
+                  <TimeValue
+                    empty="Not recorded"
+                    value={opportunity.wonAt}
+                  />
+                </Field>
+              ) : null}
+              {opportunity.pipelineStage === "lost" ? (
+                <>
+                  <Field label="Lost date">
+                    <TimeValue
+                      empty="Not recorded"
+                      value={opportunity.lostAt}
+                    />
+                  </Field>
+                  <Field label="Lost reason">
+                    {opportunity.lostReason
+                      ? opportunityLossReasonLabel(opportunity.lostReason)
+                      : "Not recorded"}
+                  </Field>
+                  {opportunity.lostReasonNotes ? (
+                    <Field label="Lost notes">
+                      <span className="whitespace-pre-wrap">
+                        {opportunity.lostReasonNotes}
+                      </span>
+                    </Field>
+                  ) : null}
+                </>
+              ) : null}
+            </dl>
+          </div>
+          <div className="w-full shrink-0 xl:w-64">
+            <OpportunityPipelineManager
+              actorId={actorId}
+              actorRole={actorRole}
+              canModify={canModify}
+              opportunity={opportunity}
+              ownerProfiles={ownerProfiles}
+            />
+          </div>
+        </div>
       </section>
 
       <section

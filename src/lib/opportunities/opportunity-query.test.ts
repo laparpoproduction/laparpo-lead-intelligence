@@ -24,6 +24,7 @@ describe("Opportunity query state", () => {
         q: "  Domino's  ",
         service: "corporate",
         kind: "conversion",
+        stage: "quotation_sent",
         sort: "value_desc",
         page: "3",
       }),
@@ -31,6 +32,7 @@ describe("Opportunity query state", () => {
       q: "Domino's",
       service: "corporate",
       kind: "conversion",
+      stage: "quotation_sent",
       sort: "value_desc",
       page: 3,
     });
@@ -55,6 +57,7 @@ describe("Opportunity query state", () => {
       q: "client",
       service: "event_coverage",
       kind: "ordinary",
+      stage: "negotiation",
       sort: "oldest",
       page: "2",
     });
@@ -62,6 +65,7 @@ describe("Opportunity query state", () => {
       query: "client",
       service: "event_coverage",
       kind: "ordinary",
+      pipelineStage: "negotiation",
       sort: "oldest",
       page: 2,
       pageSize: 25,
@@ -100,6 +104,9 @@ describe("Opportunity query state", () => {
     ).toBe(false);
     expect(
       hasOpportunityFilters(parseOpportunityQueryState({ kind: "ordinary" })),
+    ).toBe(true);
+    expect(
+      hasOpportunityFilters(parseOpportunityQueryState({ stage: "won" })),
     ).toBe(true);
   });
 

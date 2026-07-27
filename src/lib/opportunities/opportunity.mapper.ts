@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { appRoleSchema } from "@/lib/auth/permissions";
 import {
   opportunityLossReasonValues,
   opportunityPipelineStageValues,
@@ -9,6 +10,8 @@ import {
   type Opportunity,
   type OpportunityListItem,
   type OpportunityListRow,
+  type OpportunityOwnerProfile,
+  type OpportunityOwnerProfileRow,
   type OpportunityRow,
 } from "./opportunity.types";
 
@@ -78,6 +81,19 @@ export function mapOpportunityListRow(
     companyName: z.string().nullable().parse(row.company_name),
     isConversion: z.boolean().parse(row.conversion_opportunity),
     convertedAt: z.iso.datetime({ offset: true }).nullable().parse(row.converted_at),
+  };
+}
+
+export function mapOpportunityOwnerProfile(
+  row: OpportunityOwnerProfileRow,
+): OpportunityOwnerProfile {
+  const fullName = z.string().nullable().parse(row.full_name)?.trim() || null;
+
+  return {
+    id: z.uuid().parse(row.id),
+    fullName,
+    role: appRoleSchema.parse(row.role),
+    isActive: z.boolean().parse(row.is_active),
   };
 }
 

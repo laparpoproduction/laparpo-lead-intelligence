@@ -4,7 +4,9 @@ const mocks = vi.hoisted(() => ({
   notFound: vi.fn(),
   requireDashboardUser: vi.fn(),
   createOpportunityContext: vi.fn(),
+  canModifyLeadForUi: vi.fn(),
   getDetailById: vi.fn(),
+  listOwnerProfiles: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -68,9 +70,15 @@ beforeEach(() => {
   });
   mocks.createOpportunityContext.mockResolvedValue({
     actor,
-    service: { getDetailById: mocks.getDetailById },
+    service: {
+      canModifyLeadForUi: mocks.canModifyLeadForUi,
+      getDetailById: mocks.getDetailById,
+      listOwnerProfiles: mocks.listOwnerProfiles,
+    },
   });
   mocks.getDetailById.mockResolvedValue(detail);
+  mocks.canModifyLeadForUi.mockResolvedValue(true);
+  mocks.listOwnerProfiles.mockResolvedValue([]);
 });
 
 describe("Opportunity detail page", () => {
@@ -81,6 +89,8 @@ describe("Opportunity detail page", () => {
       }),
     ).toBeDefined();
     expect(mocks.getDetailById).toHaveBeenCalledWith(opportunityId, actor);
+    expect(mocks.canModifyLeadForUi).toHaveBeenCalledWith(detail.leadId, actor);
+    expect(mocks.listOwnerProfiles).toHaveBeenCalledWith(actor);
   });
 
   it("treats no-result and inaccessible Opportunities as not found", async () => {

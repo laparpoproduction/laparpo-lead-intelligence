@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
   opportunityKindValues,
+  opportunityPipelineStageValues,
   opportunityServiceValues,
   opportunitySortValues,
   type OpportunityKind,
   type OpportunityListOptions,
+  type OpportunityPipelineStage,
   type OpportunityService,
   type OpportunitySort,
 } from "./opportunity.types";
@@ -18,6 +20,7 @@ export type OpportunityQueryState = {
   q?: string;
   service?: OpportunityService;
   kind: OpportunityKind;
+  stage?: OpportunityPipelineStage;
   sort: OpportunitySort;
   page: number;
 };
@@ -35,6 +38,9 @@ const querySchema = z.object({
   kind: z
     .preprocess(firstValue, z.enum(opportunityKindValues))
     .catch("all"),
+  stage: z
+    .preprocess(firstValue, z.enum(opportunityPipelineStageValues).optional())
+    .catch(undefined),
   sort: z
     .preprocess(firstValue, z.enum(opportunitySortValues))
     .catch("newest"),
@@ -67,7 +73,7 @@ export function toOpportunityListOptions(
   query: OpportunityQueryState,
   pageSize: number,
 ): OpportunityListOptions {
-  return {
+  const options: OpportunityListOptions = {
     query: query.q,
     service: query.service,
     kind: query.kind,
@@ -75,6 +81,8 @@ export function toOpportunityListOptions(
     page: query.page,
     pageSize,
   };
+  if (query.stage) options.pipelineStage = query.stage;
+  return options;
 }
 
 export function toOpportunitySearchParams(
@@ -84,6 +92,7 @@ export function toOpportunitySearchParams(
   if (query.q) params.set("q", query.q);
   if (query.service) params.set("service", query.service);
   if (query.kind !== "all") params.set("kind", query.kind);
+  if (query.stage) params.set("stage", query.stage);
   if (query.sort !== "newest") params.set("sort", query.sort);
   if (query.page > 1) params.set("page", String(query.page));
   return params;
@@ -99,7 +108,7 @@ export function buildOpportunitiesHref(
 
 export function hasOpportunityFilters(query: OpportunityQueryState): boolean {
   return Boolean(
-    query.q || query.service || query.kind !== "all",
+    query.q || query.service || query.kind !== "all" || query.stage,
   );
 }
 
@@ -110,6 +119,7 @@ export function clearOpportunityFiltersHref(
     q: undefined,
     service: undefined,
     kind: "all",
+    stage: undefined,
     page: 1,
   });
 }

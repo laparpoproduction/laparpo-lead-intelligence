@@ -145,6 +145,7 @@ describe("Opportunity mutation actions", () => {
     );
     expect(mocks.revalidatePath.mock.calls).toEqual([
       ["/opportunities"],
+      ["/opportunities/pipeline"],
       [`/opportunities/${opportunityId}`],
     ]);
   });
@@ -257,7 +258,7 @@ describe("Opportunity mutation actions", () => {
         form(),
       ),
     ).resolves.toMatchObject({ status: "already_applied", opportunityId });
-    expect(mocks.revalidatePath).toHaveBeenCalledTimes(2);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(3);
   });
 
   it.each([

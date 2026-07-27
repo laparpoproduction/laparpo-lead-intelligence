@@ -190,6 +190,46 @@ export type OpportunityListItem = Opportunity & {
   convertedAt: string | null;
 };
 
+export type OpportunityOwnerProfile = {
+  id: string;
+  fullName: string | null;
+  role: LeadConversionActor["role"];
+  isActive: boolean;
+};
+
+export type OpportunityOwnerProfileRow = {
+  id: string;
+  full_name: string | null;
+  role: LeadConversionActor["role"];
+  is_active: boolean;
+};
+
+export type OpportunityLeadAccessRow = {
+  id: string;
+  created_by: string | null;
+  assigned_to: string | null;
+};
+
+export type OpportunityPipelineCard = OpportunityListItem & {
+  canModify: boolean;
+};
+
+export type OpportunityPipelineColumn = {
+  stage: OpportunityPipelineStage;
+  items: OpportunityPipelineCard[];
+  total: number;
+};
+
+export type OpportunityPipelineBoard = {
+  columns: OpportunityPipelineColumn[];
+  ownerProfiles: OpportunityOwnerProfile[];
+};
+
+export type OpportunityPipelineFilters = Pick<
+  OpportunityListOptions,
+  "query" | "service" | "kind"
+>;
+
 // Detail and list intentionally share the same SECURITY INVOKER projection.
 // Keeping this alias explicit documents the detail boundary without duplicating
 // a shape that could drift from the authoritative read model.
@@ -207,6 +247,7 @@ export type OpportunityListOptions = {
   query?: string;
   service?: OpportunityService;
   kind?: OpportunityKind;
+  pipelineStage?: OpportunityPipelineStage;
   sort?: OpportunitySort;
   page?: number;
   pageSize?: number;
@@ -216,6 +257,7 @@ export type ValidatedOpportunityListOptions = {
   query?: string;
   service?: OpportunityService;
   kind: OpportunityKind;
+  pipelineStage?: OpportunityPipelineStage;
   sort: OpportunitySort;
   page: number;
   pageSize: number;

@@ -79,6 +79,8 @@ function repository(
       total: 0,
       totalPages: 0,
     }),
+    listLeadAccessRows: vi.fn().mockResolvedValue([]),
+    listOwnerProfiles: vi.fn().mockResolvedValue([]),
     canModifyLead: vi.fn().mockResolvedValue(true),
     changePipelineStage: vi.fn().mockResolvedValue({
       ...opportunity,
@@ -374,6 +376,133 @@ describe("LeadConversionService", () => {
       .catch((caught) => caught);
     expect(error).toBeInstanceOf(OpportunityListUnavailableError);
     expect((error as Error).message).not.toContain("secret");
+  });
+
+  it("builds six bounded pipeline columns and batches representative access", async () => {
+    const item = {
+      ...opportunity,
+      leadTitle: "Long campaign title",
+      companyId: null,
+      companyName: null,
+      isConversion: true,
+      convertedAt: version,
+    };
+    const list = vi.fn().mockImplementation((options) =>
+      Promise.resolve({
+        items:
+          options.pipelineStage === "new"
+            ? [item]
+            : options.pipelineStage === "lost"
+              ? [
+                  {
+                    ...item,
+                    id: "55555555-5555-4555-8555-555555555555",
+                    pipelineStage: "lost",
+                    probabilityPercent: 0,
+                    lostAt: version,
+                    lostReason: "budget",
+                  },
+                ]
+              : [],
+        page: 1,
+        pageSize: 25,
+        total: options.pipelineStage === "new" ? 26 : options.pipelineStage === "lost" ? 1 : 0,
+        totalPages: options.pipelineStage === "new" ? 2 : options.pipelineStage === "lost" ? 1 : 0,
+      }),
+    );
+    const data = repository({
+      list,
+      listLeadAccessRows: vi.fn().mockResolvedValue([
+        {
+          id: leadId,
+          created_by: representative.userId,
+          assigned_to: null,
+        },
+      ]),
+      listOwnerProfiles: vi.fn().mockResolvedValue([
+        {
+          id: representative.userId,
+          fullName: "Sales Rep",
+          role: "sales_representative",
+          isActive: true,
+        },
+      ]),
+    });
+
+    const board = await new LeadConversionService(data).listPipeline(
+      { query: "  campaign  ", kind: "conversion" },
+      representative,
+    );
+
+    expect(board.columns.map((column) => column.stage)).toEqual([
+      "new",
+      "discussion",
+      "quotation_sent",
+      "negotiation",
+      "won",
+      "lost",
+    ]);
+    expect(board.columns[0]).toMatchObject({
+      total: 26,
+      items: [{ canModify: true, isConversion: true }],
+    });
+    expect(list).toHaveBeenCalledTimes(6);
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "campaign",
+        kind: "conversion",
+        pipelineStage: "quotation_sent",
+        page: 1,
+        pageSize: 25,
+      }),
+    );
+    expect(data.listLeadAccessRows).toHaveBeenCalledWith([leadId, leadId]);
+  });
+
+  it("marks Company-derived representative pipeline cards read-only", async () => {
+    const item = {
+      ...opportunity,
+      leadTitle: "Company-visible campaign",
+      companyId: null,
+      companyName: null,
+      isConversion: false,
+      convertedAt: null,
+    };
+    const data = repository({
+      list: vi.fn().mockImplementation((options) =>
+        Promise.resolve({
+          items: options.pipelineStage === "new" ? [item] : [],
+          page: 1,
+          pageSize: 25,
+          total: options.pipelineStage === "new" ? 1 : 0,
+          totalPages: options.pipelineStage === "new" ? 1 : 0,
+        }),
+      ),
+      listLeadAccessRows: vi.fn().mockResolvedValue([
+        {
+          id: leadId,
+          created_by: manager.userId,
+          assigned_to: manager.userId,
+        },
+      ]),
+    });
+    const board = await new LeadConversionService(data).listPipeline(
+      {},
+      representative,
+    );
+    expect(board.columns[0]?.items[0]?.canModify).toBe(false);
+  });
+
+  it("rejects inactive pipeline actors before any read", async () => {
+    const data = repository();
+    await expect(
+      new LeadConversionService(data).listPipeline(
+        {},
+        { ...representative, isActive: false },
+      ),
+    ).rejects.toBeInstanceOf(LeadConversionPermissionError);
+    expect(data.list).not.toHaveBeenCalled();
+    expect(data.listOwnerProfiles).not.toHaveBeenCalled();
   });
 
   it("changes only an active stage through the dedicated repository method", async () => {

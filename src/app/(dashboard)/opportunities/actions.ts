@@ -120,7 +120,7 @@ function knownErrorState(
     return {
       status: "conflict",
       message:
-        "This Opportunity changed after the request was prepared. Refresh and try again.",
+        "This Opportunity was updated by someone else. The latest information has been loaded. Review it and try again.",
     };
   }
   if (error instanceof OpportunityMutationEligibilityError) {
@@ -143,6 +143,7 @@ function knownErrorState(
 
 function revalidateOpportunity(opportunityId: string): void {
   revalidatePath("/opportunities");
+  revalidatePath("/opportunities/pipeline");
   revalidatePath(`/opportunities/${opportunityId}`);
 }
 
