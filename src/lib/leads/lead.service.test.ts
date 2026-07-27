@@ -108,6 +108,25 @@ describe("LeadService", () => {
     await expect(service.restore("11111111-1111-4111-8111-111111111111", manager)).rejects.toBeInstanceOf(LeadNotFoundError);
   });
 
+  it("delegates management restore directly to the secure repository boundary", async () => {
+    const repository = repositoryMock();
+    const service = new LeadService(repository as never);
+
+    await expect(service.restore(leadFixture.id, manager)).resolves.toBeUndefined();
+    expect(repository.restore).toHaveBeenCalledWith(leadFixture.id);
+    expect(repository.getById).not.toHaveBeenCalled();
+  });
+
+  it("rejects inactive management before invoking the restore boundary", async () => {
+    const repository = repositoryMock();
+    const service = new LeadService(repository as never);
+
+    await expect(
+      service.restore(leadFixture.id, { ...manager, isActive: false }),
+    ).rejects.toBeInstanceOf(LeadPermissionError);
+    expect(repository.restore).not.toHaveBeenCalled();
+  });
+
   it("enforces include-deleted access rules and forwards the flag to the repository", async () => {
     const repository = repositoryMock();
     const service = new LeadService(repository as never);
@@ -122,6 +141,38 @@ describe("LeadService", () => {
   it("prevents representatives from changing assignment without ownership", async () => {
     const service = new LeadService(repositoryMock() as never);
     await expect(service.update("11111111-1111-4111-8111-111111111111", { assignedTo: "33333333-3333-4333-8333-333333333333" }, representative)).rejects.toBeInstanceOf(LeadPermissionError);
+  });
+
+  it("rejects ordinary and confirmed updates to historical converted Leads", async () => {
+    const convertedLead = {
+      ...leadFixture,
+      stage: "converted",
+      leadStatus: "closed",
+      convertedAt: "2026-07-27T08:00:00.000Z",
+    };
+    const repository = repositoryMock({
+      getById: vi.fn().mockResolvedValue(convertedLead),
+    });
+    const service = new LeadService(repository as never);
+    await expect(
+      service.update(leadFixture.id, { title: "Rewrite" }, manager),
+    ).rejects.toBeInstanceOf(LeadPermissionError);
+    await expect(
+      service.updateConfirmedDuplicate(
+        leadFixture.id,
+        { title: "Rewrite" },
+        manager,
+        {
+          confirmationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          submissionHash: "b".repeat(64),
+          actorId: manager.userId,
+          operation: "update",
+          leadId: leadFixture.id,
+        },
+      ),
+    ).rejects.toBeInstanceOf(LeadPermissionError);
+    expect(repository.update).not.toHaveBeenCalled();
+    expect(repository.updateConfirmed).not.toHaveBeenCalled();
   });
 
   it("allows only management to list archived leads", async () => {

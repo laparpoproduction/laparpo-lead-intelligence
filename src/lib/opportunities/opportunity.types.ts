@@ -61,6 +61,22 @@ export type LeadConversionResult = {
   status: LeadConversionStatus;
 };
 
+export type LeadConversionRecord = {
+  leadId: string;
+  opportunityId: string;
+  convertedAt: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type LeadConversionRecordRow = {
+  lead_id: string;
+  opportunity_id: string;
+  converted_at: string;
+  created_by: string;
+  created_at: string;
+};
+
 export type LeadConversionRow = {
   lead_id: string;
   opportunity_id: string;

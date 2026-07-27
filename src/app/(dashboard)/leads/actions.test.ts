@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { revalidatePath } from "next/cache";
 import type { LeadService } from "@/lib/leads/lead.service";
-import { LeadDuplicateError, LeadNotFoundError, LeadPermissionError } from "@/lib/leads/lead.service";
+import { LeadDuplicateError, LeadNotFoundError, LeadPermissionError, LeadService as RealLeadService } from "@/lib/leads/lead.service";
+import { SupabaseLeadRepository } from "@/lib/leads/lead.repository";
 import { LeadMutationAuthError, createLeadMutationContext } from "@/lib/leads/lead.server";
 import type { LeadActor } from "@/lib/leads/lead.types";
 import { archiveLeadAction, createLeadAction, restoreLeadAction, updateLeadAction } from "./actions";
@@ -168,5 +169,80 @@ describe("Leads server actions", () => {
 
     const restored = await restoreLeadAction(initialLeadFormState, archiveForm());
     expect(restored).toMatchObject({ status: "success", redirectTo: "/leads" });
+  });
+
+  it("runs restore action through the real service and repository RPC boundary", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: "11111111-1111-4111-8111-111111111111",
+      error: null,
+    });
+    const from = vi.fn(() => {
+      throw new Error("Ordinary archived SELECT must not be used for restore");
+    });
+    const realService = new RealLeadService(
+      new SupabaseLeadRepository({ rpc, from } as never),
+    );
+    vi.mocked(createLeadMutationContext).mockResolvedValueOnce({
+      actor,
+      service: realService,
+    });
+
+    await expect(
+      restoreLeadAction(initialLeadFormState, archiveForm()),
+    ).resolves.toMatchObject({
+      status: "success",
+      leadId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(from).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith("restore_archived_lead", {
+      target_lead_id: "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
+  it("safely handles real restore-boundary denial, missing rows, and database failures", async () => {
+    const representativeActor: LeadActor = {
+      ...actor,
+      role: "sales_representative",
+    };
+    const deniedRpc = vi.fn();
+    vi.mocked(createLeadMutationContext).mockResolvedValueOnce({
+      actor: representativeActor,
+      service: new RealLeadService(
+        new SupabaseLeadRepository({ rpc: deniedRpc, from: vi.fn() } as never),
+      ),
+    });
+    await expect(
+      restoreLeadAction(initialLeadFormState, archiveForm()),
+    ).resolves.toMatchObject({ status: "permission_error" });
+    expect(deniedRpc).not.toHaveBeenCalled();
+
+    const missingRpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    vi.mocked(createLeadMutationContext).mockResolvedValueOnce({
+      actor,
+      service: new RealLeadService(
+        new SupabaseLeadRepository({ rpc: missingRpc, from: vi.fn() } as never),
+      ),
+    });
+    await expect(
+      restoreLeadAction(initialLeadFormState, archiveForm()),
+    ).resolves.toMatchObject({ status: "not_found" });
+
+    const failingRpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: "sensitive_constraint_name and raw SQL" },
+    });
+    vi.mocked(createLeadMutationContext).mockResolvedValueOnce({
+      actor,
+      service: new RealLeadService(
+        new SupabaseLeadRepository({ rpc: failingRpc, from: vi.fn() } as never),
+      ),
+    });
+    const failed = await restoreLeadAction(initialLeadFormState, archiveForm());
+    expect(failed).toMatchObject({
+      status: "error",
+      message: "The lead could not be saved. Try again or contact an administrator.",
+    });
+    expect(failed.message).not.toContain("SQL");
+    expect(failed.message).not.toContain("constraint");
   });
 });

@@ -1,6 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { mapLeadConversionResult, mapOpportunityRow } from "./opportunity.mapper";
+import {
+  mapLeadConversionRecord,
+  mapLeadConversionResult,
+  mapOpportunityRow,
+} from "./opportunity.mapper";
 import type {
+  LeadConversionRecord,
+  LeadConversionRecordRow,
   LeadConversionResult,
   Opportunity,
   OpportunityRow,
@@ -35,6 +41,7 @@ export class OpportunityRepositoryError extends Error {
 
 export interface OpportunityRepository {
   convert(input: ValidatedConvertLeadInput): Promise<LeadConversionResult>;
+  getConversionByLead(leadId: string): Promise<LeadConversionRecord | null>;
   getById(id: string): Promise<Opportunity | null>;
   listByLead(leadId: string): Promise<Opportunity[]>;
 }
@@ -113,6 +120,26 @@ export class SupabaseOpportunityRepository implements OpportunityRepository {
         "unknown",
       );
     }
+  }
+
+  async getConversionByLead(
+    leadId: string,
+  ): Promise<LeadConversionRecord | null> {
+    const { data, error } = await this.client
+      .from("lead_conversions")
+      .select("lead_id, opportunity_id, converted_at, created_by, created_at")
+      .eq("lead_id", validateOpportunityId(leadId))
+      .maybeSingle();
+    if (error) {
+      throw new OpportunityRepositoryError(
+        "get conversion by Lead",
+        classifyFailure(error),
+        safeCause(error),
+      );
+    }
+    return data
+      ? mapLeadConversionRecord(data as LeadConversionRecordRow)
+      : null;
   }
 
   async getById(id: string): Promise<Opportunity | null> {

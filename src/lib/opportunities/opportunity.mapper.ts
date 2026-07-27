@@ -1,10 +1,24 @@
 import { z } from "zod";
 import {
   opportunityServiceValues,
+  type LeadConversionRecord,
+  type LeadConversionRecordRow,
   type LeadConversionResult,
   type Opportunity,
   type OpportunityRow,
 } from "./opportunity.types";
+
+export function mapLeadConversionRecord(
+  row: LeadConversionRecordRow,
+): LeadConversionRecord {
+  return {
+    leadId: row.lead_id,
+    opportunityId: row.opportunity_id,
+    convertedAt: row.converted_at,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  };
+}
 
 const conversionResultSchema = z.object({
   lead_id: z.uuid(),

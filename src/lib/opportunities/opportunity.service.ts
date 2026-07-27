@@ -6,6 +6,7 @@ import {
 import type {
   ConvertLeadInput,
   LeadConversionActor,
+  LeadConversionRecord,
   LeadConversionResult,
   Opportunity,
 } from "./opportunity.types";
@@ -90,6 +91,28 @@ export class LeadConversionService {
     this.requireActive(actor);
     const validatedId = this.validate(() => validateOpportunityId(id));
     return this.repository.getById(validatedId);
+  }
+
+  async getConversionByLead(
+    leadId: string,
+    actor: LeadConversionActor,
+  ): Promise<LeadConversionRecord | null> {
+    this.requireActive(actor);
+    const validatedId = this.validate(() => validateOpportunityId(leadId));
+    try {
+      return await this.repository.getConversionByLead(validatedId);
+    } catch (error) {
+      if (
+        error instanceof OpportunityRepositoryError &&
+        error.failure === "permission_denied"
+      ) {
+        throw new LeadConversionPermissionError();
+      }
+      if (error instanceof OpportunityRepositoryError) {
+        throw new LeadConversionUnavailableError(error);
+      }
+      throw error;
+    }
   }
 
   async listByLead(

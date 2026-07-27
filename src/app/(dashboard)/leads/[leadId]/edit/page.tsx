@@ -23,7 +23,8 @@ export default async function EditLeadPage({ params }: { params: Promise<{ leadI
     throw error;
   }
   if (!canEditLead(lead, actor)) {
-    return <section className="mx-auto max-w-3xl"><LeadPageHeader backHref={`/leads/${lead.id}`} description="Company-derived access is read-only." title="Read-only lead" /><div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-950" role="alert"><h3 className="font-black">You cannot edit {lead.title}</h3><p className="mt-2 text-sm leading-6">Only management, the creator or the assignee can update this Lead.</p><Link className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-zinc-950 px-4 text-sm font-bold text-white" href={`/leads/${lead.id}`}>Back to Lead</Link></div></section>;
+    const converted = lead.stage === "converted";
+    return <section className="mx-auto max-w-3xl"><LeadPageHeader backHref={`/leads/${lead.id}`} description={converted ? "Converted Leads are preserved as historical CRM records." : "Company-derived access is read-only."} title="Read-only lead" /><div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-950" role="alert"><h3 className="break-words font-black">You cannot edit {lead.title}</h3><p className="mt-2 text-sm leading-6">{converted ? "The Opportunity is the sales source of truth after conversion. Lead details remain available for historical reference." : "Only management, the creator or the assignee can update this Lead."}</p><Link className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-zinc-950 px-4 text-sm font-bold text-white" href={`/leads/${lead.id}`}>Back to Lead</Link></div></section>;
   }
   return <section className="mx-auto max-w-5xl"><LeadPageHeader backHref={`/leads/${lead.id}`} description="Update pipeline details while preserving server authorization and duplicate safeguards." title={`Edit ${lead.title}`} /><LeadForm actor={actor} lead={lead} mode="edit" /></section>;
 }

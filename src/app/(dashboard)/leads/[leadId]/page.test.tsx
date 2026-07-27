@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => ({
   requireDashboardUser: vi.fn(),
   createLeadMutationContext: vi.fn(),
   createLeadActivityMutationContext: vi.fn(),
+  createLeadConversionContext: vi.fn(),
   getById: vi.fn(),
   listByLead: vi.fn(),
+  getConversionByLead: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -19,6 +21,9 @@ vi.mock("@/lib/auth/session", () => ({ requireDashboardUser: mocks.requireDashbo
 vi.mock("@/lib/leads/lead.server", () => ({ createLeadMutationContext: mocks.createLeadMutationContext }));
 vi.mock("@/lib/lead-activities/lead-activity.server", () => ({
   createLeadActivityMutationContext: mocks.createLeadActivityMutationContext,
+}));
+vi.mock("@/lib/opportunities/opportunity.server", () => ({
+  createLeadConversionContext: mocks.createLeadConversionContext,
 }));
 
 import LeadDetailsPage from "./page";
@@ -45,6 +50,15 @@ beforeEach(() => {
   mocks.createLeadActivityMutationContext.mockResolvedValue({
     actor: { userId: "11111111-1111-4111-8111-111111111111", role: "sales_manager", isActive: true },
     service: { listByLead: mocks.listByLead },
+  });
+  mocks.getConversionByLead.mockResolvedValue(null);
+  mocks.createLeadConversionContext.mockResolvedValue({
+    actor: {
+      userId: "11111111-1111-4111-8111-111111111111",
+      role: "sales_manager",
+      isActive: true,
+    },
+    service: { getConversionByLead: mocks.getConversionByLead },
   });
 });
 
@@ -77,5 +91,17 @@ describe("Lead details page", () => {
       }),
     });
     expect(result).toBeDefined();
+  });
+
+  it("loads only the current Lead conversion relationship", async () => {
+    await LeadDetailsPage({
+      params: Promise.resolve({
+        leadId: "22222222-2222-4222-8222-222222222222",
+      }),
+    });
+    expect(mocks.getConversionByLead).toHaveBeenCalledWith(
+      "22222222-2222-4222-8222-222222222222",
+      expect.objectContaining({ role: "sales_manager" }),
+    );
   });
 });

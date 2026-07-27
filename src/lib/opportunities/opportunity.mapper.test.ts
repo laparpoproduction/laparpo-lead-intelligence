@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mapLeadConversionResult, mapOpportunityRow } from "./opportunity.mapper";
+import {
+  mapLeadConversionRecord,
+  mapLeadConversionResult,
+  mapOpportunityRow,
+} from "./opportunity.mapper";
 
 const leadId = "11111111-1111-4111-8111-111111111111";
 const opportunityId = "22222222-2222-4222-8222-222222222222";
@@ -43,5 +47,23 @@ describe("Opportunity mapping", () => {
       status: "already_converted",
     });
     expect(() => mapLeadConversionResult([])).toThrow();
+  });
+
+  it("maps immutable conversion ledger metadata", () => {
+    expect(
+      mapLeadConversionRecord({
+        lead_id: leadId,
+        opportunity_id: opportunityId,
+        converted_at: "2026-07-27T08:00:00.000Z",
+        created_by: leadId,
+        created_at: "2026-07-27T08:00:00.000Z",
+      }),
+    ).toEqual({
+      leadId,
+      opportunityId,
+      convertedAt: "2026-07-27T08:00:00.000Z",
+      createdBy: leadId,
+      createdAt: "2026-07-27T08:00:00.000Z",
+    });
   });
 });
