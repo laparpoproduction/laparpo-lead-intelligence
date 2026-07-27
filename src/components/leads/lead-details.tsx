@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { LeadArchiveDialog } from "./lead-archive-dialog";
+import { LeadConversionDialog } from "./lead-conversion-dialog";
 import { LeadPageHeader } from "./lead-page-header";
 import { humanizeLeadValue } from "@/lib/leads/lead-ui";
 import type { Lead } from "@/lib/leads/lead.types";
+import type { LeadConversionRecord } from "@/lib/opportunities/opportunity.types";
 
 const date = new Intl.DateTimeFormat("en-MY", { dateStyle: "medium" });
 const dateTime = new Intl.DateTimeFormat("en-MY", { dateStyle: "medium", timeStyle: "short" });
@@ -23,11 +25,17 @@ export function LeadDetails({
   lead,
   canEdit,
   canArchive,
+  canConvert,
+  conversion,
+  legacyConverted,
   activityTimeline,
 }: {
   lead: Lead;
   canEdit: boolean;
   canArchive: boolean;
+  canConvert?: boolean;
+  conversion?: LeadConversionRecord | null;
+  legacyConverted?: boolean;
   activityTimeline?: React.ReactNode;
 }) {
   return (
@@ -43,6 +51,26 @@ export function LeadDetails({
             <Detail label="Service interest" value={lead.serviceInterest ? humanizeLeadValue(lead.serviceInterest) : null} />
             <Detail label="Lead score" value={lead.leadScore} />
           </Group>
+          {conversion || legacyConverted ? (
+            <Group title="Conversion history">
+              <Detail
+                label="Historical state"
+                value={
+                  conversion
+                    ? "Converted — Opportunity is now the sales source of truth"
+                    : "Legacy converted Lead — Opportunity relationship unresolved"
+                }
+              />
+              <Detail
+                label="Converted"
+                value={<Timestamp value={lead.convertedAt} />}
+              />
+              <Detail
+                label="Conversion Opportunity"
+                value={conversion?.opportunityId ?? null}
+              />
+            </Group>
+          ) : null}
           <Group title="Relationships">
             <Detail label="Company" value={lead.companyId ? <Link className="text-[#c91920] hover:underline" href={`/companies/${lead.companyId}`}>{lead.companyId}</Link> : null} />
             <Detail label="Primary contact" value={lead.primaryContactId ? <Link className="text-[#c91920] hover:underline" href={`/contacts/${lead.primaryContactId}`}>{lead.primaryContactId}</Link> : null} />
@@ -75,11 +103,45 @@ export function LeadDetails({
           {lead.notes ? <Group title="Notes"><div className="sm:col-span-2"><Detail label="General notes" value={lead.notes} /></div></Group> : null}
         </div>
         <aside className="space-y-4">
+          {canConvert ? (
+            <div className="rounded-2xl border border-red-100 bg-white p-4 shadow-sm">
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.08em] text-zinc-400">
+                Sales workflow
+              </p>
+              <LeadConversionDialog
+                currency={lead.currency}
+                estimatedValue={lead.estimatedValue}
+                leadId={lead.id}
+                serviceInterest={lead.serviceInterest}
+                title={lead.title}
+              />
+            </div>
+          ) : null}
+          {conversion ? (
+            <p
+              className="break-words rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950"
+              role="status"
+            >
+              <span className="font-bold">Converted and closed.</span>{" "}
+              This Lead is preserved as read-only historical CRM information.
+              Activities and notes remain visible below.
+            </p>
+          ) : null}
+          {legacyConverted ? (
+            <p
+              className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"
+              role="status"
+            >
+              <span className="font-bold">Historical legacy conversion.</span>{" "}
+              No verified conversion Opportunity is known, so this Lead remains
+              read-only and cannot be converted automatically.
+            </p>
+          ) : null}
           <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-bold uppercase tracking-[0.08em] text-zinc-400">Metadata</p>
             <dl className="mt-4 space-y-4"><Detail label="Created" value={<Timestamp value={lead.createdAt} />} /><Detail label="Updated" value={<Timestamp value={lead.updatedAt} />} /></dl>
           </div>
-          {!canEdit ? <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">This Lead is visible through Company access, but editing requires creator or assignee access.</p> : null}
+          {!canEdit && !conversion && !legacyConverted ? <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">This Lead is visible through Company access, but editing requires creator or assignee access.</p> : null}
           {canArchive ? <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"><p className="mb-3 text-xs font-bold uppercase tracking-[0.08em] text-zinc-400">Management</p><LeadArchiveDialog leadId={lead.id} title={lead.title} /></div> : null}
         </aside>
       </div>

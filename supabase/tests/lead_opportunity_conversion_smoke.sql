@@ -415,6 +415,82 @@ begin
 end;
 $$;
 
+-- Ledger-backed converted Leads are historical source records. Ordinary Lead
+-- sales updates are blocked for authenticated management while Opportunity
+-- access/mutation remains governed by the unchanged can_modify_lead helper.
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '71000000-0000-4000-8000-000000000002',
+  false
+);
+do $$
+declare
+  blocked boolean := false;
+  conversion_opportunity uuid;
+begin
+  begin
+    update public.leads
+    set title = 'Rewritten historical Lead'
+    where id = '77000000-0000-4000-8000-000000000001';
+  exception when check_violation then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Converted Lead ordinary update was not rejected';
+  end if;
+
+  select opportunity_id
+  into conversion_opportunity
+  from public.lead_conversions
+  where lead_id = '77000000-0000-4000-8000-000000000001';
+
+  if not exists (
+    select 1
+    from public.opportunities
+    where id = conversion_opportunity
+  ) then
+    raise exception 'Conversion Opportunity became inaccessible';
+  end if;
+
+  update public.opportunities
+  set estimated_value_myr = 4321
+  where id = conversion_opportunity;
+
+  if not exists (
+    select 1
+    from public.opportunities
+    where id = conversion_opportunity
+      and estimated_value_myr = 4321
+  ) then
+    raise exception 'Permitted Opportunity mutation was blocked';
+  end if;
+end;
+$$;
+
+-- Management archive and restore remain valid without unfreezing sales data.
+update public.leads
+set deleted_at = now()
+where id = '77000000-0000-4000-8000-000000000001';
+reset role;
+do $$
+begin
+  if not exists (
+    select 1 from public.leads
+    where id = '77000000-0000-4000-8000-000000000001'
+      and deleted_at is not null
+  ) then
+    raise exception 'Management archive of converted Lead failed';
+  end if;
+end;
+$$;
+-- Restore with the privileged maintenance path used to verify the trigger
+-- itself; migration 016 intentionally does not change existing Lead RLS.
+reset role;
+update public.leads
+set deleted_at = null
+where id = '77000000-0000-4000-8000-000000000001';
+
 reset role;
 do $$
 begin

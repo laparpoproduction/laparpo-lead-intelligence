@@ -164,4 +164,28 @@ describe("SupabaseOpportunityRepository", () => {
       args: ["id", { ascending: true }],
     });
   });
+
+  it("retrieves only the current Lead conversion ledger record", async () => {
+    const { repository, calls } = setup([
+      {
+        data: {
+          lead_id: leadId,
+          opportunity_id: opportunityId,
+          converted_at: "2026-07-27T08:00:00.000Z",
+          created_by: leadId,
+          created_at: "2026-07-27T08:00:00.000Z",
+        },
+        error: null,
+      },
+    ]);
+    await expect(repository.getConversionByLead(leadId)).resolves.toMatchObject({
+      leadId,
+      opportunityId,
+    });
+    expect(calls).toContainEqual({
+      method: "from",
+      args: ["lead_conversions"],
+    });
+    expect(calls).toContainEqual({ method: "eq", args: ["lead_id", leadId] });
+  });
 });

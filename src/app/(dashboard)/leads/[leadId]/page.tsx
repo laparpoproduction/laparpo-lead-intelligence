@@ -15,9 +15,15 @@ import type {
 } from "@/lib/lead-activities/lead-activity.types";
 import { LeadNotFoundError, LeadPermissionError, LeadValidationError } from "@/lib/leads/lead.service";
 import { createLeadMutationContext } from "@/lib/leads/lead.server";
-import { canArchiveLead, canEditLead } from "@/lib/leads/lead-ui";
+import {
+  canArchiveLead,
+  canConvertLead,
+  canEditLead,
+} from "@/lib/leads/lead-ui";
 import type { Lead, LeadActor } from "@/lib/leads/lead.types";
 import { logger } from "@/lib/logger";
+import { createLeadConversionContext } from "@/lib/opportunities/opportunity.server";
+import type { LeadConversionRecord } from "@/lib/opportunities/opportunity.types";
 
 export default async function LeadDetailsPage({
   params,
@@ -65,6 +71,22 @@ export default async function LeadDetailsPage({
     });
   }
 
+  let conversion: LeadConversionRecord | null = null;
+  let conversionStateAvailable = true;
+  try {
+    const context = await createLeadConversionContext();
+    conversion = await context.service.getConversionByLead(
+      lead.id,
+      context.actor,
+    );
+  } catch (error) {
+    conversionStateAvailable = false;
+    logger.error("Lead conversion state failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      leadId: lead.id,
+    });
+  }
+
   if (
     activities &&
     activities.totalPages > 0 &&
@@ -78,7 +100,13 @@ export default async function LeadDetailsPage({
   }
 
   const nowIso = new Date().toISOString();
-  const canModify = canEditLead(lead, actor);
+  const historical = Boolean(conversion) || lead.stage === "converted";
+  const canModify = canEditLead(lead, actor) && !historical;
+  const canConvert =
+    conversionStateAvailable &&
+    !conversion &&
+    canConvertLead(lead, actor);
+  const legacyConverted = !conversion && lead.stage === "converted";
   return (
     <LeadDetails
       activityTimeline={
@@ -93,8 +121,11 @@ export default async function LeadDetailsPage({
         />
       }
       canArchive={canArchiveLead(actor)}
+      canConvert={canConvert}
       canEdit={canModify}
+      conversion={conversion}
       lead={lead}
+      legacyConverted={legacyConverted}
     />
   );
 }

@@ -6,9 +6,28 @@ export function isLeadManagement(actor: LeadActor): boolean {
   return actor.role === "ceo_admin" || actor.role === "sales_manager";
 }
 export function canEditLead(lead: Lead, actor: LeadActor): boolean {
-  return isLeadManagement(actor)
-    || lead.createdBy === actor.userId
-    || lead.assignedTo === actor.userId;
+  if (lead.stage === "converted") return false;
+  return (
+    isLeadManagement(actor) ||
+    lead.createdBy === actor.userId ||
+    lead.assignedTo === actor.userId
+  );
+}
+
+export function canConvertLead(lead: Lead, actor: LeadActor): boolean {
+  if (
+    lead.deletedAt ||
+    lead.stage === "converted" ||
+    lead.stage === "lost" ||
+    lead.stage === "disqualified"
+  ) {
+    return false;
+  }
+  return (
+    isLeadManagement(actor) ||
+    lead.createdBy === actor.userId ||
+    lead.assignedTo === actor.userId
+  );
 }
 
 export function canArchiveLead(actor: LeadActor): boolean {

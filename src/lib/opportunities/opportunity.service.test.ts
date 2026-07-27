@@ -33,6 +33,7 @@ function repository(
       opportunityId,
       status: "converted",
     }),
+    getConversionByLead: vi.fn().mockResolvedValue(null),
     getById: vi.fn().mockResolvedValue(null),
     listByLead: vi.fn().mockResolvedValue([]),
     ...overrides,
@@ -138,5 +139,22 @@ describe("LeadConversionService", () => {
       ),
     ).rejects.toBeInstanceOf(LeadConversionValidationError);
     expect(data.convert).not.toHaveBeenCalled();
+  });
+
+  it("retrieves Lead-scoped conversion metadata for an active actor", async () => {
+    const conversion = {
+      leadId,
+      opportunityId,
+      convertedAt: "2026-07-27T08:00:00.000Z",
+      createdBy: manager.userId,
+      createdAt: "2026-07-27T08:00:00.000Z",
+    };
+    const data = repository({
+      getConversionByLead: vi.fn().mockResolvedValue(conversion),
+    });
+    await expect(
+      new LeadConversionService(data).getConversionByLead(leadId, manager),
+    ).resolves.toEqual(conversion);
+    expect(data.getConversionByLead).toHaveBeenCalledWith(leadId);
   });
 });

@@ -265,6 +265,11 @@ export class LeadService {
   }
 
   private requireUpdateAccess(lead: Lead, actor: LeadActor): void {
+    if (lead.stage === "converted") {
+      throw new LeadPermissionError(
+        "Converted Leads are historical and cannot be edited",
+      );
+    }
     if (isManagement(actor)) return;
     if (lead.createdBy !== actor.userId && lead.assignedTo !== actor.userId) {
       throw new LeadPermissionError("Lead access is read-only for company-derived records");
