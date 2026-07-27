@@ -9,6 +9,7 @@ import type {
   LeadConversionRecord,
   LeadConversionResult,
   Opportunity,
+  OpportunityDetail,
   OpportunityListOptions,
   PaginatedOpportunities,
 } from "./opportunity.types";
@@ -67,6 +68,20 @@ export class OpportunityListUnavailableError extends Error {
   }
 }
 
+export class OpportunityDetailValidationError extends Error {
+  constructor(readonly issues: ZodError["issues"], cause?: unknown) {
+    super("Opportunity ID is invalid", { cause });
+    this.name = "OpportunityDetailValidationError";
+  }
+}
+
+export class OpportunityDetailUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super("Opportunity detail is temporarily unavailable", { cause });
+    this.name = "OpportunityDetailUnavailableError";
+  }
+}
+
 export class LeadConversionService {
   constructor(private readonly repository: OpportunityRepository) {}
 
@@ -108,6 +123,30 @@ export class LeadConversionService {
     this.requireActive(actor);
     const validatedId = this.validate(() => validateOpportunityId(id));
     return this.repository.getById(validatedId);
+  }
+
+  async getDetailById(
+    id: string,
+    actor: LeadConversionActor,
+  ): Promise<OpportunityDetail | null> {
+    this.requireActive(actor);
+    let validatedId: string;
+    try {
+      validatedId = validateOpportunityId(id);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        throw new OpportunityDetailValidationError(error.issues, error);
+      }
+      throw error;
+    }
+    try {
+      return await this.repository.getDetailById(validatedId);
+    } catch (error) {
+      if (error instanceof OpportunityRepositoryError) {
+        throw new OpportunityDetailUnavailableError(error);
+      }
+      throw error;
+    }
   }
 
   async getConversionByLead(

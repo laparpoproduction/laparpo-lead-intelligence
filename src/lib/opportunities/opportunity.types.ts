@@ -64,6 +64,11 @@ export type OpportunityListItem = Opportunity & {
   convertedAt: string | null;
 };
 
+// Detail and list intentionally share the same SECURITY INVOKER projection.
+// Keeping this alias explicit documents the detail boundary without duplicating
+// a shape that could drift from the authoritative read model.
+export type OpportunityDetail = OpportunityListItem;
+
 export type OpportunityListRow = OpportunityRow & {
   lead_title: string;
   company_id: string | null;

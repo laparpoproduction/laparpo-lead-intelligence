@@ -12,6 +12,8 @@ import {
   LeadConversionValidationError,
   OpportunityListUnavailableError,
   OpportunityListValidationError,
+  OpportunityDetailUnavailableError,
+  OpportunityDetailValidationError,
 } from "./opportunity.service";
 
 const leadId = "11111111-1111-4111-8111-111111111111";
@@ -37,6 +39,7 @@ function repository(
     }),
     getConversionByLead: vi.fn().mockResolvedValue(null),
     getById: vi.fn().mockResolvedValue(null),
+    getDetailById: vi.fn().mockResolvedValue(null),
     listByLead: vi.fn().mockResolvedValue([]),
     list: vi.fn().mockResolvedValue({
       items: [],
@@ -165,6 +168,69 @@ describe("LeadConversionService", () => {
       new LeadConversionService(data).getConversionByLead(leadId, manager),
     ).resolves.toEqual(conversion);
     expect(data.getConversionByLead).toHaveBeenCalledWith(leadId);
+  });
+
+  it("retrieves an Opportunity detail projection for an active actor", async () => {
+    const detail = {
+      id: opportunityId,
+      leadId,
+      leadTitle: "Campaign",
+      companyId: null,
+      companyName: null,
+      service: "corporate" as const,
+      estimatedValueMyr: 8000,
+      quotationNumber: null,
+      quotationSentAt: null,
+      meetingAt: null,
+      depositAmountMyr: null,
+      depositReceivedAt: null,
+      createdAt: "2026-07-27T08:00:00.000Z",
+      updatedAt: "2026-07-27T08:00:00.000Z",
+      isConversion: false,
+      convertedAt: null,
+    };
+    const data = repository({
+      getDetailById: vi.fn().mockResolvedValue(detail),
+    });
+    await expect(
+      new LeadConversionService(data).getDetailById(
+        opportunityId,
+        representative,
+      ),
+    ).resolves.toEqual(detail);
+    expect(data.getDetailById).toHaveBeenCalledWith(opportunityId);
+  });
+
+  it("rejects inactive and malformed detail requests before repository access", async () => {
+    const data = repository();
+    const service = new LeadConversionService(data);
+    await expect(
+      service.getDetailById(opportunityId, {
+        ...representative,
+        isActive: false,
+      }),
+    ).rejects.toBeInstanceOf(LeadConversionPermissionError);
+    await expect(
+      service.getDetailById("malformed", representative),
+    ).rejects.toBeInstanceOf(OpportunityDetailValidationError);
+    expect(data.getDetailById).not.toHaveBeenCalled();
+  });
+
+  it("maps detail repository failures to a safe unavailable error", async () => {
+    const data = repository({
+      getDetailById: vi.fn().mockRejectedValue(
+        new OpportunityRepositoryError(
+          "get detail",
+          "unknown",
+          new Error("secret database payload"),
+        ),
+      ),
+    });
+    const error = await new LeadConversionService(data)
+      .getDetailById(opportunityId, manager)
+      .catch((caught) => caught);
+    expect(error).toBeInstanceOf(OpportunityDetailUnavailableError);
+    expect((error as Error).message).not.toContain("secret");
   });
 
   it("validates and delegates the global read list for an active actor", async () => {
