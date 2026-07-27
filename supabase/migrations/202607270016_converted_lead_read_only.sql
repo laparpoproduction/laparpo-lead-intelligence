@@ -23,6 +23,8 @@ begin
 
   -- The atomic conversion RPC creates the ledger immediately before its one
   -- Lead transition. Preserve that exact transition and no other mutation.
+  -- fingerprint is a generated column and appears unset in NEW during BEFORE
+  -- triggers; PostgreSQL recomputes it after these checks.
   if old.stage is distinct from 'converted'::public.lead_stage then
     if new.stage = 'converted'::public.lead_stage
       and new.lead_status = 'closed'::public.lead_operational_status
@@ -33,12 +35,14 @@ begin
           - 'lead_status'
           - 'converted_at'
           - 'updated_at'
+          - 'fingerprint'
       ) is not distinct from (
         to_jsonb(old)
           - 'stage'
           - 'lead_status'
           - 'converted_at'
           - 'updated_at'
+          - 'fingerprint'
       )
     then
       return new;
@@ -49,11 +53,12 @@ begin
   end if;
 
   -- Management archive/restore remains valid. updated_at is maintained by the
-  -- existing timestamp trigger; every other historical Lead field is frozen.
+  -- existing timestamp trigger and fingerprint is generated; every other
+  -- historical Lead field is frozen.
   if (
-    to_jsonb(new) - 'deleted_at' - 'updated_at'
+    to_jsonb(new) - 'deleted_at' - 'updated_at' - 'fingerprint'
   ) is distinct from (
-    to_jsonb(old) - 'deleted_at' - 'updated_at'
+    to_jsonb(old) - 'deleted_at' - 'updated_at' - 'fingerprint'
   ) then
     raise exception 'Converted Lead sales data is read-only'
       using errcode = '23514', detail = 'converted_lead_read_only';
