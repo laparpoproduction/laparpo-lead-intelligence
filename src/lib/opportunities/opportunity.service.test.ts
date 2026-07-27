@@ -14,7 +14,14 @@ import {
   OpportunityListValidationError,
   OpportunityDetailUnavailableError,
   OpportunityDetailValidationError,
+  OpportunityMutationConflictError,
+  OpportunityMutationEligibilityError,
+  OpportunityMutationNotFoundError,
+  OpportunityMutationPermissionError,
+  OpportunityMutationUnavailableError,
+  OpportunityMutationValidationError,
 } from "./opportunity.service";
+import type { Opportunity } from "./opportunity.types";
 
 const leadId = "11111111-1111-4111-8111-111111111111";
 const opportunityId = "22222222-2222-4222-8222-222222222222";
@@ -25,7 +32,31 @@ const manager = {
 };
 const representative = {
   ...manager,
+  userId: "44444444-4444-4444-8444-444444444444",
   role: "sales_representative" as const,
+};
+const version = "2026-07-27T08:00:00.000Z";
+const opportunity: Opportunity = {
+  id: opportunityId,
+  leadId,
+  service: "corporate",
+  estimatedValueMyr: 8000,
+  quotationNumber: null,
+  quotationSentAt: null,
+  meetingAt: null,
+  depositAmountMyr: null,
+  depositReceivedAt: null,
+  pipelineStage: "new",
+  probabilityPercent: 20,
+  probabilityOverridden: false,
+  expectedCloseDate: null,
+  ownerId: null,
+  wonAt: null,
+  lostAt: null,
+  lostReason: null,
+  lostReasonNotes: null,
+  createdAt: version,
+  updatedAt: version,
 };
 
 function repository(
@@ -47,6 +78,45 @@ function repository(
       pageSize: 25,
       total: 0,
       totalPages: 0,
+    }),
+    canModifyLead: vi.fn().mockResolvedValue(true),
+    changePipelineStage: vi.fn().mockResolvedValue({
+      ...opportunity,
+      pipelineStage: "discussion",
+      probabilityPercent: 40,
+      updatedAt: "2026-07-27T09:00:00.000Z",
+    }),
+    assignOwner: vi.fn().mockResolvedValue({
+      ...opportunity,
+      ownerId: manager.userId,
+      updatedAt: "2026-07-27T09:00:00.000Z",
+    }),
+    setExpectedCloseDate: vi.fn().mockResolvedValue({
+      ...opportunity,
+      expectedCloseDate: "2026-08-15",
+      updatedAt: "2026-07-27T09:00:00.000Z",
+    }),
+    overrideProbability: vi.fn().mockResolvedValue({
+      ...opportunity,
+      probabilityPercent: 75,
+      probabilityOverridden: true,
+      updatedAt: "2026-07-27T09:00:00.000Z",
+    }),
+    clearProbabilityOverride: vi.fn().mockResolvedValue(opportunity),
+    markWon: vi.fn().mockResolvedValue({
+      ...opportunity,
+      pipelineStage: "won",
+      probabilityPercent: 100,
+      wonAt: "2026-07-27T09:00:00.000Z",
+      updatedAt: "2026-07-27T09:00:00.000Z",
+    }),
+    markLost: vi.fn().mockResolvedValue({
+      ...opportunity,
+      pipelineStage: "lost",
+      probabilityPercent: 0,
+      lostAt: "2026-07-27T09:00:00.000Z",
+      lostReason: "budget",
+      updatedAt: "2026-07-27T09:00:00.000Z",
     }),
     ...overrides,
   };
@@ -303,6 +373,359 @@ describe("LeadConversionService", () => {
       .list({}, manager)
       .catch((caught) => caught);
     expect(error).toBeInstanceOf(OpportunityListUnavailableError);
+    expect((error as Error).message).not.toContain("secret");
+  });
+
+  it("changes only an active stage through the dedicated repository method", async () => {
+    const data = repository({
+      getById: vi.fn().mockResolvedValue(opportunity),
+    });
+    const result = await new LeadConversionService(data).changePipelineStage(
+      {
+        opportunityId,
+        expectedUpdatedAt: version,
+        pipelineStage: "discussion",
+      },
+      representative,
+    );
+    expect(result.status).toBe("applied");
+    expect(data.changePipelineStage).toHaveBeenCalledWith({
+      opportunityId,
+      expectedUpdatedAt: version,
+      pipelineStage: "discussion",
+    });
+  });
+
+  it("rejects terminal generic stages and terminal reopening", async () => {
+    const data = repository({
+      getById: vi.fn().mockResolvedValue({
+        ...opportunity,
+        pipelineStage: "won",
+        probabilityPercent: 100,
+        wonAt: version,
+      }),
+    });
+    const service = new LeadConversionService(data);
+    await expect(
+      service.changePipelineStage(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          pipelineStage: "lost" as never,
+        },
+        manager,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationValidationError);
+    await expect(
+      service.changePipelineStage(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          pipelineStage: "discussion",
+        },
+        manager,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationEligibilityError);
+    expect(data.changePipelineStage).not.toHaveBeenCalled();
+  });
+
+  it("enforces management-only probability override and clear", async () => {
+    const data = repository({
+      getById: vi.fn().mockResolvedValue(opportunity),
+    });
+    const service = new LeadConversionService(data);
+    await expect(
+      service.overrideProbability(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          probabilityPercent: 75,
+        },
+        manager,
+      ),
+    ).resolves.toMatchObject({ status: "applied" });
+    await expect(
+      service.overrideProbability(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          probabilityPercent: 75,
+        },
+        representative,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationPermissionError);
+    await expect(
+      service.clearProbabilityOverride(
+        { opportunityId, expectedUpdatedAt: version },
+        representative,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationPermissionError);
+  });
+
+  it("allows management assignment and only representative self-claim", async () => {
+    const selfClaimData = repository({
+      getById: vi.fn().mockResolvedValue(opportunity),
+      assignOwner: vi.fn().mockResolvedValue({
+        ...opportunity,
+        ownerId: representative.userId,
+      }),
+    });
+    await expect(
+      new LeadConversionService(selfClaimData).assignOwner(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          ownerId: representative.userId,
+        },
+        representative,
+      ),
+    ).resolves.toMatchObject({ status: "applied" });
+
+    const owned = repository({
+      getById: vi.fn().mockResolvedValue({
+        ...opportunity,
+        ownerId: manager.userId,
+      }),
+    });
+    await expect(
+      new LeadConversionService(owned).assignOwner(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          ownerId: representative.userId,
+        },
+        representative,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationPermissionError);
+    await expect(
+      new LeadConversionService(owned).assignOwner(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          ownerId: null,
+        },
+        representative,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationPermissionError);
+  });
+
+  it("permits a past expected close without moving pipeline stage", async () => {
+    const data = repository({
+      getById: vi.fn().mockResolvedValue(opportunity),
+      setExpectedCloseDate: vi.fn().mockResolvedValue({
+        ...opportunity,
+        expectedCloseDate: "2020-01-01",
+      }),
+    });
+    await expect(
+      new LeadConversionService(data).setExpectedCloseDate(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          expectedCloseDate: "2020-01-01",
+        },
+        representative,
+      ),
+    ).resolves.toMatchObject({
+      status: "applied",
+      opportunity: {
+        pipelineStage: "new",
+        expectedCloseDate: "2020-01-01",
+      },
+    });
+  });
+
+  it("returns already_applied for an authorized semantic replay", async () => {
+    const data = repository({
+      getById: vi.fn().mockResolvedValue({
+        ...opportunity,
+        pipelineStage: "discussion",
+        probabilityPercent: 40,
+        updatedAt: "2026-07-27T10:00:00.000Z",
+      }),
+    });
+    await expect(
+      new LeadConversionService(data).changePipelineStage(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          pipelineStage: "discussion",
+        },
+        representative,
+      ),
+    ).resolves.toMatchObject({ status: "already_applied" });
+    expect(data.changePipelineStage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale request whose intended state is not authoritative", async () => {
+    const data = repository({
+      getById: vi.fn().mockResolvedValue({
+        ...opportunity,
+        pipelineStage: "quotation_sent",
+        probabilityPercent: 60,
+        updatedAt: "2026-07-27T10:00:00.000Z",
+      }),
+    });
+    await expect(
+      new LeadConversionService(data).changePipelineStage(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          pipelineStage: "discussion",
+        },
+        representative,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationConflictError);
+    expect(data.changePipelineStage).not.toHaveBeenCalled();
+  });
+
+  it("resolves a lost same-intent CAS race as already_applied", async () => {
+    const final = {
+      ...opportunity,
+      pipelineStage: "discussion" as const,
+      probabilityPercent: 40,
+      updatedAt: "2026-07-27T10:00:00.000Z",
+    };
+    const data = repository({
+      getById: vi
+        .fn()
+        .mockResolvedValueOnce(opportunity)
+        .mockResolvedValueOnce(final),
+      changePipelineStage: vi.fn().mockResolvedValue(null),
+    });
+    await expect(
+      new LeadConversionService(data).changePipelineStage(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          pipelineStage: "discussion",
+        },
+        representative,
+      ),
+    ).resolves.toEqual({ status: "already_applied", opportunity: final });
+  });
+
+  it("returns conflict when a different concurrent mutation wins", async () => {
+    const data = repository({
+      getById: vi
+        .fn()
+        .mockResolvedValueOnce(opportunity)
+        .mockResolvedValueOnce({
+          ...opportunity,
+          pipelineStage: "quotation_sent",
+          probabilityPercent: 60,
+          updatedAt: "2026-07-27T10:00:00.000Z",
+        }),
+      changePipelineStage: vi.fn().mockResolvedValue(null),
+    });
+    await expect(
+      new LeadConversionService(data).changePipelineStage(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          pipelineStage: "discussion",
+        },
+        representative,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationConflictError);
+  });
+
+  it("uses dedicated terminal workflows and exact Lost replay details", async () => {
+    const wonData = repository({
+      getById: vi.fn().mockResolvedValue(opportunity),
+    });
+    await expect(
+      new LeadConversionService(wonData).markWon(
+        { opportunityId, expectedUpdatedAt: version },
+        representative,
+      ),
+    ).resolves.toMatchObject({
+      status: "applied",
+      opportunity: { pipelineStage: "won", probabilityPercent: 100 },
+    });
+
+    const lost = {
+      ...opportunity,
+      pipelineStage: "lost" as const,
+      probabilityPercent: 0,
+      lostAt: "2026-07-27T10:00:00.000Z",
+      lostReason: "other" as const,
+      lostReasonNotes: "Client changed direction",
+    };
+    const lostData = repository({
+      getById: vi.fn().mockResolvedValue(lost),
+    });
+    await expect(
+      new LeadConversionService(lostData).markLost(
+        {
+          opportunityId,
+          expectedUpdatedAt: version,
+          lostReason: "other",
+          lostReasonNotes: "  Client changed direction  ",
+        },
+        manager,
+      ),
+    ).resolves.toMatchObject({ status: "already_applied" });
+    await expect(
+      new LeadConversionService(lostData).markLost(
+        {
+          opportunityId,
+          expectedUpdatedAt: lost.updatedAt,
+          lostReason: "budget",
+          lostReasonNotes: null,
+        },
+        manager,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationEligibilityError);
+  });
+
+  it("does not grant mutation through Company-derived read access", async () => {
+    const data = repository({
+      getById: vi.fn().mockResolvedValue(opportunity),
+      canModifyLead: vi.fn().mockResolvedValue(false),
+    });
+    await expect(
+      new LeadConversionService(data).markWon(
+        { opportunityId, expectedUpdatedAt: version },
+        representative,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationPermissionError);
+    expect(data.markWon).not.toHaveBeenCalled();
+  });
+
+  it("maps inaccessible, inactive and unknown failures safely", async () => {
+    const missing = repository({
+      getById: vi.fn().mockResolvedValue(null),
+    });
+    await expect(
+      new LeadConversionService(missing).markWon(
+        { opportunityId, expectedUpdatedAt: version },
+        manager,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationNotFoundError);
+
+    const inactive = repository();
+    await expect(
+      new LeadConversionService(inactive).markWon(
+        { opportunityId, expectedUpdatedAt: version },
+        { ...representative, isActive: false },
+      ),
+    ).rejects.toBeInstanceOf(OpportunityMutationPermissionError);
+    expect(inactive.getById).not.toHaveBeenCalled();
+
+    const unavailable = repository({
+      getById: vi.fn().mockRejectedValue(
+        new OpportunityRepositoryError(
+          "get by id",
+          "unknown",
+          new Error("raw SQL secret"),
+        ),
+      ),
+    });
+    const error = await new LeadConversionService(unavailable)
+      .markWon({ opportunityId, expectedUpdatedAt: version }, manager)
+      .catch((caught) => caught);
+    expect(error).toBeInstanceOf(OpportunityMutationUnavailableError);
     expect((error as Error).message).not.toContain("secret");
   });
 });

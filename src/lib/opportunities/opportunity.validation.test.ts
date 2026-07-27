@@ -10,10 +10,18 @@ import {
 } from "./opportunity.types";
 import {
   validateLeadConversion,
+  validateOpportunityExpectedCloseMutation,
+  validateOpportunityLostMutation,
+  validateOpportunityMutationVersion,
+  validateOpportunityOwnerMutation,
   validateOpportunityPipeline,
+  validateOpportunityProbabilityMutation,
+  validateOpportunityStageMutation,
 } from "./opportunity.validation";
 
 const leadId = "11111111-1111-4111-8111-111111111111";
+const opportunityId = "22222222-2222-4222-8222-222222222222";
+const expectedUpdatedAt = "2026-07-27T08:00:00.000Z";
 
 describe("Lead conversion validation", () => {
   it.each(opportunityServiceValues)(
@@ -176,4 +184,110 @@ describe("Opportunity pipeline domain", () => {
       ).toBe(lostReason);
     },
   );
+});
+
+describe("Opportunity mutation validation", () => {
+  it("accepts the four active stages and rejects terminal generic transitions", () => {
+    for (const pipelineStage of [
+      "new",
+      "discussion",
+      "quotation_sent",
+      "negotiation",
+    ] as const) {
+      expect(
+        validateOpportunityStageMutation({
+          opportunityId,
+          expectedUpdatedAt,
+          pipelineStage,
+        }).pipelineStage,
+      ).toBe(pipelineStage);
+    }
+    for (const pipelineStage of ["won", "lost"]) {
+      expect(() =>
+        validateOpportunityStageMutation({
+          opportunityId,
+          expectedUpdatedAt,
+          pipelineStage,
+        }),
+      ).toThrow();
+    }
+  });
+
+  it("strictly validates the optimistic concurrency token", () => {
+    expect(
+      validateOpportunityMutationVersion({
+        opportunityId,
+        expectedUpdatedAt,
+      }),
+    ).toEqual({ opportunityId, expectedUpdatedAt });
+    for (const invalid of [
+      "2026-07-27",
+      "2026-07-27T08:00:00",
+      "not-a-version",
+      "",
+    ]) {
+      expect(() =>
+        validateOpportunityMutationVersion({
+          opportunityId,
+          expectedUpdatedAt: invalid,
+        }),
+      ).toThrow();
+    }
+  });
+
+  it("accepts owner clear, past expected-close dates and integer probability", () => {
+    expect(
+      validateOpportunityOwnerMutation({
+        opportunityId,
+        expectedUpdatedAt,
+        ownerId: null,
+      }).ownerId,
+    ).toBeNull();
+    expect(
+      validateOpportunityExpectedCloseMutation({
+        opportunityId,
+        expectedUpdatedAt,
+        expectedCloseDate: "2020-01-01",
+      }).expectedCloseDate,
+    ).toBe("2020-01-01");
+    expect(
+      validateOpportunityProbabilityMutation({
+        opportunityId,
+        expectedUpdatedAt,
+        probabilityPercent: 73,
+      }).probabilityPercent,
+    ).toBe(73);
+  });
+
+  it.each([-1, 1.5, 101, Number.NaN])(
+    "rejects invalid probability %s",
+    (probabilityPercent) => {
+      expect(() =>
+        validateOpportunityProbabilityMutation({
+          opportunityId,
+          expectedUpdatedAt,
+          probabilityPercent,
+        }),
+      ).toThrow();
+    },
+  );
+
+  it("normalizes Lost notes and requires an explanation for other", () => {
+    expect(
+      validateOpportunityLostMutation({
+        opportunityId,
+        expectedUpdatedAt,
+        lostReason: "other",
+        lostReasonNotes: "  Client paused the campaign  ",
+      }).lostReasonNotes,
+    ).toBe("Client paused the campaign");
+    expect(() =>
+      validateOpportunityLostMutation({
+        opportunityId,
+        expectedUpdatedAt,
+        lostReason: "other",
+        lostReasonNotes: " ",
+      }),
+    ).toThrow();
+  });
 });

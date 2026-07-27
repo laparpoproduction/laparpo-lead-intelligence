@@ -77,6 +77,7 @@ jobs:
           psql -f supabase/tests/lead_restore_smoke.sql
           psql -f supabase/tests/opportunity_read_list_smoke.sql
           psql -f supabase/tests/opportunity_pipeline_smoke.sql
+          bash supabase/tests/opportunity_pipeline_concurrency.sh
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

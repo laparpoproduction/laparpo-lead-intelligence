@@ -21,6 +21,9 @@ class QueryBuilder implements PromiseLike<Response> {
   select(...args: unknown[]) {
     return this.record("select", args);
   }
+  update(...args: unknown[]) {
+    return this.record("update", args);
+  }
   eq(...args: unknown[]) {
     return this.record("eq", args);
   }
@@ -189,6 +192,159 @@ describe("SupabaseOpportunityRepository", () => {
       args: ["id", { ascending: true }],
     });
   });
+
+  it("checks Lead modification permission through the existing RLS helper", async () => {
+    const { repository, calls } = setup([{ data: true, error: null }]);
+    await expect(repository.canModifyLead(leadId)).resolves.toBe(true);
+    expect(calls).toEqual([
+      {
+        method: "rpc",
+        args: ["can_modify_lead", { target_lead_id: leadId }],
+      },
+    ]);
+  });
+
+  it("uses narrow CAS payloads for every pipeline mutation intention", async () => {
+    const version = row.updated_at;
+    const scenarios = [
+      {
+        run: (repository: SupabaseOpportunityRepository) =>
+          repository.changePipelineStage({
+            opportunityId,
+            expectedUpdatedAt: version,
+            pipelineStage: "discussion",
+          }),
+        patch: { pipeline_stage: "discussion" },
+      },
+      {
+        run: (repository: SupabaseOpportunityRepository) =>
+          repository.assignOwner({
+            opportunityId,
+            expectedUpdatedAt: version,
+            ownerId: leadId,
+          }),
+        patch: { owner_id: leadId },
+      },
+      {
+        run: (repository: SupabaseOpportunityRepository) =>
+          repository.setExpectedCloseDate({
+            opportunityId,
+            expectedUpdatedAt: version,
+            expectedCloseDate: "2026-08-15",
+          }),
+        patch: { expected_close_date: "2026-08-15" },
+      },
+      {
+        run: (repository: SupabaseOpportunityRepository) =>
+          repository.overrideProbability({
+            opportunityId,
+            expectedUpdatedAt: version,
+            probabilityPercent: 73,
+          }),
+        patch: {
+          probability_percent: 73,
+          probability_overridden: true,
+        },
+      },
+      {
+        run: (repository: SupabaseOpportunityRepository) =>
+          repository.clearProbabilityOverride({
+            opportunityId,
+            expectedUpdatedAt: version,
+          }),
+        patch: { probability_overridden: false },
+      },
+      {
+        run: (repository: SupabaseOpportunityRepository) =>
+          repository.markWon({
+            opportunityId,
+            expectedUpdatedAt: version,
+          }),
+        patch: { pipeline_stage: "won" },
+      },
+      {
+        run: (repository: SupabaseOpportunityRepository) =>
+          repository.markLost({
+            opportunityId,
+            expectedUpdatedAt: version,
+            lostReason: "budget",
+            lostReasonNotes: null,
+          }),
+        patch: {
+          pipeline_stage: "lost",
+          lost_reason: "budget",
+          lost_reason_notes: null,
+        },
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const { repository, calls } = setup([{ data: row, error: null }]);
+      await expect(scenario.run(repository)).resolves.toMatchObject({
+        id: opportunityId,
+      });
+      expect(calls.find(({ method }) => method === "update")).toEqual({
+        method: "update",
+        args: [scenario.patch],
+      });
+      expect(calls).toContainEqual({
+        method: "eq",
+        args: ["id", opportunityId],
+      });
+      expect(calls).toContainEqual({
+        method: "eq",
+        args: ["updated_at", version],
+      });
+    }
+  });
+
+  it("returns a safe empty CAS result when the expected version loses", async () => {
+    const { repository } = setup([{ data: null, error: null }]);
+    await expect(
+      repository.changePipelineStage({
+        opportunityId,
+        expectedUpdatedAt: row.updated_at,
+        pipelineStage: "discussion",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it.each([
+    ["opportunity_terminal", "terminal"],
+    ["opportunity_owner_forbidden", "owner_forbidden"],
+    ["opportunity_owner_inactive", "owner_inactive"],
+    ["opportunity_probability_forbidden", "probability_forbidden"],
+    ["opportunity_probability_invalid", "probability_invalid"],
+    ["opportunity_lost_reason_required", "lost_reason_required"],
+    ["opportunity_lost_notes_required", "lost_notes_required"],
+  ] as const)(
+    "maps database detail %s to safe failure %s",
+    async (details, failure) => {
+      const { repository } = setup([
+        {
+          data: null,
+          error: {
+            code: details.includes("forbidden") ? "42501" : "23514",
+            details,
+            message: "secret SQL and trigger details",
+          },
+        },
+      ]);
+      const error = await repository
+        .markWon({
+          opportunityId,
+          expectedUpdatedAt: row.updated_at,
+        })
+        .catch((caught) => caught);
+      expect(error).toBeInstanceOf(OpportunityRepositoryError);
+      expect(error).toMatchObject({ failure });
+      expect((error as Error).message).not.toContain("secret");
+      expect((error as Error).cause).not.toHaveProperty(
+        "message",
+        "secret SQL and trigger details",
+      );
+    },
+  );
 
   it("retrieves one typed detail projection by validated UUID", async () => {
     const { repository, calls } = setup([{ data: listRow, error: null }]);

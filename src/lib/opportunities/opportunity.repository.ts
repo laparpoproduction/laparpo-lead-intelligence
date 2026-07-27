@@ -10,19 +10,33 @@ import type {
   LeadConversionRecordRow,
   LeadConversionResult,
   Opportunity,
+  OpportunityActivePipelineStage,
   OpportunityDetail,
+  OpportunityExpectedCloseMutationInput,
   OpportunityListItem,
   OpportunityListOptions,
   OpportunityListRow,
+  OpportunityLossReason,
+  OpportunityLostMutationInput,
+  OpportunityOwnerMutationInput,
+  OpportunityProbabilityMutationInput,
   OpportunityRow,
   OpportunitySort,
+  OpportunityStageMutationInput,
+  OpportunityVersionedMutationInput,
   PaginatedOpportunities,
   ValidatedConvertLeadInput,
 } from "./opportunity.types";
 import {
   validateLeadConversion,
   validateOpportunityId,
+  validateOpportunityExpectedCloseMutation,
   validateOpportunityListOptions,
+  validateOpportunityLostMutation,
+  validateOpportunityMutationVersion,
+  validateOpportunityOwnerMutation,
+  validateOpportunityProbabilityMutation,
+  validateOpportunityStageMutation,
 } from "./opportunity.validation";
 
 export type OpportunityRepositoryFailure =
@@ -32,6 +46,14 @@ export type OpportunityRepositoryFailure =
   | "terminal_lead"
   | "legacy_conversion_unresolved"
   | "conversion_state_conflict"
+  | "stale_conflict"
+  | "terminal"
+  | "owner_forbidden"
+  | "owner_inactive"
+  | "probability_forbidden"
+  | "probability_invalid"
+  | "lost_reason_required"
+  | "lost_notes_required"
   | "unsupported_service"
   | "invalid_value"
   | "unknown";
@@ -54,6 +76,26 @@ export interface OpportunityRepository {
   getDetailById(id: string): Promise<OpportunityDetail | null>;
   listByLead(leadId: string): Promise<Opportunity[]>;
   list(options?: OpportunityListOptions): Promise<PaginatedOpportunities>;
+  canModifyLead(leadId: string): Promise<boolean>;
+  changePipelineStage(
+    input: OpportunityStageMutationInput,
+  ): Promise<Opportunity | null>;
+  assignOwner(
+    input: OpportunityOwnerMutationInput,
+  ): Promise<Opportunity | null>;
+  setExpectedCloseDate(
+    input: OpportunityExpectedCloseMutationInput,
+  ): Promise<Opportunity | null>;
+  overrideProbability(
+    input: OpportunityProbabilityMutationInput,
+  ): Promise<Opportunity | null>;
+  clearProbabilityOverride(
+    input: OpportunityVersionedMutationInput,
+  ): Promise<Opportunity | null>;
+  markWon(
+    input: OpportunityVersionedMutationInput,
+  ): Promise<Opportunity | null>;
+  markLost(input: OpportunityLostMutationInput): Promise<Opportunity | null>;
 }
 
 type DatabaseClient = Pick<SupabaseClient, "from" | "rpc">;
@@ -70,6 +112,21 @@ function classifyFailure(error: unknown): OpportunityRepositoryFailure {
   const detail =
     typeof databaseError.details === "string" ? databaseError.details : "";
 
+  if (detail === "opportunity_terminal") return "terminal";
+  if (detail === "opportunity_owner_forbidden") return "owner_forbidden";
+  if (detail === "opportunity_owner_inactive") return "owner_inactive";
+  if (detail === "opportunity_probability_forbidden") {
+    return "probability_forbidden";
+  }
+  if (detail === "opportunity_probability_invalid") {
+    return "probability_invalid";
+  }
+  if (detail === "opportunity_lost_reason_required") {
+    return "lost_reason_required";
+  }
+  if (detail === "opportunity_lost_notes_required") {
+    return "lost_notes_required";
+  }
   if (code === "P0002" || detail === "lead_not_found") return "not_found";
   if (code === "42501") {
     return detail === "inactive_or_unauthenticated"
@@ -97,8 +154,23 @@ function classifyFailure(error: unknown): OpportunityRepositoryFailure {
 
 function safeCause(error: unknown): Error | undefined {
   if (!error) return undefined;
-  return new Error("Database conversion request failed");
+  return new Error("Database Opportunity request failed");
 }
+
+type OpportunityMutationPatch =
+  | { pipeline_stage: OpportunityActivePipelineStage | "won" }
+  | {
+      pipeline_stage: "lost";
+      lost_reason: OpportunityLossReason;
+      lost_reason_notes: string | null;
+    }
+  | { owner_id: string | null }
+  | { expected_close_date: string | null }
+  | {
+      probability_percent: number;
+      probability_overridden: true;
+    }
+  | { probability_overridden: false };
 
 const opportunityListColumns = [
   "id",
@@ -339,5 +411,124 @@ export class SupabaseOpportunityRepository implements OpportunityRepository {
       total,
       totalPages: total === 0 ? 0 : Math.ceil(total / parsed.pageSize),
     };
+  }
+
+  async canModifyLead(leadId: string): Promise<boolean> {
+    const { data, error } = await this.client.rpc("can_modify_lead", {
+      target_lead_id: validateOpportunityId(leadId),
+    });
+    if (error || typeof data !== "boolean") {
+      throw new OpportunityRepositoryError(
+        "check Lead mutation permission",
+        classifyFailure(error),
+        safeCause(error),
+      );
+    }
+    return data;
+  }
+
+  changePipelineStage(
+    input: OpportunityStageMutationInput,
+  ): Promise<Opportunity | null> {
+    const validated = validateOpportunityStageMutation(input);
+    return this.mutate(
+      validated,
+      { pipeline_stage: validated.pipelineStage },
+      "change pipeline stage",
+    );
+  }
+
+  assignOwner(
+    input: OpportunityOwnerMutationInput,
+  ): Promise<Opportunity | null> {
+    const validated = validateOpportunityOwnerMutation(input);
+    return this.mutate(
+      validated,
+      { owner_id: validated.ownerId },
+      "assign owner",
+    );
+  }
+
+  setExpectedCloseDate(
+    input: OpportunityExpectedCloseMutationInput,
+  ): Promise<Opportunity | null> {
+    const validated = validateOpportunityExpectedCloseMutation(input);
+    return this.mutate(
+      validated,
+      { expected_close_date: validated.expectedCloseDate },
+      "set expected close date",
+    );
+  }
+
+  overrideProbability(
+    input: OpportunityProbabilityMutationInput,
+  ): Promise<Opportunity | null> {
+    const validated = validateOpportunityProbabilityMutation(input);
+    return this.mutate(
+      validated,
+      {
+        probability_percent: validated.probabilityPercent,
+        probability_overridden: true,
+      },
+      "override probability",
+    );
+  }
+
+  clearProbabilityOverride(
+    input: OpportunityVersionedMutationInput,
+  ): Promise<Opportunity | null> {
+    return this.mutate(
+      input,
+      { probability_overridden: false },
+      "clear probability override",
+    );
+  }
+
+  markWon(
+    input: OpportunityVersionedMutationInput,
+  ): Promise<Opportunity | null> {
+    return this.mutate(input, { pipeline_stage: "won" }, "mark Won");
+  }
+
+  markLost(input: OpportunityLostMutationInput): Promise<Opportunity | null> {
+    const validated = validateOpportunityLostMutation(input);
+    return this.mutate(
+      validated,
+      {
+        pipeline_stage: "lost",
+        lost_reason: validated.lostReason,
+        lost_reason_notes: validated.lostReasonNotes,
+      },
+      "mark Lost",
+    );
+  }
+
+  private async mutate(
+    input: OpportunityVersionedMutationInput,
+    patch: OpportunityMutationPatch,
+    operation: string,
+  ): Promise<Opportunity | null> {
+    const validated = validateOpportunityMutationVersion(input);
+    const { data, error } = await this.client
+      .from("opportunities")
+      .update(patch)
+      .eq("id", validated.opportunityId)
+      .eq("updated_at", validated.expectedUpdatedAt)
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      throw new OpportunityRepositoryError(
+        operation,
+        classifyFailure(error),
+        safeCause(error),
+      );
+    }
+    if (!data) return null;
+    try {
+      return mapOpportunityRow(data as OpportunityRow);
+    } catch {
+      throw new OpportunityRepositoryError(`${operation} response`, "unknown");
+    }
   }
 }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   opportunityDefaultProbability,
+  opportunityActivePipelineStageValues,
   opportunityKindValues,
   opportunityLossReasonValues,
   opportunityPipelineStageValues,
@@ -8,6 +9,12 @@ import {
   opportunitySortValues,
   type ConvertLeadInput,
   type OpportunityListOptions,
+  type OpportunityExpectedCloseMutationInput,
+  type OpportunityLostMutationInput,
+  type OpportunityOwnerMutationInput,
+  type OpportunityProbabilityMutationInput,
+  type OpportunityStageMutationInput,
+  type OpportunityVersionedMutationInput,
   type OpportunityPipelineInput,
   type ValidatedConvertLeadInput,
   type ValidatedOpportunityListOptions,
@@ -123,4 +130,83 @@ export function validateOpportunityPipeline(
   input: OpportunityPipelineInput,
 ): ValidatedOpportunityPipelineInput {
   return opportunityPipelineSchema.parse(input);
+}
+
+const opportunityMutationBaseSchema = z.object({
+  opportunityId: z.uuid(),
+  expectedUpdatedAt: z.iso.datetime({ offset: true }),
+});
+
+const opportunityStageMutationSchema = opportunityMutationBaseSchema.extend({
+  pipelineStage: z.enum(opportunityActivePipelineStageValues),
+});
+
+const opportunityOwnerMutationSchema = opportunityMutationBaseSchema.extend({
+  ownerId: z.uuid().nullable(),
+});
+
+const opportunityExpectedCloseMutationSchema =
+  opportunityMutationBaseSchema.extend({
+    expectedCloseDate: z.iso.date().nullable(),
+  });
+
+const opportunityProbabilityMutationSchema =
+  opportunityMutationBaseSchema.extend({
+    probabilityPercent: z.number().int().min(0).max(100),
+  });
+
+const opportunityLostMutationSchema = opportunityMutationBaseSchema
+  .extend({
+    lostReason: z.enum(opportunityLossReasonValues),
+    lostReasonNotes: z
+      .string()
+      .trim()
+      .max(2_000)
+      .nullable()
+      .transform((value) => value || null),
+  })
+  .superRefine((value, context) => {
+    if (value.lostReason === "other" && !value.lostReasonNotes) {
+      context.addIssue({
+        code: "custom",
+        path: ["lostReasonNotes"],
+        message: "Other Lost reason requires an explanation",
+      });
+    }
+  });
+
+export function validateOpportunityMutationVersion(
+  input: unknown,
+): OpportunityVersionedMutationInput {
+  return opportunityMutationBaseSchema.parse(input);
+}
+
+export function validateOpportunityStageMutation(
+  input: unknown,
+): OpportunityStageMutationInput {
+  return opportunityStageMutationSchema.parse(input);
+}
+
+export function validateOpportunityOwnerMutation(
+  input: unknown,
+): OpportunityOwnerMutationInput {
+  return opportunityOwnerMutationSchema.parse(input);
+}
+
+export function validateOpportunityExpectedCloseMutation(
+  input: unknown,
+): OpportunityExpectedCloseMutationInput {
+  return opportunityExpectedCloseMutationSchema.parse(input);
+}
+
+export function validateOpportunityProbabilityMutation(
+  input: unknown,
+): OpportunityProbabilityMutationInput {
+  return opportunityProbabilityMutationSchema.parse(input);
+}
+
+export function validateOpportunityLostMutation(
+  input: unknown,
+): OpportunityLostMutationInput {
+  return opportunityLostMutationSchema.parse(input);
 }
