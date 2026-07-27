@@ -100,7 +100,7 @@ function duplicateWarningState(error: LeadDuplicateError, binding: LeadConfirmat
   }
 }
 
-function unexpectedErrorState(operation: "create" | "update" | "soft_delete", error: unknown, actorId?: string): LeadFormState {
+function unexpectedErrorState(operation: "create" | "update" | "soft_delete" | "restore", error: unknown, actorId?: string): LeadFormState {
   logger.error("Lead mutation failed", {
     operation,
     actorId,
@@ -259,6 +259,6 @@ export async function restoreLeadAction(_state: LeadFormState, formData: FormDat
       redirectTo: "/leads",
     };
   } catch (error) {
-    return knownErrorState(error) ?? unexpectedErrorState("soft_delete", error, actor.userId);
+    return knownErrorState(error) ?? unexpectedErrorState("restore", error, actor.userId);
   }
 }

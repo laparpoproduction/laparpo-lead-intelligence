@@ -484,12 +484,27 @@ begin
   end if;
 end;
 $$;
--- Restore with the privileged maintenance path used to verify the trigger
--- itself; migration 016 intentionally does not change existing Lead RLS.
-reset role;
-update public.leads
-set deleted_at = null
-where id = '77000000-0000-4000-8000-000000000001';
+-- Restore through the authenticated management boundary used by the
+-- application. Ordinary Lead RLS remains unable to target the archived row.
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '71000000-0000-4000-8000-000000000002',
+  false
+);
+do $$
+declare restored_lead_id uuid;
+begin
+  select public.restore_archived_lead(
+    '77000000-0000-4000-8000-000000000001'
+  ) into restored_lead_id;
+  if restored_lead_id is distinct from
+    '77000000-0000-4000-8000-000000000001'::uuid
+  then
+    raise exception 'Authenticated management converted-Lead restore failed';
+  end if;
+end;
+$$;
 
 reset role;
 do $$

@@ -242,6 +242,40 @@ describe("SupabaseLeadRepository", () => {
     expect(calls).toContainEqual({ method: "rpc", args: ["list_archived_leads", undefined] });
   });
 
+  it("restores archived leads only through the authenticated restore RPC", async () => {
+    const { repository, calls } = setup(
+      { data: null, error: null },
+      { data: leadRowFixture.id, error: null },
+    );
+
+    await expect(repository.restore(leadRowFixture.id)).resolves.toBeUndefined();
+    expect(calls).toEqual([
+      {
+        method: "rpc",
+        args: [
+          "restore_archived_lead",
+          { target_lead_id: leadRowFixture.id },
+        ],
+      },
+    ]);
+  });
+
+  it("maps null and malformed restore RPC results safely", async () => {
+    const missing = setup(
+      { data: null, error: null },
+      { data: null, error: null },
+    );
+    await expect(missing.repository.restore(leadRowFixture.id))
+      .rejects.toBeInstanceOf(LeadRepositoryNotFoundError);
+
+    const malformed = setup(
+      { data: null, error: null },
+      { data: "22222222-2222-4222-8222-222222222222", error: null },
+    );
+    await expect(malformed.repository.restore(leadRowFixture.id))
+      .rejects.toThrow("restore response");
+  });
+
   it("paginates through duplicate candidates", async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => ({ ...leadRowFixture, id: `${index.toString().padStart(8, "0")}-1111-4111-8111-111111111111` }));
     const finalCandidate = { ...leadRowFixture, id: "99999999-1111-4111-8111-111111111111" };

@@ -222,16 +222,19 @@ export class SupabaseLeadRepository implements LeadRepository {
   }
 
   async restore(id: string): Promise<void> {
-    const { data, error } = await this.client
-      .from("leads")
-      .update({ deleted_at: null })
-      .eq("id", validateLeadId(id))
-      .not("deleted_at", "is", null)
-      .select("id")
-      .maybeSingle();
+    const validatedId = validateLeadId(id);
+    const { data, error } = await this.client.rpc("restore_archived_lead", {
+      target_lead_id: validatedId,
+    });
 
     if (error) throw new LeadRepositoryError("restore", causeFrom(error));
     if (!data) throw new LeadRepositoryNotFoundError("restore");
+    if (data !== validatedId) {
+      throw new LeadRepositoryError(
+        "restore response",
+        new Error("Unexpected restored Lead identifier"),
+      );
+    }
   }
 
   async listArchived(options: LeadListOptions = {}): Promise<PaginatedLeads> {

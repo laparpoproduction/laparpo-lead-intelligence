@@ -108,6 +108,25 @@ describe("LeadService", () => {
     await expect(service.restore("11111111-1111-4111-8111-111111111111", manager)).rejects.toBeInstanceOf(LeadNotFoundError);
   });
 
+  it("delegates management restore directly to the secure repository boundary", async () => {
+    const repository = repositoryMock();
+    const service = new LeadService(repository as never);
+
+    await expect(service.restore(leadFixture.id, manager)).resolves.toBeUndefined();
+    expect(repository.restore).toHaveBeenCalledWith(leadFixture.id);
+    expect(repository.getById).not.toHaveBeenCalled();
+  });
+
+  it("rejects inactive management before invoking the restore boundary", async () => {
+    const repository = repositoryMock();
+    const service = new LeadService(repository as never);
+
+    await expect(
+      service.restore(leadFixture.id, { ...manager, isActive: false }),
+    ).rejects.toBeInstanceOf(LeadPermissionError);
+    expect(repository.restore).not.toHaveBeenCalled();
+  });
+
   it("enforces include-deleted access rules and forwards the flag to the repository", async () => {
     const repository = repositoryMock();
     const service = new LeadService(repository as never);

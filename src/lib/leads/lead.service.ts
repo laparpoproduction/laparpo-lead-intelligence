@@ -203,8 +203,6 @@ export class LeadService {
       throw new LeadPermissionError("Only management can restore leads");
     }
     const validatedId = this.leadId(id);
-    const lead = await this.repository.getById(validatedId, true);
-    if (!lead) throw new LeadNotFoundError();
     try {
       await this.repository.restore(validatedId);
     } catch (error) {
