@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  opportunityLossReasonValues,
+  opportunityPipelineStageValues,
   opportunityServiceValues,
   type LeadConversionRecord,
   type LeadConversionRecordRow,
@@ -46,6 +48,21 @@ export function mapOpportunityRow(row: OpportunityRow): Opportunity {
     meetingAt: row.meeting_at,
     depositAmountMyr: optionalMoney(row.deposit_amount_myr),
     depositReceivedAt: row.deposit_received_at,
+    pipelineStage: z.enum(opportunityPipelineStageValues).parse(
+      row.pipeline_stage,
+    ),
+    probabilityPercent: z.number().int().min(0).max(100).parse(
+      row.probability_percent,
+    ),
+    probabilityOverridden: z.boolean().parse(row.probability_overridden),
+    expectedCloseDate: z.iso.date().nullable().parse(row.expected_close_date),
+    ownerId: z.uuid().nullable().parse(row.owner_id),
+    wonAt: z.iso.datetime({ offset: true }).nullable().parse(row.won_at),
+    lostAt: z.iso.datetime({ offset: true }).nullable().parse(row.lost_at),
+    lostReason: z.enum(opportunityLossReasonValues).nullable().parse(
+      row.lost_reason,
+    ),
+    lostReasonNotes: z.string().nullable().parse(row.lost_reason_notes),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

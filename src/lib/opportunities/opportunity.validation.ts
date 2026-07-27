@@ -1,12 +1,17 @@
 import { z } from "zod";
 import {
+  opportunityDefaultProbability,
   opportunityKindValues,
+  opportunityLossReasonValues,
+  opportunityPipelineStageValues,
   opportunityServiceValues,
   opportunitySortValues,
   type ConvertLeadInput,
   type OpportunityListOptions,
+  type OpportunityPipelineInput,
   type ValidatedConvertLeadInput,
   type ValidatedOpportunityListOptions,
+  type ValidatedOpportunityPipelineInput,
 } from "./opportunity.types";
 
 const maximumOpportunityValueMyr = 9_999_999_999.99;
@@ -47,4 +52,75 @@ export function validateOpportunityListOptions(
   options: OpportunityListOptions = {},
 ): ValidatedOpportunityListOptions {
   return opportunityListSchema.parse(options);
+}
+
+const opportunityPipelineSchema = z
+  .object({
+    pipelineStage: z.enum(opportunityPipelineStageValues),
+    probabilityPercent: z.number().int().min(0).max(100),
+    probabilityOverridden: z.boolean().default(false),
+    expectedCloseDate: z.iso.date().nullable().optional().default(null),
+    ownerId: z.uuid().nullable().optional().default(null),
+    lostReason: z
+      .enum(opportunityLossReasonValues)
+      .nullable()
+      .optional()
+      .default(null),
+    lostReasonNotes: z
+      .string()
+      .trim()
+      .max(2_000)
+      .nullable()
+      .optional()
+      .transform((value) => value || null),
+  })
+  .superRefine((value, context) => {
+    const terminal = value.pipelineStage === "won" ||
+      value.pipelineStage === "lost";
+    if (terminal && value.probabilityOverridden) {
+      context.addIssue({
+        code: "custom",
+        path: ["probabilityOverridden"],
+        message: "Terminal probability cannot be overridden",
+      });
+    }
+    if (
+      !value.probabilityOverridden &&
+      value.probabilityPercent !==
+        opportunityDefaultProbability[value.pipelineStage]
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["probabilityPercent"],
+        message: "Probability must match the pipeline stage default",
+      });
+    }
+    if (value.pipelineStage === "lost") {
+      if (!value.lostReason) {
+        context.addIssue({
+          code: "custom",
+          path: ["lostReason"],
+          message: "Lost reason is required",
+        });
+      }
+      if (value.lostReason === "other" && !value.lostReasonNotes) {
+        context.addIssue({
+          code: "custom",
+          path: ["lostReasonNotes"],
+          message: "Other Lost reason requires an explanation",
+        });
+      }
+    } else if (value.lostReason || value.lostReasonNotes) {
+      context.addIssue({
+        code: "custom",
+        path: ["lostReason"],
+        message: "Lost reason is only valid for Lost Opportunities",
+      });
+    }
+  });
+
+export function validateOpportunityPipeline(
+  input: OpportunityPipelineInput,
+): ValidatedOpportunityPipelineInput {
+  return opportunityPipelineSchema.parse(input);
 }

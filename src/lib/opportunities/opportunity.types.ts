@@ -13,6 +13,46 @@ export const opportunityServiceValues = [
 export type OpportunityService =
   (typeof opportunityServiceValues)[number];
 
+export const opportunityPipelineStageValues = [
+  "new",
+  "discussion",
+  "quotation_sent",
+  "negotiation",
+  "won",
+  "lost",
+] as const;
+
+export type OpportunityPipelineStage =
+  (typeof opportunityPipelineStageValues)[number];
+
+export const opportunityLossReasonValues = [
+  "budget",
+  "competitor",
+  "no_response",
+  "postponed",
+  "scope_mismatch",
+  "client_cancelled",
+  "other",
+] as const;
+
+export type OpportunityLossReason =
+  (typeof opportunityLossReasonValues)[number];
+
+export const opportunityDefaultProbability = {
+  new: 20,
+  discussion: 40,
+  quotation_sent: 60,
+  negotiation: 80,
+  won: 100,
+  lost: 0,
+} as const satisfies Record<OpportunityPipelineStage, number>;
+
+export function isTerminalOpportunityStage(
+  stage: OpportunityPipelineStage,
+): stage is "won" | "lost" {
+  return stage === "won" || stage === "lost";
+}
+
 export type Opportunity = {
   id: string;
   leadId: string;
@@ -23,6 +63,15 @@ export type Opportunity = {
   meetingAt: string | null;
   depositAmountMyr: number | null;
   depositReceivedAt: string | null;
+  pipelineStage: OpportunityPipelineStage;
+  probabilityPercent: number;
+  probabilityOverridden: boolean;
+  expectedCloseDate: string | null;
+  ownerId: string | null;
+  wonAt: string | null;
+  lostAt: string | null;
+  lostReason: OpportunityLossReason | null;
+  lostReasonNotes: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -37,8 +86,37 @@ export type OpportunityRow = {
   meeting_at: string | null;
   deposit_amount_myr: number | string | null;
   deposit_received_at: string | null;
+  pipeline_stage: OpportunityPipelineStage;
+  probability_percent: number;
+  probability_overridden: boolean;
+  expected_close_date: string | null;
+  owner_id: string | null;
+  won_at: string | null;
+  lost_at: string | null;
+  lost_reason: OpportunityLossReason | null;
+  lost_reason_notes: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type OpportunityPipelineInput = {
+  pipelineStage: OpportunityPipelineStage;
+  probabilityPercent: number;
+  probabilityOverridden?: boolean;
+  expectedCloseDate?: string | null;
+  ownerId?: string | null;
+  lostReason?: OpportunityLossReason | null;
+  lostReasonNotes?: string | null;
+};
+
+export type ValidatedOpportunityPipelineInput = {
+  pipelineStage: OpportunityPipelineStage;
+  probabilityPercent: number;
+  probabilityOverridden: boolean;
+  expectedCloseDate: string | null;
+  ownerId: string | null;
+  lostReason: OpportunityLossReason | null;
+  lostReasonNotes: string | null;
 };
 
 export const opportunityKindValues = [
