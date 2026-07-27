@@ -293,6 +293,10 @@ begin
 end;
 $$;
 
+update public.opportunities
+set probability_overridden = false
+where id = '88000000-0000-4000-8000-000000000001';
+
 -- Management owner assignment supports active profiles and NULL only.
 update public.opportunities
 set owner_id = '71000000-0000-4000-8000-000000000004'
