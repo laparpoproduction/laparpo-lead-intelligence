@@ -9,14 +9,27 @@ import type {
   LeadConversionRecord,
   LeadConversionResult,
   Opportunity,
+  OpportunityExpectedCloseMutationInput,
   OpportunityDetail,
   OpportunityListOptions,
+  OpportunityLostMutationInput,
+  OpportunityMutationResult,
+  OpportunityOwnerMutationInput,
+  OpportunityProbabilityMutationInput,
+  OpportunityStageMutationInput,
+  OpportunityVersionedMutationInput,
   PaginatedOpportunities,
 } from "./opportunity.types";
 import {
   validateLeadConversion,
+  validateOpportunityExpectedCloseMutation,
   validateOpportunityId,
   validateOpportunityListOptions,
+  validateOpportunityLostMutation,
+  validateOpportunityMutationVersion,
+  validateOpportunityOwnerMutation,
+  validateOpportunityProbabilityMutation,
+  validateOpportunityStageMutation,
 } from "./opportunity.validation";
 
 export class LeadConversionPermissionError extends Error {
@@ -80,6 +93,54 @@ export class OpportunityDetailUnavailableError extends Error {
     super("Opportunity detail is temporarily unavailable", { cause });
     this.name = "OpportunityDetailUnavailableError";
   }
+}
+
+export class OpportunityMutationPermissionError extends Error {
+  constructor(message = "Opportunity mutation is not permitted") {
+    super(message);
+    this.name = "OpportunityMutationPermissionError";
+  }
+}
+
+export class OpportunityMutationNotFoundError extends Error {
+  constructor() {
+    super("Opportunity not found");
+    this.name = "OpportunityMutationNotFoundError";
+  }
+}
+
+export class OpportunityMutationConflictError extends Error {
+  constructor() {
+    super("Opportunity changed after this mutation was prepared");
+    this.name = "OpportunityMutationConflictError";
+  }
+}
+
+export class OpportunityMutationEligibilityError extends Error {
+  constructor(readonly reason: "terminal" | "owner_inactive") {
+    super("Opportunity is not eligible for this mutation");
+    this.name = "OpportunityMutationEligibilityError";
+  }
+}
+
+export class OpportunityMutationValidationError extends Error {
+  constructor(readonly issues: ZodError["issues"], cause?: unknown) {
+    super("Opportunity mutation data is invalid", { cause });
+    this.name = "OpportunityMutationValidationError";
+  }
+}
+
+export class OpportunityMutationUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super("Opportunity mutation is temporarily unavailable", { cause });
+    this.name = "OpportunityMutationUnavailableError";
+  }
+}
+
+const managementRoles = new Set(["ceo_admin", "sales_manager"]);
+
+function isManagement(actor: LeadConversionActor): boolean {
+  return managementRoles.has(actor.role);
 }
 
 export class LeadConversionService {
@@ -204,6 +265,149 @@ export class LeadConversionService {
     }
   }
 
+  async changePipelineStage(
+    input: OpportunityStageMutationInput,
+    actor: LeadConversionActor,
+  ): Promise<OpportunityMutationResult> {
+    this.requireMutationActor(actor);
+    const validated = this.validateMutation(() =>
+      validateOpportunityStageMutation(input),
+    );
+    return this.mutate(
+      validated,
+      actor,
+      (opportunity) =>
+        opportunity.pipelineStage === validated.pipelineStage,
+      (opportunity) => this.requireActivePipeline(opportunity),
+      () => this.repository.changePipelineStage(validated),
+    );
+  }
+
+  async assignOwner(
+    input: OpportunityOwnerMutationInput,
+    actor: LeadConversionActor,
+  ): Promise<OpportunityMutationResult> {
+    this.requireMutationActor(actor);
+    const validated = this.validateMutation(() =>
+      validateOpportunityOwnerMutation(input),
+    );
+    if (!isManagement(actor) && validated.ownerId !== actor.userId) {
+      throw new OpportunityMutationPermissionError(
+        "Representatives may only claim an unassigned Opportunity as themselves",
+      );
+    }
+    return this.mutate(
+      validated,
+      actor,
+      (opportunity) => opportunity.ownerId === validated.ownerId,
+      (opportunity) => {
+        if (
+          !isManagement(actor) &&
+          opportunity.ownerId !== null &&
+          opportunity.ownerId !== actor.userId
+        ) {
+          throw new OpportunityMutationPermissionError(
+            "Representatives cannot hijack an owned Opportunity",
+          );
+        }
+      },
+      () => this.repository.assignOwner(validated),
+    );
+  }
+
+  async setExpectedCloseDate(
+    input: OpportunityExpectedCloseMutationInput,
+    actor: LeadConversionActor,
+  ): Promise<OpportunityMutationResult> {
+    this.requireMutationActor(actor);
+    const validated = this.validateMutation(() =>
+      validateOpportunityExpectedCloseMutation(input),
+    );
+    return this.mutate(
+      validated,
+      actor,
+      (opportunity) =>
+        opportunity.expectedCloseDate === validated.expectedCloseDate,
+      () => undefined,
+      () => this.repository.setExpectedCloseDate(validated),
+    );
+  }
+
+  async overrideProbability(
+    input: OpportunityProbabilityMutationInput,
+    actor: LeadConversionActor,
+  ): Promise<OpportunityMutationResult> {
+    this.requireMutationActor(actor);
+    this.requireManagement(actor);
+    const validated = this.validateMutation(() =>
+      validateOpportunityProbabilityMutation(input),
+    );
+    return this.mutate(
+      validated,
+      actor,
+      (opportunity) =>
+        opportunity.probabilityOverridden &&
+        opportunity.probabilityPercent === validated.probabilityPercent,
+      (opportunity) => this.requireActivePipeline(opportunity),
+      () => this.repository.overrideProbability(validated),
+    );
+  }
+
+  async clearProbabilityOverride(
+    input: OpportunityVersionedMutationInput,
+    actor: LeadConversionActor,
+  ): Promise<OpportunityMutationResult> {
+    this.requireMutationActor(actor);
+    this.requireManagement(actor);
+    const validated = this.validateMutation(() =>
+      validateOpportunityMutationVersion(input),
+    );
+    return this.mutate(
+      validated,
+      actor,
+      (opportunity) => !opportunity.probabilityOverridden,
+      (opportunity) => this.requireActivePipeline(opportunity),
+      () => this.repository.clearProbabilityOverride(validated),
+    );
+  }
+
+  async markWon(
+    input: OpportunityVersionedMutationInput,
+    actor: LeadConversionActor,
+  ): Promise<OpportunityMutationResult> {
+    this.requireMutationActor(actor);
+    const validated = this.validateMutation(() =>
+      validateOpportunityMutationVersion(input),
+    );
+    return this.mutate(
+      validated,
+      actor,
+      (opportunity) => opportunity.pipelineStage === "won",
+      (opportunity) => this.requireActivePipeline(opportunity),
+      () => this.repository.markWon(validated),
+    );
+  }
+
+  async markLost(
+    input: OpportunityLostMutationInput,
+    actor: LeadConversionActor,
+  ): Promise<OpportunityMutationResult> {
+    this.requireMutationActor(actor);
+    const validated = this.validateMutation(() =>
+      validateOpportunityLostMutation(input),
+    );
+    return this.mutate(
+      validated,
+      actor,
+      (opportunity) =>
+        opportunity.pipelineStage === "lost" &&
+        opportunity.lostReason === validated.lostReason &&
+        opportunity.lostReasonNotes === validated.lostReasonNotes,
+      (opportunity) => this.requireActivePipeline(opportunity),
+      () => this.repository.markLost(validated),
+    );
+  }
+
   private requireActive(actor: LeadConversionActor): void {
     try {
       validateOpportunityId(actor.userId);
@@ -216,6 +420,134 @@ export class LeadConversionService {
       throw new LeadConversionPermissionError(
         "Inactive users cannot access Opportunities",
       );
+    }
+  }
+
+  private requireMutationActor(actor: LeadConversionActor): void {
+    try {
+      validateOpportunityId(actor.userId);
+    } catch {
+      throw new OpportunityMutationPermissionError(
+        "A valid authenticated actor is required",
+      );
+    }
+    if (!actor.isActive) {
+      throw new OpportunityMutationPermissionError(
+        "Inactive users cannot mutate Opportunities",
+      );
+    }
+  }
+
+  private requireManagement(actor: LeadConversionActor): void {
+    if (!isManagement(actor)) {
+      throw new OpportunityMutationPermissionError(
+        "Only sales management can change Opportunity probability overrides",
+      );
+    }
+  }
+
+  private requireActivePipeline(opportunity: Opportunity): void {
+    if (
+      opportunity.pipelineStage === "won" ||
+      opportunity.pipelineStage === "lost"
+    ) {
+      throw new OpportunityMutationEligibilityError("terminal");
+    }
+  }
+
+  private async mutate(
+    input: OpportunityVersionedMutationInput,
+    actor: LeadConversionActor,
+    isApplied: (opportunity: Opportunity) => boolean,
+    requireEligible: (opportunity: Opportunity) => void,
+    operation: () => Promise<Opportunity | null>,
+  ): Promise<OpportunityMutationResult> {
+    const current = await this.mutationRead(input.opportunityId);
+    if (!current) throw new OpportunityMutationNotFoundError();
+
+    let canModify: boolean;
+    try {
+      canModify = await this.repository.canModifyLead(current.leadId);
+    } catch (error) {
+      this.mapMutationRepositoryError(error);
+    }
+    if (!canModify!) {
+      throw new OpportunityMutationPermissionError(
+        "Read access does not grant Opportunity mutation access",
+      );
+    }
+
+    if (isApplied(current)) {
+      return { status: "already_applied", opportunity: current };
+    }
+    if (current.updatedAt !== input.expectedUpdatedAt) {
+      throw new OpportunityMutationConflictError();
+    }
+    requireEligible(current);
+
+    let updated: Opportunity | null;
+    try {
+      updated = await operation();
+    } catch (error) {
+      this.mapMutationRepositoryError(error);
+    }
+    if (updated!) return { status: "applied", opportunity: updated };
+
+    const fresh = await this.mutationRead(input.opportunityId);
+    if (!fresh) throw new OpportunityMutationNotFoundError();
+    if (isApplied(fresh)) {
+      return { status: "already_applied", opportunity: fresh };
+    }
+    if (fresh.updatedAt !== input.expectedUpdatedAt) {
+      throw new OpportunityMutationConflictError();
+    }
+    throw new OpportunityMutationPermissionError();
+  }
+
+  private async mutationRead(id: string): Promise<Opportunity | null> {
+    try {
+      return await this.repository.getById(id);
+    } catch (error) {
+      this.mapMutationRepositoryError(error);
+    }
+  }
+
+  private mapMutationRepositoryError(error: unknown): never {
+    if (!(error instanceof OpportunityRepositoryError)) {
+      throw new OpportunityMutationUnavailableError();
+    }
+    switch (error.failure) {
+      case "not_found":
+        throw new OpportunityMutationNotFoundError();
+      case "permission_denied":
+      case "inactive_actor":
+      case "owner_forbidden":
+      case "probability_forbidden":
+        throw new OpportunityMutationPermissionError();
+      case "stale_conflict":
+        throw new OpportunityMutationConflictError();
+      case "terminal":
+        throw new OpportunityMutationEligibilityError("terminal");
+      case "owner_inactive":
+        throw new OpportunityMutationEligibilityError("owner_inactive");
+      case "probability_invalid":
+      case "lost_reason_required":
+      case "lost_notes_required":
+      case "invalid_value":
+        throw new OpportunityMutationValidationError([], error);
+      default:
+        throw new OpportunityMutationUnavailableError(error);
+    }
+  }
+
+  private validateMutation<T>(operation: () => T): T {
+    try {
+      return operation();
+    } catch (error) {
+      if (error instanceof ZodError) {
+        throw new OpportunityMutationValidationError(error.issues, error);
+      }
+      throw error;
     }
   }
 

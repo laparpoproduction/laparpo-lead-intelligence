@@ -25,6 +25,16 @@ export const opportunityPipelineStageValues = [
 export type OpportunityPipelineStage =
   (typeof opportunityPipelineStageValues)[number];
 
+export const opportunityActivePipelineStageValues = [
+  "new",
+  "discussion",
+  "quotation_sent",
+  "negotiation",
+] as const;
+
+export type OpportunityActivePipelineStage =
+  (typeof opportunityActivePipelineStageValues)[number];
+
 export const opportunityLossReasonValues = [
   "budget",
   "competitor",
@@ -117,6 +127,44 @@ export type ValidatedOpportunityPipelineInput = {
   ownerId: string | null;
   lostReason: OpportunityLossReason | null;
   lostReasonNotes: string | null;
+};
+
+export type OpportunityVersionedMutationInput = {
+  opportunityId: string;
+  expectedUpdatedAt: string;
+};
+
+export type OpportunityStageMutationInput =
+  OpportunityVersionedMutationInput & {
+    pipelineStage: OpportunityActivePipelineStage;
+  };
+
+export type OpportunityOwnerMutationInput =
+  OpportunityVersionedMutationInput & {
+    ownerId: string | null;
+  };
+
+export type OpportunityExpectedCloseMutationInput =
+  OpportunityVersionedMutationInput & {
+    expectedCloseDate: string | null;
+  };
+
+export type OpportunityProbabilityMutationInput =
+  OpportunityVersionedMutationInput & {
+    probabilityPercent: number;
+  };
+
+export type OpportunityLostMutationInput =
+  OpportunityVersionedMutationInput & {
+    lostReason: OpportunityLossReason;
+    lostReasonNotes: string | null;
+  };
+
+export type OpportunityMutationStatus = "applied" | "already_applied";
+
+export type OpportunityMutationResult = {
+  status: OpportunityMutationStatus;
+  opportunity: Opportunity;
 };
 
 export const opportunityKindValues = [
