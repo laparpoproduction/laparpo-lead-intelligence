@@ -9,10 +9,13 @@ import type {
   LeadConversionRecord,
   LeadConversionResult,
   Opportunity,
+  OpportunityListOptions,
+  PaginatedOpportunities,
 } from "./opportunity.types";
 import {
   validateLeadConversion,
   validateOpportunityId,
+  validateOpportunityListOptions,
 } from "./opportunity.validation";
 
 export class LeadConversionPermissionError extends Error {
@@ -47,6 +50,20 @@ export class LeadConversionUnavailableError extends Error {
   constructor(cause?: unknown) {
     super("Lead conversion is temporarily unavailable", { cause });
     this.name = "LeadConversionUnavailableError";
+  }
+}
+
+export class OpportunityListValidationError extends Error {
+  constructor(readonly issues: ZodError["issues"], cause?: unknown) {
+    super("Opportunity list options are invalid", { cause });
+    this.name = "OpportunityListValidationError";
+  }
+}
+
+export class OpportunityListUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super("Opportunities are temporarily unavailable", { cause });
+    this.name = "OpportunityListUnavailableError";
   }
 }
 
@@ -124,6 +141,30 @@ export class LeadConversionService {
     return this.repository.listByLead(validatedId);
   }
 
+  async list(
+    options: OpportunityListOptions,
+    actor: LeadConversionActor,
+  ): Promise<PaginatedOpportunities> {
+    this.requireActive(actor);
+    let validated;
+    try {
+      validated = validateOpportunityListOptions(options);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        throw new OpportunityListValidationError(error.issues, error);
+      }
+      throw error;
+    }
+    try {
+      return await this.repository.list(validated);
+    } catch (error) {
+      if (error instanceof OpportunityRepositoryError) {
+        throw new OpportunityListUnavailableError(error);
+      }
+      throw error;
+    }
+  }
+
   private requireActive(actor: LeadConversionActor): void {
     try {
       validateOpportunityId(actor.userId);
@@ -134,7 +175,7 @@ export class LeadConversionService {
     }
     if (!actor.isActive) {
       throw new LeadConversionPermissionError(
-        "Inactive users cannot convert Leads",
+        "Inactive users cannot access Opportunities",
       );
     }
   }

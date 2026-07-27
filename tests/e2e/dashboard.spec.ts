@@ -201,3 +201,63 @@ test("returns not found for an inaccessible Contact details route", async ({
   await expect(page.getByRole("link", { name: "Back to Contacts" })).toBeVisible();
   await expect(page.getByText("Contact workspace ready")).toHaveCount(0);
 });
+
+test("opens the read-only Opportunities list and canonical filters", async ({
+  page,
+}) => {
+  await page.goto("/opportunities");
+
+  await expect(
+    page.getByRole("heading", { name: "Opportunities", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("searchbox", { name: "Search opportunities" }),
+  ).toBeVisible();
+  await expect(page.getByText("No opportunities yet")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Opportunities" })).toHaveAttribute(
+    "href",
+    "/opportunities",
+  );
+  await expect(page.getByRole("link", { name: /Add opportunity/i })).toHaveCount(0);
+
+  await page
+    .getByRole("searchbox", { name: "Search opportunities" })
+    .fill("Domino's");
+  await page
+    .getByRole("combobox", { name: "Service" })
+    .selectOption("hard_selling");
+  await page
+    .getByRole("combobox", { name: "Opportunity kind" })
+    .selectOption("conversion");
+  await page
+    .getByRole("combobox", { name: "Sort" })
+    .selectOption("value_desc");
+  await page.getByRole("button", { name: "Apply filters" }).click();
+
+  await expect(page).toHaveURL(
+    "/opportunities?q=Domino%27s&service=hard_selling&kind=conversion&sort=value_desc",
+  );
+  await expect(page.getByText("No matching opportunities")).toBeVisible();
+});
+
+test("keeps Opportunities filters usable on phone and normalizes invalid state", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(
+    "/opportunities?q=%20&service=future&kind=guessed&sort=raw&page=-2",
+  );
+
+  await expect(page).toHaveURL("/opportunities");
+  await expect(
+    page.getByRole("searchbox", { name: "Search opportunities" }),
+  ).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Service" })).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Opportunity kind" }),
+  ).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Sort" })).toBeVisible();
+
+  await page.goto("/opportunities?page=999");
+  await expect(page).toHaveURL("/opportunities");
+});

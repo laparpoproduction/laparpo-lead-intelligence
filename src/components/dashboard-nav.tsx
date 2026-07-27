@@ -8,6 +8,7 @@ import { canAccessPath, type AppRole } from "@/lib/auth/permissions";
 const navigation = [
   { label: "Overview", href: "/", icon: Icons.dashboard },
   { label: "Leads", href: "/leads", icon: Icons.leads },
+  { label: "Opportunities", href: "/opportunities", icon: Icons.pipeline },
   { label: "Companies", href: "/companies", icon: Icons.companies },
   { label: "Contacts", href: "/contacts", icon: Icons.contacts },
   { label: "Tasks", href: "/tasks", icon: Icons.tasks },
@@ -46,4 +47,3 @@ export function DashboardNav({ role }: { role: AppRole }) {
     </nav>
   );
 }
-

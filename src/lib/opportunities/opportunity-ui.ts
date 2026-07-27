@@ -43,3 +43,21 @@ export function defaultEstimatedValueMyr(
     ? value
     : null;
 }
+
+const myr = new Intl.NumberFormat("en-MY", {
+  style: "currency",
+  currency: "MYR",
+});
+
+export const OPPORTUNITIES_DEFAULT_PAGE_SIZE = 25;
+
+export function formatOpportunityMyr(value: number | null): string {
+  return value === null ? "Not recorded" : myr.format(value);
+}
+
+export function opportunityServiceLabel(service: OpportunityService): string {
+  return (
+    opportunityServiceOptions.find((option) => option.value === service)?.label ??
+    service
+  );
+}

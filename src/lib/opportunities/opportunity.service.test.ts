@@ -10,6 +10,8 @@ import {
   LeadConversionService,
   LeadConversionUnavailableError,
   LeadConversionValidationError,
+  OpportunityListUnavailableError,
+  OpportunityListValidationError,
 } from "./opportunity.service";
 
 const leadId = "11111111-1111-4111-8111-111111111111";
@@ -36,6 +38,13 @@ function repository(
     getConversionByLead: vi.fn().mockResolvedValue(null),
     getById: vi.fn().mockResolvedValue(null),
     listByLead: vi.fn().mockResolvedValue([]),
+    list: vi.fn().mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 25,
+      total: 0,
+      totalPages: 0,
+    }),
     ...overrides,
   };
 }
@@ -156,5 +165,69 @@ describe("LeadConversionService", () => {
       new LeadConversionService(data).getConversionByLead(leadId, manager),
     ).resolves.toEqual(conversion);
     expect(data.getConversionByLead).toHaveBeenCalledWith(leadId);
+  });
+
+  it("validates and delegates the global read list for an active actor", async () => {
+    const data = repository();
+    await expect(
+      new LeadConversionService(data).list(
+        {
+          query: "  agency  ",
+          service: "corporate",
+          kind: "ordinary",
+          sort: "value_desc",
+          page: 2,
+          pageSize: 25,
+        },
+        representative,
+      ),
+    ).resolves.toMatchObject({ page: 1, total: 0 });
+    expect(data.list).toHaveBeenCalledWith({
+      query: "agency",
+      service: "corporate",
+      kind: "ordinary",
+      sort: "value_desc",
+      page: 2,
+      pageSize: 25,
+    });
+  });
+
+  it("rejects malformed list options before repository access", async () => {
+    const data = repository();
+    await expect(
+      new LeadConversionService(data).list(
+        { page: -1, pageSize: 25 },
+        manager,
+      ),
+    ).rejects.toBeInstanceOf(OpportunityListValidationError);
+    expect(data.list).not.toHaveBeenCalled();
+  });
+
+  it("rejects inactive list actors before repository access", async () => {
+    const data = repository();
+    await expect(
+      new LeadConversionService(data).list(
+        {},
+        { ...manager, isActive: false },
+      ),
+    ).rejects.toBeInstanceOf(LeadConversionPermissionError);
+    expect(data.list).not.toHaveBeenCalled();
+  });
+
+  it("maps repository list failures to a safe domain failure", async () => {
+    const data = repository({
+      list: vi.fn().mockRejectedValue(
+        new OpportunityRepositoryError(
+          "global list",
+          "unknown",
+          new Error("secret SQL"),
+        ),
+      ),
+    });
+    const error = await new LeadConversionService(data)
+      .list({}, manager)
+      .catch((caught) => caught);
+    expect(error).toBeInstanceOf(OpportunityListUnavailableError);
+    expect((error as Error).message).not.toContain("secret");
   });
 });

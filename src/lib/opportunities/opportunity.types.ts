@@ -41,6 +41,63 @@ export type OpportunityRow = {
   updated_at: string;
 };
 
+export const opportunityKindValues = [
+  "all",
+  "conversion",
+  "ordinary",
+] as const;
+export type OpportunityKind = (typeof opportunityKindValues)[number];
+
+export const opportunitySortValues = [
+  "newest",
+  "oldest",
+  "value_desc",
+  "value_asc",
+] as const;
+export type OpportunitySort = (typeof opportunitySortValues)[number];
+
+export type OpportunityListItem = Opportunity & {
+  leadTitle: string;
+  companyId: string | null;
+  companyName: string | null;
+  isConversion: boolean;
+  convertedAt: string | null;
+};
+
+export type OpportunityListRow = OpportunityRow & {
+  lead_title: string;
+  company_id: string | null;
+  company_name: string | null;
+  conversion_opportunity: boolean;
+  converted_at: string | null;
+};
+
+export type OpportunityListOptions = {
+  query?: string;
+  service?: OpportunityService;
+  kind?: OpportunityKind;
+  sort?: OpportunitySort;
+  page?: number;
+  pageSize?: number;
+};
+
+export type ValidatedOpportunityListOptions = {
+  query?: string;
+  service?: OpportunityService;
+  kind: OpportunityKind;
+  sort: OpportunitySort;
+  page: number;
+  pageSize: number;
+};
+
+export type PaginatedOpportunities = {
+  items: OpportunityListItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
 export type ConvertLeadInput = {
   leadId: string;
   service?: OpportunityService | null;

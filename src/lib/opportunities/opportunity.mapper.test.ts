@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mapLeadConversionRecord,
   mapLeadConversionResult,
+  mapOpportunityListRow,
   mapOpportunityRow,
 } from "./opportunity.mapper";
 
@@ -65,5 +66,41 @@ describe("Opportunity mapping", () => {
       createdBy: leadId,
       createdAt: "2026-07-27T08:00:00.000Z",
     });
+  });
+
+  it("classifies only an exact ledger-backed Opportunity as conversion", () => {
+    const base = {
+      id: opportunityId,
+      lead_id: leadId,
+      service: "corporate" as const,
+      estimated_value_myr: "8000.00",
+      quotation_number: null,
+      quotation_sent_at: null,
+      meeting_at: null,
+      deposit_amount_myr: null,
+      deposit_received_at: null,
+      created_at: "2026-07-27T08:00:00.000Z",
+      updated_at: "2026-07-27T08:00:00.000Z",
+      lead_title: "Corporate campaign",
+      company_id: null,
+      company_name: null,
+    };
+    expect(
+      mapOpportunityListRow({
+        ...base,
+        conversion_opportunity: true,
+        converted_at: "2026-07-27T08:00:00.000Z",
+      }),
+    ).toMatchObject({
+      isConversion: true,
+      convertedAt: "2026-07-27T08:00:00.000Z",
+    });
+    expect(
+      mapOpportunityListRow({
+        ...base,
+        conversion_opportunity: false,
+        converted_at: null,
+      }),
+    ).toMatchObject({ isConversion: false, convertedAt: null });
   });
 });

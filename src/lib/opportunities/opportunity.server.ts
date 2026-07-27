@@ -56,3 +56,5 @@ export async function createLeadConversionContext(): Promise<LeadConversionConte
     ),
   };
 }
+
+export const createOpportunityContext = createLeadConversionContext;
