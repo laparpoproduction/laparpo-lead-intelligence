@@ -181,6 +181,67 @@ describe("SupabaseOpportunityRepository", () => {
     });
   });
 
+  it("retrieves one typed detail projection by validated UUID", async () => {
+    const { repository, calls } = setup([{ data: listRow, error: null }]);
+    await expect(repository.getDetailById(opportunityId)).resolves.toEqual({
+      id: opportunityId,
+      leadId,
+      leadTitle: "Domino's festive campaign",
+      companyId: "33333333-3333-4333-8333-333333333333",
+      companyName: "Domino's Malaysia",
+      service: "food_review",
+      estimatedValueMyr: 3500,
+      quotationNumber: null,
+      quotationSentAt: null,
+      meetingAt: null,
+      depositAmountMyr: null,
+      depositReceivedAt: null,
+      createdAt: "2026-07-25T00:00:00.000Z",
+      updatedAt: "2026-07-25T00:00:00.000Z",
+      isConversion: true,
+      convertedAt: "2026-07-25T00:00:00.000Z",
+    });
+    expect(calls).toContainEqual({
+      method: "from",
+      args: ["opportunity_list_read_model"],
+    });
+    expect(calls).toContainEqual({ method: "eq", args: ["id", opportunityId] });
+    expect(calls).toContainEqual({ method: "maybeSingle", args: [] });
+  });
+
+  it("rejects malformed detail UUID before database access", async () => {
+    const { repository, calls } = setup([]);
+    await expect(repository.getDetailById("guessed")).rejects.toBeDefined();
+    expect(calls).toEqual([]);
+  });
+
+  it("returns null when a detail row is absent or inaccessible", async () => {
+    const { repository } = setup([{ data: null, error: null }]);
+    await expect(repository.getDetailById(opportunityId)).resolves.toBeNull();
+  });
+
+  it("maps detail database and projection failures safely", async () => {
+    const database = setup([
+      { data: null, error: { message: "secret policy and SQL" } },
+    ]).repository;
+    const databaseError = await database
+      .getDetailById(opportunityId)
+      .catch((caught) => caught);
+    expect(databaseError).toBeInstanceOf(OpportunityRepositoryError);
+    expect((databaseError as Error).message).not.toContain("secret");
+
+    const projection = setup([
+      { data: { ...listRow, service: "future_service" }, error: null },
+    ]).repository;
+    const projectionError = await projection
+      .getDetailById(opportunityId)
+      .catch((caught) => caught);
+    expect(projectionError).toBeInstanceOf(OpportunityRepositoryError);
+    expect((projectionError as Error).message).toBe(
+      "Opportunity repository get detail response failed",
+    );
+  });
+
   it("retrieves only the current Lead conversion ledger record", async () => {
     const { repository, calls } = setup([
       {

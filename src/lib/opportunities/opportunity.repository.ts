@@ -10,6 +10,7 @@ import type {
   LeadConversionRecordRow,
   LeadConversionResult,
   Opportunity,
+  OpportunityDetail,
   OpportunityListItem,
   OpportunityListOptions,
   OpportunityListRow,
@@ -50,6 +51,7 @@ export interface OpportunityRepository {
   convert(input: ValidatedConvertLeadInput): Promise<LeadConversionResult>;
   getConversionByLead(leadId: string): Promise<LeadConversionRecord | null>;
   getById(id: string): Promise<Opportunity | null>;
+  getDetailById(id: string): Promise<OpportunityDetail | null>;
   listByLead(leadId: string): Promise<Opportunity[]>;
   list(options?: OpportunityListOptions): Promise<PaginatedOpportunities>;
 }
@@ -210,6 +212,34 @@ export class SupabaseOpportunityRepository implements OpportunityRepository {
       );
     }
     return data ? mapOpportunityRow(data as OpportunityRow) : null;
+  }
+
+  async getDetailById(id: string): Promise<OpportunityDetail | null> {
+    const validatedId = validateOpportunityId(id);
+    const { data, error } = await this.client
+      .from("opportunity_list_read_model")
+      .select(opportunityListColumns)
+      .eq("id", validatedId)
+      .maybeSingle();
+    if (error) {
+      throw new OpportunityRepositoryError(
+        "get detail by id",
+        classifyFailure(error),
+        safeCause(error),
+      );
+    }
+    if (!data) return null;
+    try {
+      return mapOpportunityListRow(data as unknown as OpportunityListRow);
+    } catch (mappingError) {
+      throw new OpportunityRepositoryError(
+        "get detail response",
+        "unknown",
+        mappingError instanceof Error
+          ? new Error("Opportunity detail read model response was invalid")
+          : undefined,
+      );
+    }
   }
 
   async listByLead(leadId: string): Promise<Opportunity[]> {

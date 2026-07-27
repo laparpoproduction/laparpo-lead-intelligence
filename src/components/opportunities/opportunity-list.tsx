@@ -70,7 +70,12 @@ function Identity({ opportunity }: { opportunity: OpportunityListItem }) {
         <p className="mt-1 text-xs text-zinc-400">No client recorded</p>
       )}
       <p className="mt-1 break-all font-mono text-[11px] text-zinc-400">
-        {opportunity.id}
+        <Link
+          className="inline-flex min-h-10 items-center break-all underline-offset-4 hover:text-[#c91920] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e5222a] focus-visible:ring-offset-2"
+          href={`/opportunities/${opportunity.id}`}
+        >
+          {opportunity.id}
+        </Link>
       </p>
     </div>
   );

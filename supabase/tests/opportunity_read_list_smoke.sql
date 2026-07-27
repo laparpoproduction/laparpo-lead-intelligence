@@ -193,6 +193,21 @@ begin
   ) <> 2 then
     raise exception 'Multiple Opportunities for one Lead were not preserved';
   end if;
+  if not exists (
+    select 1
+    from public.opportunity_list_read_model
+    where id = '86000000-0000-4000-8000-000000000001'
+      and lead_id = '85000000-0000-4000-8000-000000000001'
+      and service = 'food_review'::public.service_type
+      and estimated_value_myr = 3500
+      and quotation_number = 'Q-VISIBLE'
+      and lead_title = 'Representative visible Opportunity search needle'
+      and company_id = '85000000-0000-4000-8000-000000000101'
+      and company_name = 'Opportunity Visible Client'
+      and not conversion_opportunity
+  ) then
+    raise exception 'Exact Opportunity detail projection was incomplete';
+  end if;
 end;
 $$;
 
@@ -274,6 +289,13 @@ begin
     where id = '86000000-0000-4000-8000-000000000002'
   ) then
     raise exception 'Representative saw an inaccessible Lead Opportunity';
+  end if;
+  if exists (
+    select 1 from public.opportunity_list_read_model
+    where id = '86000000-0000-4000-8000-000000000002'
+      and company_name = 'Opportunity Hidden Client'
+  ) then
+    raise exception 'Exact UUID guess leaked restricted Company metadata';
   end if;
   if exists (
     select 1

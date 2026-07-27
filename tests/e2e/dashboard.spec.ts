@@ -261,3 +261,20 @@ test("keeps Opportunities filters usable on phone and normalizes invalid state",
   await page.goto("/opportunities?page=999");
   await expect(page).toHaveURL("/opportunities");
 });
+
+test("returns the same safe not-found workspace for an unavailable Opportunity detail", async ({
+  page,
+}) => {
+  const opportunityDetailsUrl =
+    "/opportunities/22222222-2222-4222-8222-222222222222";
+  await page.goto(opportunityDetailsUrl);
+
+  await expect(page).toHaveURL(opportunityDetailsUrl);
+  await expect(
+    page.getByRole("heading", { name: "Opportunity not found" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Back to Opportunities" }),
+  ).toHaveAttribute("href", "/opportunities");
+  await expect(page.getByRole("link", { name: "Opportunities" })).toBeVisible();
+});

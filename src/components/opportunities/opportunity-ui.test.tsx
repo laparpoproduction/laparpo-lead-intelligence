@@ -8,9 +8,13 @@ import {
   OpportunityFilteredEmptyState,
 } from "./opportunity-empty-state";
 import { OpportunityList } from "./opportunity-list";
+import { OpportunityDetails } from "./opportunity-details";
 import { OpportunityListToolbar } from "./opportunity-list-toolbar";
 import OpportunitiesError from "@/app/(dashboard)/opportunities/error";
 import OpportunitiesLoading from "@/app/(dashboard)/opportunities/loading";
+import OpportunityDetailsError from "@/app/(dashboard)/opportunities/[opportunityId]/error";
+import OpportunityDetailsLoading from "@/app/(dashboard)/opportunities/[opportunityId]/loading";
+import OpportunityNotFound from "@/app/(dashboard)/opportunities/[opportunityId]/not-found";
 import { parseOpportunityQueryState } from "@/lib/opportunities/opportunity-query";
 import type { OpportunityListItem } from "@/lib/opportunities/opportunity.types";
 import { formatOpportunityMyr } from "@/lib/opportunities/opportunity-ui";
@@ -103,6 +107,107 @@ describe("Opportunities UI", () => {
     expect(screen.getAllByText(conversion.id)[0]?.className).toContain(
       "break-all",
     );
+  });
+
+  it("links every desktop and mobile list identity to the detail route", () => {
+    render(
+      <OpportunityList
+        opportunities={[conversion]}
+        pagination={{
+          page: 1,
+          pageSize: 25,
+          total: 1,
+          totalPages: 1,
+        }}
+        query={parseOpportunityQueryState({})}
+      />,
+    );
+    const links = screen.getAllByRole("link", { name: conversion.id });
+    expect(links).toHaveLength(2);
+    expect(links.every((link) =>
+      link.getAttribute("href") === `/opportunities/${conversion.id}`,
+    )).toBe(true);
+    expect(
+      screen.getAllByRole("link", { name: conversion.leadTitle }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("link", {
+        name: conversion.companyName ?? "Company",
+      }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("renders a complete accessible conversion detail workspace", () => {
+    render(<OpportunityDetails opportunity={conversion} />);
+    expect(
+      screen.getByRole("heading", { level: 1, name: conversion.leadTitle }),
+    ).toBeDefined();
+    expect(screen.getAllByText("Conversion Opportunity").length).toBeGreaterThan(0);
+    expect(screen.getByText("Converted from Lead")).toBeDefined();
+    expect(screen.getByText(/RM/)).toBeDefined();
+    expect(
+      screen.getByRole("link", { name: "Back to Opportunities" })
+        .getAttribute("href"),
+    ).toBe("/opportunities");
+    expect(
+      screen.getByRole("link", { name: "Open parent Lead" })
+        .getAttribute("href"),
+    ).toBe(`/leads/${conversion.leadId}`);
+    expect(
+      screen.getByRole("link", { name: "Open Company/client" })
+        .getAttribute("href"),
+    ).toBe(`/companies/${conversion.companyId}`);
+    expect(screen.getAllByText("Not scheduled").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Not recorded").length).toBeGreaterThan(0);
+    expect(screen.getByText(conversion.id).className).toContain("break-all");
+    expect(screen.getByRole("heading", {
+      name: "Commercial summary",
+    })).toBeDefined();
+    expect(screen.getByRole("heading", {
+      name: "Sales metadata",
+    })).toBeDefined();
+  });
+
+  it("renders ordinary, null-money and unavailable-client states without a Company link", () => {
+    render(
+      <OpportunityDetails
+        opportunity={{
+          ...ordinary,
+          companyName: null,
+        }}
+      />,
+    );
+    expect(screen.getAllByText("Ordinary Opportunity").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Not recorded").length).toBeGreaterThan(0);
+    expect(screen.getByText("Client information unavailable")).toBeDefined();
+    expect(
+      screen.queryByRole("link", { name: "Open Company/client" }),
+    ).toBeNull();
+    expect(screen.queryByText("RM0.00")).toBeNull();
+  });
+
+  it("distinguishes no-client from restricted client display data", () => {
+    const { rerender } = render(
+      <OpportunityDetails
+        opportunity={{
+          ...ordinary,
+          companyId: null,
+          companyName: null,
+        }}
+      />,
+    );
+    expect(screen.getByText("No client recorded")).toBeDefined();
+    rerender(
+      <OpportunityDetails
+        opportunity={{
+          ...ordinary,
+          companyId: conversion.companyId,
+          companyName: null,
+        }}
+      />,
+    );
+    expect(screen.getByText("Client information unavailable")).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Open Company/client" })).toBeNull();
   });
 
   it("resets page when search, filters or sorting changes", async () => {
@@ -198,5 +303,30 @@ describe("Opportunities UI", () => {
     expect(screen.getByRole("alert")).toBeDefined();
     expect(screen.queryByText(/raw database secret/)).toBeNull();
     expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
+  });
+
+  it("provides safe detail loading, error and not-found states", () => {
+    const { rerender } = render(<OpportunityDetailsLoading />);
+    expect(
+      screen.getByRole("status", { name: "Loading Opportunity details" }),
+    ).toBeDefined();
+    rerender(
+      <OpportunityDetailsError
+        error={Object.assign(new Error("raw detail SQL"), {
+          digest: "safe-detail-digest",
+        })}
+        reset={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("alert")).toBeDefined();
+    expect(screen.queryByText(/raw detail SQL/)).toBeNull();
+    rerender(<OpportunityNotFound />);
+    expect(
+      screen.getByRole("heading", { name: "Opportunity not found" }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("link", { name: "Back to Opportunities" })
+        .getAttribute("href"),
+    ).toBe("/opportunities");
   });
 });
