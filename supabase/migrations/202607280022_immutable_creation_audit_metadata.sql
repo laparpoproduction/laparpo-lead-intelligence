@@ -88,9 +88,9 @@ create trigger lead_sources_protect_creation_audit_metadata
   for each row execute function
     public.reject_creation_audit_metadata_update('created_at');
 
-drop trigger if exists leads_protect_creation_audit_metadata
+drop trigger if exists leads_05_protect_creation_audit_metadata
   on public.leads;
-create trigger leads_protect_creation_audit_metadata
+create trigger leads_05_protect_creation_audit_metadata
   before update of created_by, created_at on public.leads
   for each row execute function
     public.reject_creation_audit_metadata_update('created_by', 'created_at');
@@ -102,9 +102,9 @@ create trigger lead_signals_protect_creation_audit_metadata
   for each row execute function
     public.reject_creation_audit_metadata_update('created_at');
 
-drop trigger if exists lead_activities_30_protect_creation_audit_metadata
+drop trigger if exists lead_activities_05_protect_creation_audit_metadata
   on public.lead_activities;
-create trigger lead_activities_30_protect_creation_audit_metadata
+create trigger lead_activities_05_protect_creation_audit_metadata
   before update of created_by, created_at on public.lead_activities
   for each row execute function
     public.reject_creation_audit_metadata_update('created_by', 'created_at');

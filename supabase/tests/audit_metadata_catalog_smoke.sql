@@ -41,7 +41,7 @@ insert into h3_audit_metadata_coverage (
     'leads',
     array['created_at', 'created_by'],
     'h3_trigger',
-    'leads_protect_creation_audit_metadata'
+    'leads_05_protect_creation_audit_metadata'
   ),
   (
     'lead_signals',
@@ -53,7 +53,7 @@ insert into h3_audit_metadata_coverage (
     'lead_activities',
     array['created_at', 'created_by'],
     'h3_trigger',
-    'lead_activities_30_protect_creation_audit_metadata'
+    'lead_activities_05_protect_creation_audit_metadata'
   ),
   (
     'opportunities',
