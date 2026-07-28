@@ -1,4 +1,6 @@
 create role authenticated noinherit;
+create role anon noinherit;
+create role service_role noinherit bypassrls;
 create schema auth;
 
 create table auth.users (
@@ -17,4 +19,3 @@ $$;
 
 grant usage on schema auth to authenticated;
 grant execute on function auth.uid() to authenticated;
-

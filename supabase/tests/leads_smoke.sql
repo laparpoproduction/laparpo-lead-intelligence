@@ -44,6 +44,7 @@ where id = '71000000-0000-4000-8000-000000000007';
 
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
+revoke delete on public.companies from authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 
 -- Generic fixture grants must not undo the production ledger boundary added by
@@ -790,7 +791,8 @@ begin
 end;
 $$;
 
--- Company hard deletion is restricted and cannot erase Lead history.
+-- Trusted table-owner maintenance still reaches FK enforcement and cannot
+-- erase Lead history while a restricting child exists.
 insert into public.leads (
   id, title, company_id, created_by, source_type, discovered_at
 ) values (
@@ -811,7 +813,7 @@ begin
   exception when foreign_key_violation then blocked := true;
   end;
   if not blocked then
-    raise exception 'Company hard deletion was not restricted by Lead history';
+    raise exception 'Table-owner Company delete bypassed Lead FK protection';
   end if;
 end;
 $$;

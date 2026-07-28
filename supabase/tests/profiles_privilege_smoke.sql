@@ -48,6 +48,7 @@ where id = '82000000-0000-4000-8000-000000000005';
 
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
+revoke delete on public.companies from authenticated;
 
 -- CEO/Admin may manage role and active status.
 set role authenticated;
