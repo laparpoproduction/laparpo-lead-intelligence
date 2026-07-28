@@ -791,7 +791,8 @@ begin
 end;
 $$;
 
--- Company hard deletion is rejected before any FK cascade can be attempted.
+-- Trusted table-owner maintenance still reaches FK enforcement and cannot
+-- erase Lead history while a restricting child exists.
 insert into public.leads (
   id, title, company_id, created_by, source_type, discovered_at
 ) values (
@@ -804,14 +805,16 @@ insert into public.leads (
 );
 
 do $$
+declare blocked boolean := false;
 begin
   begin
     delete from public.companies
     where id = '72000000-0000-4000-8000-000000000004';
-    raise exception 'Company hard delete reached Lead FK enforcement';
-  exception
-    when insufficient_privilege then null;
+  exception when foreign_key_violation then blocked := true;
   end;
+  if not blocked then
+    raise exception 'Table-owner Company delete bypassed Lead FK protection';
+  end if;
 end;
 $$;
 
