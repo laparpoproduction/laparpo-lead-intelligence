@@ -214,10 +214,9 @@ test("opens the read-only Opportunities list and canonical filters", async ({
     page.getByRole("searchbox", { name: "Search opportunities" }),
   ).toBeVisible();
   await expect(page.getByText("No opportunities yet")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Opportunities" })).toHaveAttribute(
-    "href",
-    "/opportunities",
-  );
+  await expect(
+    page.getByRole("link", { name: "Opportunities", exact: true }),
+  ).toHaveAttribute("href", "/opportunities");
   await expect(page.getByRole("link", { name: /Add opportunity/i })).toHaveCount(0);
 
   await page
@@ -260,6 +259,75 @@ test("keeps Opportunities filters usable on phone and normalizes invalid state",
 
   await page.goto("/opportunities?page=999");
   await expect(page).toHaveURL("/opportunities");
+});
+
+test("opens all six bounded Opportunity pipeline stages and canonical filters", async ({
+  page,
+}) => {
+  await page.goto("/opportunities/pipeline");
+
+  await expect(
+    page.getByRole("heading", { name: "Opportunity Pipeline" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Opportunities List" }),
+  ).toHaveAttribute("href", "/opportunities");
+  await expect(page.getByRole("link", { name: "Pipeline" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  for (const stage of [
+    "New",
+    "Discussion",
+    "Quotation Sent",
+    "Negotiation",
+    "Won",
+    "Lost",
+  ]) {
+    await expect(page.getByRole("heading", { name: stage })).toBeVisible();
+  }
+
+  await page.getByRole("searchbox", { name: "Search pipeline" }).fill("KFC");
+  await page
+    .getByRole("combobox", { name: "Service" })
+    .selectOption("food_review");
+  await page
+    .getByRole("combobox", { name: "Opportunity kind" })
+    .selectOption("ordinary");
+  await page.getByRole("button", { name: "Apply filters" }).click();
+  await expect(page).toHaveURL(
+    "/opportunities/pipeline?q=KFC&service=food_review&kind=ordinary",
+  );
+});
+
+test("keeps the six-stage pipeline inside a touch-safe mobile scroller", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(
+    "/opportunities/pipeline?service=future&stage=new&order=raw",
+  );
+  await expect(page).toHaveURL("/opportunities/pipeline");
+
+  const board = page.getByRole("region", {
+    name: "Opportunity pipeline board",
+  });
+  await expect(board).toBeVisible();
+  await expect(board).toHaveAttribute(
+    "data-mobile-presentation",
+    "horizontal-stage-sections",
+  );
+  const sizes = await board.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    pageWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(sizes.scrollWidth).toBeGreaterThan(sizes.clientWidth);
+  expect(sizes.pageWidth).toBeLessThanOrEqual(sizes.viewportWidth);
+  await expect(
+    page.getByRole("searchbox", { name: "Search pipeline" }),
+  ).toBeVisible();
 });
 
 test("returns the same safe not-found workspace for an unavailable Opportunity detail", async ({

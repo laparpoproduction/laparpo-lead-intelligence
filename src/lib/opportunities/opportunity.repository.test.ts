@@ -27,6 +27,12 @@ class QueryBuilder implements PromiseLike<Response> {
   eq(...args: unknown[]) {
     return this.record("eq", args);
   }
+  in(...args: unknown[]) {
+    return this.record("in", args);
+  }
+  limit(...args: unknown[]) {
+    return this.record("limit", args);
+  }
   order(...args: unknown[]) {
     return this.record("order", args);
   }
@@ -449,6 +455,7 @@ describe("SupabaseOpportunityRepository", () => {
         query: " Domino's ",
         service: "food_review",
         kind: "conversion",
+        pipelineStage: "quotation_sent",
         sort: "newest",
         page: 2,
         pageSize: 25,
@@ -475,7 +482,49 @@ describe("SupabaseOpportunityRepository", () => {
       method: "eq",
       args: ["conversion_opportunity", true],
     });
+    expect(calls).toContainEqual({
+      method: "eq",
+      args: ["pipeline_stage", "quotation_sent"],
+    });
     expect(calls).toContainEqual({ method: "range", args: [25, 49] });
+  });
+
+  it("loads Lead access and owner names in bounded batch reads", async () => {
+    const ownerId = "44444444-4444-4444-8444-444444444444";
+    const { repository, calls } = setup([
+      {
+        data: [{ id: leadId, created_by: ownerId, assigned_to: null }],
+        error: null,
+      },
+      {
+        data: [
+          {
+            id: ownerId,
+            full_name: "Nur Aisyah",
+            role: "sales_representative",
+            is_active: true,
+          },
+        ],
+        error: null,
+      },
+    ]);
+
+    await expect(repository.listLeadAccessRows([leadId, leadId])).resolves.toEqual([
+      { id: leadId, created_by: ownerId, assigned_to: null },
+    ]);
+    await expect(repository.listOwnerProfiles()).resolves.toEqual([
+      {
+        id: ownerId,
+        fullName: "Nur Aisyah",
+        role: "sales_representative",
+        isActive: true,
+      },
+    ]);
+    expect(calls).toContainEqual({
+      method: "in",
+      args: ["id", [leadId]],
+    });
+    expect(calls).toContainEqual({ method: "limit", args: [200] });
   });
 
   it.each([

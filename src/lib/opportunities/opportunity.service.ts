@@ -3,6 +3,7 @@ import {
   OpportunityRepositoryError,
   type OpportunityRepository,
 } from "./opportunity.repository";
+import { opportunityPipelineStageValues } from "./opportunity.types";
 import type {
   ConvertLeadInput,
   LeadConversionActor,
@@ -15,6 +16,9 @@ import type {
   OpportunityLostMutationInput,
   OpportunityMutationResult,
   OpportunityOwnerMutationInput,
+  OpportunityOwnerProfile,
+  OpportunityPipelineBoard,
+  OpportunityPipelineFilters,
   OpportunityProbabilityMutationInput,
   OpportunityStageMutationInput,
   OpportunityVersionedMutationInput,
@@ -138,6 +142,7 @@ export class OpportunityMutationUnavailableError extends Error {
 }
 
 const managementRoles = new Set(["ceo_admin", "sales_manager"]);
+export const OPPORTUNITY_PIPELINE_PAGE_SIZE = 25;
 
 function isManagement(actor: LeadConversionActor): boolean {
   return managementRoles.has(actor.role);
@@ -260,6 +265,95 @@ export class LeadConversionService {
     } catch (error) {
       if (error instanceof OpportunityRepositoryError) {
         throw new OpportunityListUnavailableError(error);
+      }
+      throw error;
+    }
+  }
+
+  async listPipeline(
+    filters: OpportunityPipelineFilters,
+    actor: LeadConversionActor,
+  ): Promise<OpportunityPipelineBoard> {
+    this.requireActive(actor);
+    let validated: ReturnType<typeof validateOpportunityListOptions>;
+    try {
+      validated = validateOpportunityListOptions({
+        ...filters,
+        sort: "newest",
+        page: 1,
+        pageSize: OPPORTUNITY_PIPELINE_PAGE_SIZE,
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        throw new OpportunityListValidationError(error.issues, error);
+      }
+      throw error;
+    }
+
+    try {
+      const [stageResults, ownerProfiles] = await Promise.all([
+        Promise.all(
+          opportunityPipelineStageValues.map((pipelineStage) =>
+            this.repository.list({
+              ...validated,
+              pipelineStage,
+            }),
+          ),
+        ),
+        this.repository.listOwnerProfiles(),
+      ]);
+      const items = stageResults.flatMap((result) => result.items);
+      const mutableLeadIds = isManagement(actor)
+        ? new Set(items.map((item) => item.leadId))
+        : await this.representativeMutableLeadIds(
+            items.map((item) => item.leadId),
+            actor,
+          );
+
+      return {
+        columns: opportunityPipelineStageValues.map((stage, index) => ({
+          stage,
+          total: stageResults[index]!.total,
+          items: stageResults[index]!.items.map((item) => ({
+            ...item,
+            canModify: mutableLeadIds.has(item.leadId),
+          })),
+        })),
+        ownerProfiles,
+      };
+    } catch (error) {
+      if (error instanceof OpportunityRepositoryError) {
+        throw new OpportunityListUnavailableError(error);
+      }
+      throw error;
+    }
+  }
+
+  async listOwnerProfiles(
+    actor: LeadConversionActor,
+  ): Promise<OpportunityOwnerProfile[]> {
+    this.requireActive(actor);
+    try {
+      return await this.repository.listOwnerProfiles();
+    } catch (error) {
+      if (error instanceof OpportunityRepositoryError) {
+        throw new OpportunityListUnavailableError(error);
+      }
+      throw error;
+    }
+  }
+
+  async canModifyLeadForUi(
+    leadId: string,
+    actor: LeadConversionActor,
+  ): Promise<boolean> {
+    this.requireActive(actor);
+    const validatedId = this.validate(() => validateOpportunityId(leadId));
+    try {
+      return await this.repository.canModifyLead(validatedId);
+    } catch (error) {
+      if (error instanceof OpportunityRepositoryError) {
+        throw new OpportunityDetailUnavailableError(error);
       }
       throw error;
     }
@@ -421,6 +515,22 @@ export class LeadConversionService {
         "Inactive users cannot access Opportunities",
       );
     }
+  }
+
+  private async representativeMutableLeadIds(
+    leadIds: string[],
+    actor: LeadConversionActor,
+  ): Promise<Set<string>> {
+    const rows = await this.repository.listLeadAccessRows(leadIds);
+    return new Set(
+      rows
+        .filter(
+          (row) =>
+            row.created_by === actor.userId ||
+            row.assigned_to === actor.userId,
+        )
+        .map((row) => row.id),
+    );
   }
 
   private requireMutationActor(actor: LeadConversionActor): void {

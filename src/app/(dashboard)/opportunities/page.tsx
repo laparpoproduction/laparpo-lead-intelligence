@@ -6,6 +6,7 @@ import {
 } from "@/components/opportunities/opportunity-empty-state";
 import { OpportunityList } from "@/components/opportunities/opportunity-list";
 import { OpportunityListToolbar } from "@/components/opportunities/opportunity-list-toolbar";
+import { OpportunityWorkspaceNav } from "@/components/opportunities/opportunity-workspace-nav";
 import { requireDashboardUser } from "@/lib/auth/session";
 import {
   buildOpportunitiesHref,
@@ -54,9 +55,10 @@ export default async function OpportunitiesPage({
   return (
     <section>
       <LeadPageHeader
-        description="A read-only view of commercial Opportunities, tied to authoritative Lead access."
+        description="Review commercial Opportunities or open the visual pipeline workspace."
         title="Opportunities"
       />
+      <OpportunityWorkspaceNav current="list" />
       <OpportunityListToolbar query={query} />
       {result.items.length === 0 ? (
         hasOpportunityFilters(query) ? (

@@ -66,6 +66,13 @@ const ordinary: OpportunityListItem = {
   quotationNumber: null,
 };
 
+const detailWorkflowProps = {
+  actorId: "55555555-5555-4555-8555-555555555555",
+  actorRole: "sales_manager" as const,
+  canModify: true,
+  ownerProfiles: [],
+};
+
 describe("Opportunities UI", () => {
   it("renders multiple Opportunities for one Lead with ledger-based labels", () => {
     render(
@@ -147,7 +154,12 @@ describe("Opportunities UI", () => {
   });
 
   it("renders a complete accessible conversion detail workspace", () => {
-    render(<OpportunityDetails opportunity={conversion} />);
+    render(
+      <OpportunityDetails
+        {...detailWorkflowProps}
+        opportunity={conversion}
+      />,
+    );
     expect(
       screen.getByRole("heading", { level: 1, name: conversion.leadTitle }),
     ).toBeDefined();
@@ -168,7 +180,9 @@ describe("Opportunities UI", () => {
     ).toBe(`/companies/${conversion.companyId}`);
     expect(screen.getAllByText("Not scheduled").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Not recorded").length).toBeGreaterThan(0);
-    expect(screen.getByText(conversion.id).className).toContain("break-all");
+    expect(screen.getAllByText(conversion.id)[0]?.className).toContain(
+      "break-all",
+    );
     expect(screen.getByRole("heading", {
       name: "Commercial summary",
     })).toBeDefined();
@@ -180,6 +194,7 @@ describe("Opportunities UI", () => {
   it("renders ordinary, null-money and unavailable-client states without a Company link", () => {
     render(
       <OpportunityDetails
+        {...detailWorkflowProps}
         opportunity={{
           ...ordinary,
           companyName: null,
@@ -198,6 +213,7 @@ describe("Opportunities UI", () => {
   it("distinguishes no-client from restricted client display data", () => {
     const { rerender } = render(
       <OpportunityDetails
+        {...detailWorkflowProps}
         opportunity={{
           ...ordinary,
           companyId: null,
@@ -208,6 +224,7 @@ describe("Opportunities UI", () => {
     expect(screen.getByText("No client recorded")).toBeDefined();
     rerender(
       <OpportunityDetails
+        {...detailWorkflowProps}
         opportunity={{
           ...ordinary,
           companyId: conversion.companyId,

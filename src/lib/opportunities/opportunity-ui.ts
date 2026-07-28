@@ -1,5 +1,9 @@
 import type { LeadServiceInterest } from "@/lib/leads/lead.types";
-import type { OpportunityService } from "./opportunity.types";
+import type {
+  OpportunityLossReason,
+  OpportunityPipelineStage,
+  OpportunityService,
+} from "./opportunity.types";
 
 export const opportunityServiceOptions: ReadonlyArray<{
   value: OpportunityService;
@@ -51,6 +55,31 @@ const myr = new Intl.NumberFormat("en-MY", {
 
 export const OPPORTUNITIES_DEFAULT_PAGE_SIZE = 25;
 
+export const opportunityStageOptions: ReadonlyArray<{
+  value: OpportunityPipelineStage;
+  label: string;
+}> = [
+  { value: "new", label: "New" },
+  { value: "discussion", label: "Discussion" },
+  { value: "quotation_sent", label: "Quotation Sent" },
+  { value: "negotiation", label: "Negotiation" },
+  { value: "won", label: "Won" },
+  { value: "lost", label: "Lost" },
+];
+
+export const opportunityLossReasonOptions: ReadonlyArray<{
+  value: OpportunityLossReason;
+  label: string;
+}> = [
+  { value: "budget", label: "Budget" },
+  { value: "competitor", label: "Competitor" },
+  { value: "no_response", label: "No response" },
+  { value: "postponed", label: "Postponed" },
+  { value: "scope_mismatch", label: "Scope mismatch" },
+  { value: "client_cancelled", label: "Client cancelled" },
+  { value: "other", label: "Other" },
+];
+
 export function formatOpportunityMyr(value: number | null): string {
   return value === null ? "Not recorded" : myr.format(value);
 }
@@ -60,4 +89,29 @@ export function opportunityServiceLabel(service: OpportunityService): string {
     opportunityServiceOptions.find((option) => option.value === service)?.label ??
     service
   );
+}
+
+export function opportunityStageLabel(stage: OpportunityPipelineStage): string {
+  return opportunityStageOptions.find((option) => option.value === stage)!.label;
+}
+
+export function opportunityLossReasonLabel(reason: OpportunityLossReason): string {
+  return opportunityLossReasonOptions.find((option) => option.value === reason)!
+    .label;
+}
+
+export function compactOpportunityId(id: string): string {
+  return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
+export function isOpportunityOverdue(
+  expectedCloseDate: string | null,
+  stage: OpportunityPipelineStage,
+  now = new Date(),
+): boolean {
+  if (!expectedCloseDate || stage === "won" || stage === "lost") return false;
+  const today = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  return new Date(`${expectedCloseDate}T00:00:00.000Z`) < today;
 }

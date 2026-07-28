@@ -3,6 +3,7 @@ import {
   mapLeadConversionRecord,
   mapLeadConversionResult,
   mapOpportunityListRow,
+  mapOpportunityOwnerProfile,
   mapOpportunityRow,
 } from "./opportunity.mapper";
 import type {
@@ -16,8 +17,11 @@ import type {
   OpportunityListItem,
   OpportunityListOptions,
   OpportunityListRow,
+  OpportunityLeadAccessRow,
   OpportunityLossReason,
   OpportunityLostMutationInput,
+  OpportunityOwnerProfile,
+  OpportunityOwnerProfileRow,
   OpportunityOwnerMutationInput,
   OpportunityProbabilityMutationInput,
   OpportunityRow,
@@ -76,6 +80,8 @@ export interface OpportunityRepository {
   getDetailById(id: string): Promise<OpportunityDetail | null>;
   listByLead(leadId: string): Promise<Opportunity[]>;
   list(options?: OpportunityListOptions): Promise<PaginatedOpportunities>;
+  listLeadAccessRows(leadIds: string[]): Promise<OpportunityLeadAccessRow[]>;
+  listOwnerProfiles(): Promise<OpportunityOwnerProfile[]>;
   canModifyLead(leadId: string): Promise<boolean>;
   changePipelineStage(
     input: OpportunityStageMutationInput,
@@ -371,6 +377,9 @@ export class SupabaseOpportunityRepository implements OpportunityRepository {
         parsed.kind === "conversion",
       );
     }
+    if (parsed.pipelineStage) {
+      query = query.eq("pipeline_stage", parsed.pipelineStage);
+    }
 
     const sort = opportunitySortColumns[parsed.sort];
     const { data, error, count } = await query
@@ -411,6 +420,54 @@ export class SupabaseOpportunityRepository implements OpportunityRepository {
       total,
       totalPages: total === 0 ? 0 : Math.ceil(total / parsed.pageSize),
     };
+  }
+
+  async listLeadAccessRows(
+    leadIds: string[],
+  ): Promise<OpportunityLeadAccessRow[]> {
+    if (leadIds.length === 0) return [];
+    const validatedIds = Array.from(
+      new Set(leadIds.map((id) => validateOpportunityId(id))),
+    );
+    const { data, error } = await this.client
+      .from("leads")
+      .select("id, created_by, assigned_to")
+      .in("id", validatedIds)
+      .order("id", { ascending: true });
+    if (error) {
+      throw new OpportunityRepositoryError(
+        "list Lead mutation access",
+        classifyFailure(error),
+        safeCause(error),
+      );
+    }
+    return (data ?? []) as OpportunityLeadAccessRow[];
+  }
+
+  async listOwnerProfiles(): Promise<OpportunityOwnerProfile[]> {
+    const { data, error } = await this.client
+      .from("profiles")
+      .select("id, full_name, role, is_active")
+      .order("full_name", { ascending: true, nullsFirst: false })
+      .order("id", { ascending: true })
+      .limit(200);
+    if (error) {
+      throw new OpportunityRepositoryError(
+        "list Opportunity owner profiles",
+        classifyFailure(error),
+        safeCause(error),
+      );
+    }
+    try {
+      return (data ?? []).map((row) =>
+        mapOpportunityOwnerProfile(row as OpportunityOwnerProfileRow),
+      );
+    } catch {
+      throw new OpportunityRepositoryError(
+        "Opportunity owner profile response",
+        "unknown",
+      );
+    }
   }
 
   async canModifyLead(leadId: string): Promise<boolean> {

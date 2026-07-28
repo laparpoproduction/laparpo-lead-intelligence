@@ -4,28 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useTransition } from "react";
 import {
-  buildOpportunitiesHref,
-  clearOpportunityFiltersHref,
-  hasOpportunityFilters,
-  parseOpportunityQueryState,
-  type OpportunityQueryState,
-} from "@/lib/opportunities/opportunity-query";
-import {
-  opportunityServiceOptions,
-  opportunityStageOptions,
-} from "@/lib/opportunities/opportunity-ui";
+  buildOpportunityPipelineHref,
+  hasOpportunityPipelineFilters,
+  parseOpportunityPipelineQuery,
+  type OpportunityPipelineQueryState,
+} from "@/lib/opportunities/opportunity-pipeline-query";
+import { opportunityServiceOptions } from "@/lib/opportunities/opportunity-ui";
 
-const fieldClassName =
+const fieldClass =
   "min-h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-100";
 
-export function OpportunityListToolbar({
+export function OpportunityPipelineToolbar({
   query,
 }: {
-  query: OpportunityQueryState;
+  query: OpportunityPipelineQueryState;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const hasFilters = hasOpportunityFilters(query);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,25 +30,23 @@ export function OpportunityListToolbar({
         typeof value === "string" ? value : "",
       ]),
     );
-    const nextQuery = parseOpportunityQueryState(values);
-    startTransition(() => {
-      router.push(buildOpportunitiesHref(nextQuery, { page: 1 }));
-    });
+    const next = parseOpportunityPipelineQuery(values);
+    startTransition(() => router.push(buildOpportunityPipelineHref(next)));
   }
 
   return (
     <section
-      aria-label="Search and filter opportunities"
+      aria-label="Search and filter pipeline"
       className="mb-5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"
     >
       <form className="space-y-4" method="get" onSubmit={submit}>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="xl:col-span-2">
             <span className="mb-1.5 block text-xs font-bold text-zinc-600">
-              Search opportunities
+              Search pipeline
             </span>
             <input
-              className={fieldClassName}
+              className={fieldClass}
               defaultValue={query.q}
               name="q"
               placeholder="Lead, client or Opportunity UUID"
@@ -65,7 +58,7 @@ export function OpportunityListToolbar({
               Service
             </span>
             <select
-              className={fieldClassName}
+              className={fieldClass}
               defaultValue={query.service ?? ""}
               name="service"
             >
@@ -79,27 +72,10 @@ export function OpportunityListToolbar({
           </label>
           <label>
             <span className="mb-1.5 block text-xs font-bold text-zinc-600">
-              Pipeline stage
-            </span>
-            <select
-              className={fieldClassName}
-              defaultValue={query.stage ?? ""}
-              name="stage"
-            >
-              <option value="">All stages</option>
-              {opportunityStageOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="mb-1.5 block text-xs font-bold text-zinc-600">
               Opportunity kind
             </span>
             <select
-              className={fieldClassName}
+              className={fieldClass}
               defaultValue={query.kind}
               name="kind"
             >
@@ -108,31 +84,16 @@ export function OpportunityListToolbar({
               <option value="ordinary">Ordinary opportunities</option>
             </select>
           </label>
-          <label>
-            <span className="mb-1.5 block text-xs font-bold text-zinc-600">
-              Sort
-            </span>
-            <select
-              className={fieldClassName}
-              defaultValue={query.sort}
-              name="sort"
-            >
-              <option value="newest">Newest</option>
-              <option value="oldest">Oldest</option>
-              <option value="value_desc">Estimated value: high to low</option>
-              <option value="value_asc">Estimated value: low to high</option>
-            </select>
-          </label>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3 border-t border-zinc-100 pt-4">
-          {hasFilters ? (
+          {hasOpportunityPipelineFilters(query) ? (
             <>
               <span className="text-xs font-semibold text-zinc-500" role="status">
-                Opportunity filters active
+                Pipeline filters active
               </span>
               <Link
                 className="inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-bold text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950"
-                href={clearOpportunityFiltersHref(query)}
+                href="/opportunities/pipeline"
               >
                 Clear all filters
               </Link>
