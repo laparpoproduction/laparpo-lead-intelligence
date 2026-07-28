@@ -98,7 +98,9 @@ declare
   stale_classifications text[];
   inventory_mismatches text[];
 begin
-  select pg_catalog.array_agg(relation.relname order by relation.relname)
+  select pg_catalog.array_agg(
+    relation.relname::text order by relation.relname
+  )
   into unclassified_tables
   from pg_catalog.pg_class as relation
   join pg_catalog.pg_namespace as namespace
@@ -144,7 +146,9 @@ begin
   into inventory_mismatches
   from h3_audit_metadata_coverage as coverage
   where coverage.audit_columns is distinct from (
-    select pg_catalog.array_agg(attribute.attname order by attribute.attname)
+    select pg_catalog.array_agg(
+      attribute.attname::text order by attribute.attname
+    )
     from pg_catalog.pg_attribute as attribute
     where attribute.attrelid = pg_catalog.to_regclass(
       pg_catalog.format('public.%I', coverage.table_name)
@@ -244,7 +248,9 @@ begin
           );
     end if;
 
-    select pg_catalog.array_agg(attribute.attname order by attribute.attname)
+    select pg_catalog.array_agg(
+      attribute.attname::text order by attribute.attname
+    )
     into protected_columns
     from pg_catalog.pg_trigger as trigger
     join pg_catalog.pg_attribute as attribute
