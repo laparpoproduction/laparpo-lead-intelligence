@@ -7,11 +7,15 @@ import {
   SERVICE_UNAVAILABLE_PATH,
 } from "@/lib/env";
 
-const publicAssetPattern =
-  /^\/(?:_next\/(?:static|image)\/|favicon\.ico$|.*\.(?:svg|png|jpg|jpeg|gif|webp)$)/;
-
 function isConfigurationSafePath(pathname: string): boolean {
-  return pathname === SERVICE_UNAVAILABLE_PATH || publicAssetPattern.test(pathname);
+  return (
+    pathname === SERVICE_UNAVAILABLE_PATH ||
+    pathname === "/favicon.ico" ||
+    pathname === "/_next/static" ||
+    pathname.startsWith("/_next/static/") ||
+    pathname === "/_next/image" ||
+    pathname.startsWith("/_next/image/")
+  );
 }
 
 export async function updateSession(request: NextRequest) {

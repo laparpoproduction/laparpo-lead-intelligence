@@ -40,6 +40,17 @@ describe("application mode", () => {
     });
   });
 
+  it("rejects a syntactically valid Supabase URL with a non-HTTP scheme", () => {
+    expect(
+      resolveApplicationMode(
+        productionInput({ supabaseUrl: "ftp://project.supabase.co" }),
+      ),
+    ).toEqual({
+      mode: "misconfigured",
+      issues: ["invalid_supabase_url"],
+    });
+  });
+
   it.each([
     [
       "missing URL",
@@ -179,6 +190,21 @@ describe("production server environment", () => {
         ...validSecrets,
       }),
     ).not.toThrow();
+  });
+
+  it("rejects a non-HTTP Supabase URL through production validation", () => {
+    try {
+      validateProductionServerEnvironment({
+        ...productionInput({ supabaseUrl: "ftp://project.supabase.co" }),
+        ...validSecrets,
+      });
+      throw new Error("Expected production validation to reject an FTP URL");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApplicationConfigurationError);
+      expect(error).toMatchObject({
+        issues: ["invalid_supabase_url"],
+      });
+    }
   });
 
   it.each([

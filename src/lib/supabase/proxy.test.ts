@@ -95,7 +95,29 @@ describe("session proxy", () => {
     expect(mocks.createServerClient).not.toHaveBeenCalled();
   });
 
-  it("does not loop on the unavailable route or block static assets", async () => {
+  it.each([
+    "/companies/11111111-1111-4111-8111-111111111111.svg?tab=activity",
+    "/opportunities/pipeline.png?download=1",
+    "/leads/private.webp",
+  ])(
+    "blocks an image-suffixed protected route while misconfigured: %s",
+    async (path) => {
+      mocks.getApplicationModeResolution.mockReturnValue({
+        mode: "misconfigured",
+        issues: ["missing_supabase_configuration"],
+      });
+      const response = await updateSession(request(path));
+      expect(response.status).toBe(503);
+      expect(response.headers.get("x-middleware-rewrite")).toBe(
+        "http://localhost/service-unavailable",
+      );
+      expect(response.headers.get("x-middleware-next")).toBeNull();
+      expect(response.cookies.getAll()).toEqual([]);
+      expect(mocks.createServerClient).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not loop on the unavailable route or block Next.js infrastructure", async () => {
     mocks.getApplicationModeResolution.mockReturnValue({
       mode: "misconfigured",
       issues: ["missing_supabase_configuration"],
@@ -104,10 +126,12 @@ describe("session proxy", () => {
     const staticAsset = await updateSession(
       request("/_next/static/chunks/app.js"),
     );
-    const image = await updateSession(request("/brand.svg"));
+    const image = await updateSession(request("/_next/image"));
+    const favicon = await updateSession(request("/favicon.ico"));
     expect(unavailable.headers.get("x-middleware-next")).toBe("1");
     expect(staticAsset.headers.get("x-middleware-next")).toBe("1");
     expect(image.headers.get("x-middleware-next")).toBe("1");
+    expect(favicon.headers.get("x-middleware-next")).toBe("1");
     expect(mocks.logConfigurationUnavailableOnce).not.toHaveBeenCalled();
   });
 });

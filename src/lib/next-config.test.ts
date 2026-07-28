@@ -50,6 +50,16 @@ describe("next.config production validation integration", () => {
     ).rejects.toThrow("Invalid application configuration");
   });
 
+  it("rejects a config invocation with a non-HTTP Supabase URL", async () => {
+    await expect(
+      importNextConfig({
+        NEXT_PUBLIC_SUPABASE_URL: "ftp://project.supabase.co",
+      }),
+    ).rejects.toThrow(
+      "Invalid application configuration: invalid_supabase_url",
+    );
+  });
+
   it("rejects production demo mode", async () => {
     await expect(
       importNextConfig({ LAPARPO_DEMO_MODE: "true" }),
