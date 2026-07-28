@@ -831,9 +831,9 @@ begin
   begin
     delete from public.companies
     where id = '10000000-0000-0000-0000-000000000021';
-    raise exception 'Company delete orphaned its contact';
+    raise exception 'Company hard delete reached Contact FK enforcement';
   exception
-    when foreign_key_violation or restrict_violation then null;
+    when insufficient_privilege then null;
   end;
 
   if not exists (

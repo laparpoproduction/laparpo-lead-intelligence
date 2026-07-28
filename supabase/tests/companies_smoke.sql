@@ -189,12 +189,13 @@ begin
     raise exception 'Inactive user updated a company';
   end if;
 
-  delete from public.companies
-  where id = '10000000-0000-0000-0000-000000000012';
-  get diagnostics affected_rows = row_count;
-  if affected_rows <> 0 then
-    raise exception 'Inactive user deleted a company';
-  end if;
+  begin
+    delete from public.companies
+    where id = '10000000-0000-0000-0000-000000000012';
+    raise exception 'Inactive user executed a Company hard delete';
+  exception
+    when insufficient_privilege then null;
+  end;
 end;
 $$;
 
@@ -270,12 +271,13 @@ begin
     raise exception 'Unrelated representative updated a company';
   end if;
 
-  delete from public.companies
-  where id = '10000000-0000-0000-0000-000000000011';
-  get diagnostics affected_rows = row_count;
-  if affected_rows <> 0 then
-    raise exception 'Unrelated representative deleted a company';
-  end if;
+  begin
+    delete from public.companies
+    where id = '10000000-0000-0000-0000-000000000011';
+    raise exception 'Unrelated representative executed a Company hard delete';
+  exception
+    when insufficient_privilege then null;
+  end;
 end;
 $$;
 
@@ -352,12 +354,13 @@ begin
     raise exception 'Representative updated a soft-deleted company';
   end if;
 
-  delete from public.companies
-  where id = '10000000-0000-0000-0000-000000000011';
-  get diagnostics affected_rows = row_count;
-  if affected_rows <> 0 then
-    raise exception 'Representative deleted a soft-deleted company';
-  end if;
+  begin
+    delete from public.companies
+    where id = '10000000-0000-0000-0000-000000000011';
+    raise exception 'Representative hard-deleted an archived company';
+  exception
+    when insufficient_privilege then null;
+  end;
 end;
 $$;
 

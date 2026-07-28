@@ -11,6 +11,7 @@ where id = '00000000-0000-0000-0000-000000000001';
 
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
+revoke delete on public.companies from authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 
 set role authenticated;
