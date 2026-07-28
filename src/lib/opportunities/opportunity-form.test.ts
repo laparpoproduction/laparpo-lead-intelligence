@@ -81,6 +81,7 @@ describe("Opportunity mutation FormData allow-lists", () => {
           },
           {
             createdBy: "forged",
+            createdAt: "2000-01-01T00:00:00Z",
             depositAmountMyr: "1000",
             conversionOpportunity: "true",
           },

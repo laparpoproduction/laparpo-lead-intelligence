@@ -103,6 +103,18 @@ describe("Leads server actions", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/leads");
   });
 
+  it("ignores client-supplied creation audit metadata", async () => {
+    const form = updateForm();
+    form.set("createdBy", "99999999-9999-4999-8999-999999999999");
+    form.set("createdAt", "2000-01-01T00:00:00.000Z");
+
+    await updateLeadAction(initialLeadFormState, form);
+
+    const submitted = vi.mocked(service.update).mock.calls[0]?.[1];
+    expect(submitted).not.toHaveProperty("createdBy");
+    expect(submitted).not.toHaveProperty("createdAt");
+  });
+
   it("returns a duplicate warning on the first create attempt", async () => {
     vi.mocked(service.create).mockRejectedValueOnce(new LeadDuplicateError(["11111111-1111-4111-8111-111111111111"]));
     const state = await createLeadAction(initialLeadFormState, createForm());

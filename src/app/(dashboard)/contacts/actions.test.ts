@@ -135,6 +135,7 @@ describe("Contacts server actions", () => {
     form.set("role", "ceo_admin");
     form.set("userId", "99999999-9999-4999-8999-999999999999");
     form.set("createdBy", "99999999-9999-4999-8999-999999999999");
+    form.set("createdAt", "2000-01-01T00:00:00.000Z");
     form.set("deletedAt", "2026-07-13T00:00:00.000Z");
 
     await createContactAction(initialContactFormState, form);
@@ -142,6 +143,7 @@ describe("Contacts server actions", () => {
     expect(submitted).not.toHaveProperty("role");
     expect(submitted).not.toHaveProperty("userId");
     expect(submitted).not.toHaveProperty("createdBy");
+    expect(submitted).not.toHaveProperty("createdAt");
     expect(submitted).not.toHaveProperty("deletedAt");
     expect(service.create).toHaveBeenCalledWith(expect.any(Object), actor);
   });

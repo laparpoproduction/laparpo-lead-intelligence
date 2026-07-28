@@ -156,6 +156,7 @@ describe("Lead activity server actions", () => {
   it("ignores forged authority, provenance and legacy relationship fields", async () => {
     const form = createForm();
     form.set("createdBy", otherId);
+    form.set("createdAt", "2000-01-01T00:00:00.000Z");
     form.set("role", "ceo_admin");
     form.set("userId", otherId);
     form.set("deletedAt", "2026-07-25T00:00:00.000Z");
@@ -166,6 +167,7 @@ describe("Lead activity server actions", () => {
 
     const submitted = vi.mocked(service.create).mock.calls[0]?.[0];
     expect(submitted).not.toHaveProperty("createdBy");
+    expect(submitted).not.toHaveProperty("createdAt");
     expect(submitted).not.toHaveProperty("role");
     expect(submitted).not.toHaveProperty("userId");
     expect(submitted).not.toHaveProperty("deletedAt");
