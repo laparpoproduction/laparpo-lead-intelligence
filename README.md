@@ -67,7 +67,10 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
 
 Open [http://localhost:3000](http://localhost:3000).
 
-The dashboard shows a labelled setup preview when Supabase variables are absent. Authentication and RLS are enforced once Supabase is configured.
+Missing or partial Supabase configuration fails closed. For a deliberate local
+preview without Supabase, leave both Supabase variables absent and set the
+server-only `LAPARPO_DEMO_MODE=true`. Demo preview is allowed only outside
+production, is visibly labelled and cannot create a real mutation context.
 
 ## Environment variables
 
@@ -75,6 +78,7 @@ The dashboard shows a labelled setup preview when Supabase variables are absent.
 | --- | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Browser and server | Yes for auth | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser and server | Yes for auth | Supabase publishable or legacy anon key |
+| `LAPARPO_DEMO_MODE` | Server only | No; defaults to disabled | Exact `true` enables the non-production preview only when both Supabase values are absent |
 | `COMPANY_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for company mutations | Signs short-lived duplicate confirmation tokens; use at least 32 random characters |
 | `CONTACT_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for contact mutations | Signs namespaced, short-lived Contact confirmation tokens; use at least 32 random characters |
 | `LEAD_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for lead mutations | Signs namespaced, short-lived lead confirmation tokens; use at least 32 random characters |
@@ -83,9 +87,13 @@ The dashboard shows a labelled setup preview when Supabase variables are absent.
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
 Production builds fail during Next.js configuration when
-any duplicate-confirmation secret is missing or shorter than 32 characters.
-Tests and local development may omit them until duplicate confirmation is exercised;
-production-like local builds must provide an explicit test-only value.
+the Supabase URL/key is missing, partial or invalid; demo mode is enabled or
+malformed; or any duplicate-confirmation secret is missing or shorter than 32
+characters. Demo mode is forbidden in production.
+Tests and local development may omit the duplicate-confirmation secrets until
+those workflows are exercised. Supabase values may be omitted only for the
+explicit non-production demo described above; production-like local builds must
+provide URL/key and explicit test-only confirmation values.
 
 ## Database architecture
 
@@ -283,7 +291,8 @@ isolation and safe company relationships.
 
 ## Manual test checklist
 
-1. With no Supabase variables, verify all seven modules render in setup preview mode.
+1. With no Supabase variables and `LAPARPO_DEMO_MODE=true` outside production,
+   verify all modules render in visibly labelled read-only demo preview mode.
 2. With Supabase configured and no session, verify `/`, `/leads` and other dashboard routes redirect to `/login`.
 3. Verify invalid credentials show a generic error.
 4. Verify an inactive profile cannot enter the dashboard.

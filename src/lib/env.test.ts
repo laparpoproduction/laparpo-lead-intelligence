@@ -1,14 +1,209 @@
 import { describe, expect, it } from "vitest";
-import { validateProductionServerEnvironment } from "./env";
+import {
+  ApplicationConfigurationError,
+  isExplicitDemoModeEnabled,
+  resolveApplicationMode,
+  validateProductionServerEnvironment,
+  type ApplicationModeInput,
+} from "./env";
+
+const validSupabase = {
+  supabaseUrl: "https://project.supabase.co",
+  supabasePublishableKey: "test-publishable-key",
+};
+
+const validSecrets = {
+  companyDuplicateConfirmationSecret:
+    "production-company-confirmation-secret-32",
+  contactDuplicateConfirmationSecret:
+    "production-contact-confirmation-secret-32",
+  leadDuplicateConfirmationSecret:
+    "production-lead-confirmation-secret-32",
+};
+
+function productionInput(
+  overrides: Partial<ApplicationModeInput> = {},
+): ApplicationModeInput {
+  return {
+    nodeEnv: "production",
+    ...validSupabase,
+    demoMode: "false",
+    ...overrides,
+  };
+}
+
+describe("application mode", () => {
+  it("uses configured mode for valid production Supabase configuration", () => {
+    expect(resolveApplicationMode(productionInput())).toEqual({
+      mode: "configured",
+      issues: [],
+    });
+  });
+
+  it.each([
+    [
+      "missing URL",
+      productionInput({ supabaseUrl: undefined }),
+      "missing_supabase_url",
+    ],
+    [
+      "missing key",
+      productionInput({ supabasePublishableKey: undefined }),
+      "missing_supabase_publishable_key",
+    ],
+    [
+      "blank key",
+      productionInput({ supabasePublishableKey: "   " }),
+      "missing_supabase_publishable_key",
+    ],
+    [
+      "invalid URL",
+      productionInput({ supabaseUrl: "not-a-url" }),
+      "invalid_supabase_url",
+    ],
+    [
+      "production demo",
+      productionInput({ demoMode: "true" }),
+      "production_demo_forbidden",
+    ],
+    [
+      "malformed demo flag",
+      productionInput({ demoMode: "yes" }),
+      "invalid_demo_flag",
+    ],
+  ])("fails closed for production with %s", (_label, input, issue) => {
+    const result = resolveApplicationMode(input);
+    expect(result.mode).toBe("misconfigured");
+    expect(result.issues).toContain(issue);
+  });
+
+  it("uses configured mode for valid development Supabase configuration", () => {
+    expect(
+      resolveApplicationMode({
+        nodeEnv: "development",
+        ...validSupabase,
+      }),
+    ).toEqual({ mode: "configured", issues: [] });
+  });
+
+  it("allows demo only with explicit non-production opt-in and no Supabase values", () => {
+    expect(
+      resolveApplicationMode({
+        nodeEnv: "development",
+        demoMode: "true",
+      }),
+    ).toEqual({ mode: "demo", issues: [] });
+    expect(
+      resolveApplicationMode({
+        nodeEnv: "test",
+        demoMode: "true",
+      }),
+    ).toEqual({ mode: "demo", issues: [] });
+  });
+
+  it("does not treat an unknown runtime environment as demo-capable", () => {
+    expect(resolveApplicationMode({ demoMode: "true" }).mode).toBe(
+      "misconfigured",
+    );
+  });
+
+  it.each([undefined, "false"])(
+    "does not infer demo from absent Supabase when the flag is %s",
+    (demoMode) => {
+      expect(
+        resolveApplicationMode({ nodeEnv: "development", demoMode }).mode,
+      ).toBe("misconfigured");
+    },
+  );
+
+  it("does not allow partial or complete Supabase configuration to become demo", () => {
+    expect(
+      resolveApplicationMode({
+        nodeEnv: "development",
+        supabaseUrl: validSupabase.supabaseUrl,
+        demoMode: "true",
+      }),
+    ).toMatchObject({
+      mode: "misconfigured",
+      issues: expect.arrayContaining([
+        "missing_supabase_publishable_key",
+        "demo_requires_absent_supabase_configuration",
+      ]),
+    });
+    expect(
+      resolveApplicationMode({
+        nodeEnv: "development",
+        ...validSupabase,
+        demoMode: "true",
+      }).mode,
+    ).toBe("misconfigured");
+  });
+
+  it("does not treat defined blank Supabase variables as absent for demo", () => {
+    expect(
+      resolveApplicationMode({
+        nodeEnv: "development",
+        supabaseUrl: "",
+        supabasePublishableKey: "",
+        demoMode: "true",
+      }),
+    ).toMatchObject({
+      mode: "misconfigured",
+      issues: expect.arrayContaining([
+        "invalid_supabase_url",
+        "missing_supabase_publishable_key",
+        "demo_requires_absent_supabase_configuration",
+      ]),
+    });
+  });
+
+  it.each(["1", "yes", "TRUE", "TRUE-with-extra-text", "", " true "])(
+    "never treats arbitrary demo value %j as enabled",
+    (demoMode) => {
+      expect(isExplicitDemoModeEnabled(demoMode)).toBe(false);
+      expect(
+        resolveApplicationMode({ nodeEnv: "development", demoMode }),
+      ).toMatchObject({
+        mode: "misconfigured",
+        issues: expect.arrayContaining(["invalid_demo_flag"]),
+      });
+    },
+  );
+});
 
 describe("production server environment", () => {
-  it("requires both namespaced confirmation secrets in production", () => {
+  it("accepts valid Supabase configuration and all confirmation secrets", () => {
     expect(() =>
-      validateProductionServerEnvironment({ nodeEnv: "production" }),
+      validateProductionServerEnvironment({
+        ...productionInput(),
+        ...validSecrets,
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    { supabaseUrl: undefined },
+    { supabasePublishableKey: undefined },
+    { supabaseUrl: "invalid" },
+    { supabasePublishableKey: " " },
+    { demoMode: "true" },
+    { demoMode: "1" },
+  ])("rejects invalid production application mode: %o", (override) => {
+    expect(() =>
+      validateProductionServerEnvironment({
+        ...productionInput(override),
+        ...validSecrets,
+      }),
+    ).toThrow(ApplicationConfigurationError);
+  });
+
+  it("requires every namespaced confirmation secret in production", () => {
+    expect(() =>
+      validateProductionServerEnvironment(productionInput()),
     ).toThrow();
     expect(() =>
       validateProductionServerEnvironment({
-        nodeEnv: "production",
+        ...productionInput(),
         companyDuplicateConfirmationSecret: "too-short",
         contactDuplicateConfirmationSecret: "too-short",
         leadDuplicateConfirmationSecret: "too-short",
@@ -16,42 +211,7 @@ describe("production server environment", () => {
     ).toThrow();
   });
 
-  it("accepts explicit production secrets of at least 32 characters", () => {
-    expect(() =>
-      validateProductionServerEnvironment({
-        nodeEnv: "production",
-        companyDuplicateConfirmationSecret:
-          "production-company-confirmation-secret-32",
-        contactDuplicateConfirmationSecret:
-          "production-contact-confirmation-secret-32",
-        leadDuplicateConfirmationSecret:
-          "production-lead-confirmation-secret-32",
-      }),
-    ).not.toThrow();
-  });
-
-  it("rejects production when only one confirmation namespace is configured", () => {
-    expect(() =>
-      validateProductionServerEnvironment({
-        nodeEnv: "production",
-        companyDuplicateConfirmationSecret:
-          "production-company-confirmation-secret-32",
-        leadDuplicateConfirmationSecret:
-          "production-lead-confirmation-secret-32",
-      }),
-    ).toThrow();
-    expect(() =>
-      validateProductionServerEnvironment({
-        nodeEnv: "production",
-        contactDuplicateConfirmationSecret:
-          "production-contact-confirmation-secret-32",
-        leadDuplicateConfirmationSecret:
-          "production-lead-confirmation-secret-32",
-      }),
-    ).toThrow();
-  });
-
-  it("allows missing secrets outside production for explicit local and test workflows", () => {
+  it("does not require production secrets outside production", () => {
     expect(() =>
       validateProductionServerEnvironment({ nodeEnv: "development" }),
     ).not.toThrow();

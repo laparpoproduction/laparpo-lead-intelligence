@@ -1,10 +1,21 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BrandMark } from "@/components/brand-mark";
+import { ServiceUnavailable } from "@/components/service-unavailable";
+import { getApplicationModeResolution } from "@/lib/env";
+import { logConfigurationUnavailableOnce } from "@/lib/configuration-log";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
 export default function LoginPage() {
+  const applicationMode = getApplicationModeResolution();
+
+  if (applicationMode.mode === "misconfigured") {
+    logConfigurationUnavailableOnce("login_page", applicationMode);
+    return <ServiceUnavailable />;
+  }
+
   return (
     <main className="grid min-h-screen lg:grid-cols-[1.1fr_.9fr]">
       <section className="hidden overflow-hidden bg-zinc-950 p-12 text-white lg:flex lg:flex-col lg:justify-between">
@@ -20,9 +31,29 @@ export default function LoginPage() {
         <div className="w-full max-w-md rounded-3xl border border-zinc-200 bg-white p-7 shadow-[0_24px_80px_rgba(24,24,27,.08)] sm:p-10">
           <div className="lg:hidden"><BrandMark /></div>
           <p className="mt-8 text-sm font-bold text-[#e5222a] lg:mt-0">Welcome back</p>
-          <h2 className="mt-2 text-3xl font-black tracking-[-0.035em] text-zinc-950">Sign in to your workspace</h2>
-          <p className="mt-3 text-sm leading-6 text-zinc-500">Use the account issued to your Laparpo sales team.</p>
-          <LoginForm />
+          {applicationMode.mode === "demo" ? (
+            <>
+              <h2 className="mt-2 text-3xl font-black tracking-[-0.035em] text-zinc-950">
+                Demo preview
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-zinc-500">
+                This non-production preview is read-only. No credentials are
+                needed and no changes are saved.
+              </p>
+              <Link
+                className="mt-8 grid h-11 w-full place-items-center rounded-xl bg-[#e5222a] text-sm font-bold text-white shadow-[0_8px_22px_rgba(229,34,42,.22)] transition hover:bg-[#c71920]"
+                href="/"
+              >
+                Open demo preview
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2 className="mt-2 text-3xl font-black tracking-[-0.035em] text-zinc-950">Sign in to your workspace</h2>
+              <p className="mt-3 text-sm leading-6 text-zinc-500">Use the account issued to your Laparpo sales team.</p>
+              <LoginForm />
+            </>
+          )}
         </div>
       </section>
     </main>

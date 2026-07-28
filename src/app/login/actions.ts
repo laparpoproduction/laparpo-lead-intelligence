@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { isSupabaseConfigured } from "@/lib/env";
+import { getApplicationMode } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,6 +14,18 @@ const loginSchema = z.object({
 });
 
 export async function login(_state: LoginState, formData: FormData): Promise<LoginState> {
+  const applicationMode = getApplicationMode();
+  if (applicationMode === "misconfigured") {
+    return {
+      error: "The service is temporarily unavailable. Please try again later.",
+    };
+  }
+  if (applicationMode === "demo") {
+    return {
+      error: "Demo preview is enabled. Sign-in is not required.",
+    };
+  }
+
   const parsed = loginSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -21,10 +33,6 @@ export async function login(_state: LoginState, formData: FormData): Promise<Log
 
   if (!parsed.success) {
     return { error: "Enter a valid email and a password of at least 8 characters." };
-  }
-
-  if (!isSupabaseConfigured()) {
-    return { error: "Supabase is not configured. Add the required environment variables first." };
   }
 
   const supabase = await createClient();

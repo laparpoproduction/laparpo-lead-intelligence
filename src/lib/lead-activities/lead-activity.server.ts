@@ -1,5 +1,5 @@
 import { appRoleSchema } from "@/lib/auth/permissions";
-import { isSupabaseConfigured } from "@/lib/env";
+import { getApplicationMode } from "@/lib/env";
 import { SupabaseLeadRepository } from "@/lib/leads/lead.repository";
 import { createClient } from "@/lib/supabase/server";
 import { SupabaseLeadActivityRepository } from "./lead-activity.repository";
@@ -25,7 +25,7 @@ export type LeadActivityMutationContext = {
 };
 
 export async function createLeadActivityMutationContext(): Promise<LeadActivityMutationContext> {
-  if (!isSupabaseConfigured()) {
+  if (getApplicationMode() !== "configured") {
     throw new LeadActivityMutationAuthError("unavailable");
   }
 

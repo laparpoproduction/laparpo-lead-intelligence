@@ -1,5 +1,5 @@
 import { appRoleSchema } from "@/lib/auth/permissions";
-import { isSupabaseConfigured } from "@/lib/env";
+import { getApplicationMode } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { SupabaseOpportunityRepository } from "./opportunity.repository";
 import { LeadConversionService } from "./opportunity.service";
@@ -24,7 +24,7 @@ export type LeadConversionContext = {
 };
 
 export async function createLeadConversionContext(): Promise<LeadConversionContext> {
-  if (!isSupabaseConfigured()) {
+  if (getApplicationMode() !== "configured") {
     throw new LeadConversionAuthError("unavailable");
   }
 

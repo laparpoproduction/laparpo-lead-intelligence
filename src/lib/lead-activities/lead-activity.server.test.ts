@@ -6,7 +6,11 @@ import {
   createLeadActivityMutationContext,
 } from "./lead-activity.server";
 
-vi.mock("@/lib/env", () => ({ isSupabaseConfigured: vi.fn(() => true) }));
+const mocks = vi.hoisted(() => ({ getApplicationMode: vi.fn() }));
+
+vi.mock("@/lib/env", () => ({
+  getApplicationMode: mocks.getApplicationMode,
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -33,7 +37,10 @@ function clientWithProfile(
 }
 
 describe("Lead activity server mutation context", () => {
-  beforeEach(() => vi.mocked(createClient).mockReset());
+  beforeEach(() => {
+    vi.mocked(createClient).mockReset();
+    mocks.getApplicationMode.mockReturnValue("configured");
+  });
 
   it("resolves actor identity and service server-side", async () => {
     vi.mocked(createClient).mockResolvedValue(
@@ -73,4 +80,15 @@ describe("Lead activity server mutation context", () => {
       code: "inactive",
     } satisfies Partial<LeadActivityMutationAuthError>);
   });
+
+  it.each(["demo", "misconfigured"])(
+    "does not create mutation authority in %s mode",
+    async (mode) => {
+      mocks.getApplicationMode.mockReturnValue(mode);
+      await expect(createLeadActivityMutationContext()).rejects.toMatchObject({
+        code: "unavailable",
+      } satisfies Partial<LeadActivityMutationAuthError>);
+      expect(createClient).not.toHaveBeenCalled();
+    },
+  );
 });

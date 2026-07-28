@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { appRoleSchema, type AppRole } from "@/lib/auth/permissions";
-import { isSupabaseConfigured } from "@/lib/env";
+import { logConfigurationUnavailableOnce } from "@/lib/configuration-log";
+import {
+  getApplicationModeResolution,
+  SERVICE_UNAVAILABLE_PATH,
+} from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
@@ -19,14 +23,28 @@ type RequireUserOptions = {
 export async function requireDashboardUser(
   options: RequireUserOptions = {},
 ): Promise<DashboardUser> {
-  if (!isSupabaseConfigured()) {
-    return {
+  const applicationMode = getApplicationModeResolution();
+
+  if (applicationMode.mode === "misconfigured") {
+    logConfigurationUnavailableOnce("dashboard_session", applicationMode);
+    redirect(SERVICE_UNAVAILABLE_PATH);
+  }
+
+  if (applicationMode.mode === "demo") {
+    const demoUser: DashboardUser = {
       id: "demo-user",
       fullName: "Laparpo",
       email: "preview@laparpo.com",
       role: "ceo_admin",
       demoMode: true,
     };
+    if (
+      options.allowedRoles &&
+      !options.allowedRoles.includes(demoUser.role)
+    ) {
+      redirect("/?access=denied");
+    }
+    return demoUser;
   }
 
   const supabase = await createClient();
@@ -75,4 +93,3 @@ export async function requireDashboardUser(
     demoMode: false,
   };
 }
-
