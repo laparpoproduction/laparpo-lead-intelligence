@@ -87,6 +87,7 @@ describe("Contact FormData parser", () => {
     form.set("isPrimaryContact", "0");
     form.set("confirmationToken", " signed-token ");
     form.set("createdBy", creatorId);
+    form.set("createdAt", "2000-01-01T00:00:00.000Z");
     form.set("deletedAt", "2026-07-13T00:00:00.000Z");
 
     expect(parseUpdateContactForm(form)).toEqual({

@@ -46,6 +46,8 @@ describe("company FormData parsing", () => {
     const update = new FormData();
     update.set("companyId", "22222222-2222-4222-8222-222222222222");
     update.set("city", " Butterworth ");
+    update.set("createdBy", "99999999-9999-4999-8999-999999999999");
+    update.set("createdAt", "2000-01-01T00:00:00.000Z");
     expect(parseUpdateCompanyForm(update).input).toEqual({ city: "Butterworth" });
 
     const empty = new FormData();
