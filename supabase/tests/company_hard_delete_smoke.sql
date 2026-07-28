@@ -500,7 +500,7 @@ $$;
 
 -- BYPASSRLS service application roles are also blocked by the trigger.
 grant usage on schema public to service_role;
-grant delete on public.companies to service_role;
+grant select, delete on public.companies to service_role;
 set role service_role;
 do $$
 declare
@@ -525,7 +525,7 @@ begin
 end;
 $$;
 reset role;
-revoke delete on public.companies from service_role;
+revoke select, delete on public.companies from service_role;
 revoke usage on schema public from service_role;
 
 do $$
