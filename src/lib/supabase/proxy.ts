@@ -1,10 +1,41 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { getPublicEnv, isSupabaseConfigured } from "@/lib/env";
+import { logConfigurationUnavailableOnce } from "@/lib/configuration-log";
+import {
+  getApplicationModeResolution,
+  getPublicEnv,
+  SERVICE_UNAVAILABLE_PATH,
+} from "@/lib/env";
+
+function isConfigurationSafePath(pathname: string): boolean {
+  return (
+    pathname === SERVICE_UNAVAILABLE_PATH ||
+    pathname === "/favicon.ico" ||
+    pathname === "/_next/static" ||
+    pathname.startsWith("/_next/static/") ||
+    pathname === "/_next/image" ||
+    pathname.startsWith("/_next/image/")
+  );
+}
 
 export async function updateSession(request: NextRequest) {
-  if (!isSupabaseConfigured()) {
+  const applicationMode = getApplicationModeResolution();
+  const pathname = request.nextUrl.pathname;
+
+  if (isConfigurationSafePath(pathname)) {
     return NextResponse.next({ request });
+  }
+
+  if (applicationMode.mode === "demo") {
+    return NextResponse.next({ request });
+  }
+
+  if (applicationMode.mode === "misconfigured") {
+    logConfigurationUnavailableOnce("session_proxy", applicationMode);
+    const url = request.nextUrl.clone();
+    url.pathname = SERVICE_UNAVAILABLE_PATH;
+    url.search = "";
+    return NextResponse.rewrite(url, { status: 503 });
   }
 
   const env = getPublicEnv();
@@ -27,7 +58,7 @@ export async function updateSession(request: NextRequest) {
   );
 
   const { data } = await supabase.auth.getUser();
-  const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
+  const isLoginRoute = pathname.startsWith("/login");
 
   if (!data.user && !isLoginRoute) {
     const url = request.nextUrl.clone();

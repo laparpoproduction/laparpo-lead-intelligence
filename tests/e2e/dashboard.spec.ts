@@ -5,6 +5,7 @@ test("shows the Sprint 1 dashboard preview without local credentials", async ({ 
 
   await expect(page).toHaveTitle(/Laparpo Lead Intelligence/);
   await expect(page.getByRole("heading", { name: "Lead Intelligence" })).toBeVisible();
+  await expect(page.getByText("Demo preview · read-only")).toBeVisible();
   await expect(page.getByText("Turn signals into conversations.")).toBeVisible();
   await expect(page.getByText("New Leads", { exact: true })).toBeVisible();
   await expect(page.getByText("Hot Leads", { exact: true })).toBeVisible();

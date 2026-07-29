@@ -45,8 +45,12 @@ export function DashboardShell({
           </div>
           <div className="flex items-center gap-3">
             {demoMode && (
-              <span className="hidden rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 sm:inline-flex">
-                Setup preview
+              <span
+                className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800 sm:px-3 sm:text-xs"
+                title="Read-only non-production preview. Changes are unavailable."
+              >
+                <span className="sm:hidden">Demo · read-only</span>
+                <span className="hidden sm:inline">Demo preview · read-only</span>
               </span>
             )}
             <div className="hidden text-right sm:block">
@@ -67,4 +71,3 @@ export function DashboardShell({
     </div>
   );
 }
-

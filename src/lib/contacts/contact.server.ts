@@ -1,5 +1,5 @@
 import { appRoleSchema } from "@/lib/auth/permissions";
-import { isSupabaseConfigured } from "@/lib/env";
+import { getApplicationMode } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { SupabaseContactRepository } from "./contact.repository";
 import { ContactService } from "./contact.service";
@@ -24,7 +24,9 @@ export type ContactMutationContext = {
 };
 
 export async function createContactMutationContext(): Promise<ContactMutationContext> {
-  if (!isSupabaseConfigured()) throw new ContactMutationAuthError("unavailable");
+  if (getApplicationMode() !== "configured") {
+    throw new ContactMutationAuthError("unavailable");
+  }
 
   const supabase = await createClient();
   const { data: authData, error: authError } = await supabase.auth.getUser();

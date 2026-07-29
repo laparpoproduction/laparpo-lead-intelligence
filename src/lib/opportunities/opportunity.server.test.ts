@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  isSupabaseConfigured: vi.fn(),
+  getApplicationMode: vi.fn(),
   createClient: vi.fn(),
   getUser: vi.fn(),
   single: vi.fn(),
 }));
 
 vi.mock("@/lib/env", () => ({
-  isSupabaseConfigured: mocks.isSupabaseConfigured,
+  getApplicationMode: mocks.getApplicationMode,
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: mocks.createClient,
@@ -21,7 +21,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.isSupabaseConfigured.mockReturnValue(true);
+  mocks.getApplicationMode.mockReturnValue("configured");
   mocks.getUser.mockResolvedValue({
     data: {
       user: { id: "11111111-1111-4111-8111-111111111111" },
@@ -63,4 +63,15 @@ describe("Lead conversion server context", () => {
       new LeadConversionAuthError("inactive"),
     );
   });
+
+  it.each(["demo", "misconfigured"])(
+    "does not create conversion or pipeline authority in %s mode",
+    async (mode) => {
+      mocks.getApplicationMode.mockReturnValue(mode);
+      await expect(createLeadConversionContext()).rejects.toEqual(
+        new LeadConversionAuthError("unavailable"),
+      );
+      expect(mocks.createClient).not.toHaveBeenCalled();
+    },
+  );
 });

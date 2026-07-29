@@ -1,5 +1,5 @@
 import { appRoleSchema } from "@/lib/auth/permissions";
-import { isSupabaseConfigured } from "@/lib/env";
+import { getApplicationMode } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { SupabaseCompanyRepository } from "./company.repository";
 import { CompanyService } from "./company.service";
@@ -24,7 +24,9 @@ export type CompanyMutationContext = {
 };
 
 export async function createCompanyMutationContext(): Promise<CompanyMutationContext> {
-  if (!isSupabaseConfigured()) throw new CompanyMutationAuthError("unavailable");
+  if (getApplicationMode() !== "configured") {
+    throw new CompanyMutationAuthError("unavailable");
+  }
 
   const supabase = await createClient();
   const { data: authData, error: authError } = await supabase.auth.getUser();

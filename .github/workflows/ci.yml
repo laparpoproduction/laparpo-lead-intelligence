@@ -41,6 +41,10 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-test.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-test-publishable-key
+          LAPARPO_DEMO_MODE: "false"
       - name: Validate migrations and RLS
         run: |
           psql -f supabase/tests/bootstrap.sql
