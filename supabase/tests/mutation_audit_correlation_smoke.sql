@@ -454,16 +454,16 @@ select public.restore_lead_activity(
   '93000000-0000-4000-8000-000000000401'
 );
 
-update public.contacts
-set deleted_at = now()
-where id = '93000000-0000-4000-8000-000000000201';
-
 update public.leads
 set deleted_at = now()
 where id = '93000000-0000-4000-8000-000000000302';
 select public.restore_archived_lead(
   '93000000-0000-4000-8000-000000000302'
 );
+
+update public.contacts
+set deleted_at = now()
+where id = '93000000-0000-4000-8000-000000000201';
 
 update public.companies
 set deleted_at = now()
