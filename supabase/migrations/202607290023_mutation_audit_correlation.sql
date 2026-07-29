@@ -1,5 +1,23 @@
 begin;
 
+create schema mutation_audit_private;
+
+revoke all on schema mutation_audit_private
+  from public, anon, authenticated, service_role;
+
+-- This single-purpose store is populated only through a separately approved,
+-- privileged deployment procedure after this migration has been applied.
+-- Application roles cannot use the schema or relation directly.
+create table mutation_audit_private.mutation_correlation_secret (
+  singleton boolean primary key default true
+    check (singleton),
+  secret text not null
+);
+
+revoke all on table
+  mutation_audit_private.mutation_correlation_secret
+from public, anon, authenticated, service_role;
+
 create table public.mutation_audit_events (
   id uuid primary key default gen_random_uuid(),
   occurred_at timestamptz not null default clock_timestamp(),
@@ -122,7 +140,7 @@ begin
 
   execute pg_catalog.format(
     $definition$
-      create or replace function public.mutation_audit_hmac(
+      create or replace function mutation_audit_private.mutation_audit_hmac(
         payload text,
         secret text
       )
@@ -141,8 +159,47 @@ begin
 end;
 $$;
 
-revoke all on function public.mutation_audit_hmac(text, text)
+revoke all on function
+  mutation_audit_private.mutation_audit_hmac(text, text)
   from public, anon, authenticated, service_role;
+
+create or replace function mutation_audit_private.fixed_length_mac_equal(
+  provided_mac bytea,
+  expected_mac bytea
+)
+returns boolean
+language plpgsql
+immutable
+strict
+security invoker
+set search_path = ''
+as $$
+declare
+  byte_index integer;
+  aggregate_difference integer := 0;
+begin
+  -- Length is public wire-format metadata. For valid inputs, every one of the
+  -- 32 bytes is compared and no mismatch can end the loop early.
+  if pg_catalog.octet_length(provided_mac) <> 32
+    or pg_catalog.octet_length(expected_mac) <> 32
+  then
+    return false;
+  end if;
+
+  for byte_index in 0..31 loop
+    aggregate_difference := aggregate_difference | (
+      pg_catalog.get_byte(provided_mac, byte_index)
+      # pg_catalog.get_byte(expected_mac, byte_index)
+    );
+  end loop;
+
+  return aggregate_difference = 0;
+end;
+$$;
+
+revoke all on function
+  mutation_audit_private.fixed_length_mac_equal(bytea, bytea)
+from public, anon, authenticated, service_role;
 
 create or replace function public.verified_mutation_request_context()
 returns table (
@@ -161,8 +218,10 @@ declare
   issued_at_text text;
   signature_text text;
   correlation_secret text;
+  correlation_secret_rows bigint;
   issued_at_epoch bigint;
-  expected_signature text;
+  provided_mac bytea;
+  expected_mac bytea;
   has_correlation_header boolean;
 begin
   raw_headers := nullif(pg_catalog.current_setting('request.headers', true), '');
@@ -187,15 +246,13 @@ begin
     return;
   end if;
 
-  correlation_secret := nullif(
-    pg_catalog.current_setting(
-      'app.settings.mutation_audit_correlation_secret',
-      true
-    ),
-    ''
-  );
+  select count(*), min(secret)
+  into correlation_secret_rows, correlation_secret
+  from mutation_audit_private.mutation_correlation_secret;
 
-  if correlation_secret is null
+  if correlation_secret_rows <> 1
+    or correlation_secret is null
+    or pg_catalog.btrim(correlation_secret) = ''
     or pg_catalog.length(correlation_secret) < 32
     or request_id_text is null
     or operation_text is null
@@ -250,15 +307,16 @@ begin
       using errcode = '22023';
   end if;
 
-  expected_signature := pg_catalog.encode(
-    public.mutation_audit_hmac(
-      request_id_text || ':' || issued_at_text || ':' || operation_text,
-      correlation_secret
-    ),
-    'hex'
+  provided_mac := pg_catalog.decode(signature_text, 'hex');
+  expected_mac := mutation_audit_private.mutation_audit_hmac(
+    request_id_text || ':' || issued_at_text || ':' || operation_text,
+    correlation_secret
   );
 
-  if signature_text <> expected_signature then
+  if not mutation_audit_private.fixed_length_mac_equal(
+    provided_mac,
+    expected_mac
+  ) then
     raise exception 'Invalid mutation audit correlation context'
       using errcode = '22023';
   end if;

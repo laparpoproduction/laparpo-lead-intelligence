@@ -47,15 +47,19 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `CONTACT_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
    - `LEAD_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
    - `MUTATION_AUDIT_CORRELATION_SECRET` with at least 32 random characters,
-     matching the protected database setting described in the deployment
+     matching the protected private database secret described in the deployment
      runbook
 5. Apply **every** migration currently present in `supabase/migrations/` in
    filename order. The directory, not this README, is the migration source of
    truth. Do not select only a historical subset. Follow the
    [deployment and database migration runbook](docs/deployment.md) before
    targeting any shared or production database.
-6. Create the first user through Supabase Auth and promote that account to `ceo_admin`.
-7. Start the app:
+6. After migration 023 exists, use the privileged database/secret-management
+   procedure described in the runbook to provision the matching verifier value
+   into its private single-purpose store. Do not use an application role or a
+   database/role setting.
+7. Create the first user through Supabase Auth and promote that account to `ceo_admin`.
+8. Start the app:
 
    ```bash
    npm run dev
@@ -78,7 +82,7 @@ production, is visibly labelled and cannot create a real mutation context.
 | `COMPANY_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for company mutations | Signs short-lived duplicate confirmation tokens; use at least 32 random characters |
 | `CONTACT_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for contact mutations | Signs namespaced, short-lived Contact confirmation tokens; use at least 32 random characters |
 | `LEAD_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for lead mutations | Signs namespaced, short-lived lead confirmation tokens; use at least 32 random characters |
-| `MUTATION_AUDIT_CORRELATION_SECRET` | Server only | Yes for production mutations | Signs short-lived request correlation sent only by the server Supabase client; must match the protected database setting |
+| `MUTATION_AUDIT_CORRELATION_SECRET` | Server only | Yes for production mutations | Signs short-lived request correlation sent only by the server Supabase client; must match the protected private database secret |
 | `OPENAI_API_KEY` | Server only | No | Reserved for a later AI sprint |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 

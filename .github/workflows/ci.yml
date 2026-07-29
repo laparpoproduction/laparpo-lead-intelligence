@@ -76,9 +76,21 @@ jobs:
           psql -f supabase/migrations/202607280020_profiles_privilege_hardening.sql
           psql -f supabase/migrations/202607280021_company_hard_delete_protection.sql
           psql -f supabase/migrations/202607280022_immutable_creation_audit_metadata.sql
-          psql -c "alter database postgres set app.settings.mutation_audit_correlation_secret = 'ci-only-mutation-audit-correlation-secret-2026'"
           psql -f supabase/migrations/202607290023_mutation_audit_correlation.sql
-          psql -f supabase/tests/mutation_audit_correlation_smoke.sql
+          psql \
+            --set=correlation_secret="$MUTATION_AUDIT_CORRELATION_SECRET" \
+            <<'SQL'
+          insert into mutation_audit_private.mutation_correlation_secret (
+            singleton,
+            secret
+          ) values (
+            true,
+            :'correlation_secret'
+          );
+          SQL
+          psql \
+            --set=correlation_secret="$MUTATION_AUDIT_CORRELATION_SECRET" \
+            -f supabase/tests/mutation_audit_correlation_smoke.sql
           psql -f supabase/tests/audit_metadata_catalog_smoke.sql
           psql -f supabase/tests/rls_smoke.sql
           psql -f supabase/tests/profiles_privilege_smoke.sql

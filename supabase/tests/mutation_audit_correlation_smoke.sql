@@ -31,6 +31,9 @@ grant select on table public.lead_conversions to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 
 do $$
+declare
+  application_role name;
+  table_privilege text;
 begin
   if not exists (
     select 1
@@ -123,9 +126,14 @@ begin
 
   if pg_catalog.has_function_privilege(
     'authenticated',
-    'public.mutation_audit_hmac(text,text)',
+    'mutation_audit_private.mutation_audit_hmac(text,text)',
     'EXECUTE'
   )
+    or pg_catalog.has_function_privilege(
+      'authenticated',
+      'mutation_audit_private.fixed_length_mac_equal(bytea,bytea)',
+      'EXECUTE'
+    )
     or pg_catalog.has_function_privilege(
       'authenticated',
       'public.verified_mutation_request_context()',
@@ -133,7 +141,12 @@ begin
     )
     or pg_catalog.has_function_privilege(
       'service_role',
-      'public.mutation_audit_hmac(text,text)',
+      'mutation_audit_private.mutation_audit_hmac(text,text)',
+      'EXECUTE'
+    )
+    or pg_catalog.has_function_privilege(
+      'service_role',
+      'mutation_audit_private.fixed_length_mac_equal(bytea,bytea)',
       'EXECUTE'
     )
     or pg_catalog.has_function_privilege(
@@ -143,6 +156,184 @@ begin
     )
   then
     raise exception 'Application roles can forge mutation correlation';
+  end if;
+
+  foreach application_role in array array[
+    'anon'::name,
+    'authenticated'::name,
+    'service_role'::name
+  ] loop
+    if pg_catalog.has_schema_privilege(
+      application_role,
+      'mutation_audit_private',
+      'USAGE'
+    )
+      or pg_catalog.has_schema_privilege(
+        application_role,
+        'mutation_audit_private',
+        'CREATE'
+      )
+    then
+      raise exception 'Application role retained private-schema access';
+    end if;
+
+    if pg_catalog.has_function_privilege(
+      application_role,
+      'mutation_audit_private.mutation_audit_hmac(text,text)',
+      'EXECUTE'
+    )
+      or pg_catalog.has_function_privilege(
+        application_role,
+        'mutation_audit_private.fixed_length_mac_equal(bytea,bytea)',
+        'EXECUTE'
+      )
+      or pg_catalog.has_function_privilege(
+        application_role,
+        'public.verified_mutation_request_context()',
+        'EXECUTE'
+      )
+    then
+      raise exception 'Application role retained private-helper access';
+    end if;
+
+    foreach table_privilege in array array[
+      'SELECT',
+      'INSERT',
+      'UPDATE',
+      'DELETE',
+      'TRUNCATE',
+      'REFERENCES',
+      'TRIGGER'
+    ] loop
+      if pg_catalog.has_table_privilege(
+        application_role,
+        'mutation_audit_private.mutation_correlation_secret',
+        table_privilege
+      ) then
+        raise exception 'Application role retained private-secret access';
+      end if;
+    end loop;
+  end loop;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_namespace as namespace
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(
+        namespace.nspacl,
+        pg_catalog.acldefault('n', namespace.nspowner)
+      )
+    ) as privilege
+    where namespace.nspname = 'mutation_audit_private'
+      and privilege.grantee = 0
+  )
+    or exists (
+      select 1
+      from pg_catalog.pg_class as relation
+      join pg_catalog.pg_namespace as namespace
+        on namespace.oid = relation.relnamespace
+      cross join lateral pg_catalog.aclexplode(
+        coalesce(
+          relation.relacl,
+          pg_catalog.acldefault('r', relation.relowner)
+        )
+      ) as privilege
+      where namespace.nspname = 'mutation_audit_private'
+        and relation.relname = 'mutation_correlation_secret'
+        and privilege.grantee = 0
+    )
+  then
+    raise exception 'PUBLIC retained private-secret privileges';
+  end if;
+
+  if (
+    select count(*)
+    from mutation_audit_private.mutation_correlation_secret
+  ) <> 1 then
+    raise exception 'Private mutation-correlation secret was not provisioned';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_proc as procedure
+    join pg_catalog.pg_namespace as namespace
+      on namespace.oid = procedure.pronamespace
+    join pg_catalog.pg_roles as owner
+      on owner.oid = procedure.proowner
+    where (
+      namespace.nspname = 'mutation_audit_private'
+      or (
+        namespace.nspname = 'public'
+        and procedure.proname in (
+          'verified_mutation_request_context',
+          'record_mutation_audit_event'
+        )
+      )
+    )
+      and owner.rolname in ('anon', 'authenticated', 'service_role')
+  ) then
+    raise exception 'Application role owns an H7 privileged function';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_namespace as namespace
+    join pg_catalog.pg_roles as owner
+      on owner.oid = namespace.nspowner
+    where namespace.nspname = 'mutation_audit_private'
+      and owner.rolname in ('anon', 'authenticated', 'service_role')
+  )
+    or exists (
+      select 1
+      from pg_catalog.pg_class as relation
+      join pg_catalog.pg_namespace as namespace
+        on namespace.oid = relation.relnamespace
+      join pg_catalog.pg_roles as owner
+        on owner.oid = relation.relowner
+      where namespace.nspname = 'mutation_audit_private'
+        and relation.relname = 'mutation_correlation_secret'
+        and owner.rolname in ('anon', 'authenticated', 'service_role')
+    )
+  then
+    raise exception 'Application role owns the private verifier store';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_db_role_setting as role_setting
+    cross join lateral unnest(role_setting.setconfig) as setting(value)
+    where setting.value like
+      'app.settings.mutation_audit_correlation_secret=%'
+      or exists (
+        select 1
+        from mutation_audit_private.mutation_correlation_secret as private_secret
+        where pg_catalog.strpos(
+          setting.value,
+          private_secret.secret
+        ) > 0
+      )
+  ) then
+    raise exception 'H7 verifier material persisted in role/database settings';
+  end if;
+
+  if not mutation_audit_private.fixed_length_mac_equal(
+    pg_catalog.decode(repeat('00', 32), 'hex'),
+    pg_catalog.decode(repeat('00', 32), 'hex')
+  )
+    or mutation_audit_private.fixed_length_mac_equal(
+      pg_catalog.decode('01' || repeat('00', 31), 'hex'),
+      pg_catalog.decode(repeat('00', 32), 'hex')
+    )
+    or mutation_audit_private.fixed_length_mac_equal(
+      pg_catalog.decode(repeat('00', 31) || '01', 'hex'),
+      pg_catalog.decode(repeat('00', 32), 'hex')
+    )
+    or mutation_audit_private.fixed_length_mac_equal(
+      pg_catalog.decode(repeat('00', 31), 'hex'),
+      pg_catalog.decode(repeat('00', 32), 'hex')
+    )
+  then
+    raise exception 'Fixed-length MAC comparison is incorrect';
   end if;
 
   if exists (
@@ -156,6 +347,63 @@ begin
   end if;
 end;
 $$;
+
+set role anon;
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform secret
+    from mutation_audit_private.mutation_correlation_secret;
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+
+  if not blocked then
+    raise exception 'Anon read private verifier secret';
+  end if;
+end;
+$$;
+reset role;
+
+set role authenticated;
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform secret
+    from mutation_audit_private.mutation_correlation_secret;
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+
+  if not blocked then
+    raise exception 'Authenticated read private verifier secret';
+  end if;
+end;
+$$;
+reset role;
+
+set role service_role;
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform secret
+    from mutation_audit_private.mutation_correlation_secret;
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+
+  if not blocked then
+    raise exception 'Service role read private verifier secret';
+  end if;
+end;
+$$;
+reset role;
 
 set role authenticated;
 select set_config(
@@ -370,14 +618,15 @@ declare
   operation_text constant text := 'convert_lead';
   issued_at_text text :=
     extract(epoch from pg_catalog.clock_timestamp())::bigint::text;
-  correlation_secret text := pg_catalog.current_setting(
-    'app.settings.mutation_audit_correlation_secret',
-    true
-  );
+  correlation_secret text;
   signature_text text;
 begin
+  select secret
+  into strict correlation_secret
+  from mutation_audit_private.mutation_correlation_secret;
+
   signature_text := pg_catalog.encode(
-    public.mutation_audit_hmac(
+    mutation_audit_private.mutation_audit_hmac(
       request_id_text || ':' || issued_at_text || ':' || operation_text,
       correlation_secret
     ),
@@ -419,6 +668,7 @@ begin
       and source = 'application'
       and application_operation = 'convert_lead'
       and actor_id = '93000000-0000-4000-8000-000000000001'
+      and actor_role = 'ceo_admin'
       and resource_type in ('lead', 'lead_conversion', 'opportunity')
   ) <> 3 then
     raise exception 'Atomic conversion events did not share correlation';
@@ -537,22 +787,41 @@ begin
 end;
 $$;
 
--- Supplying any application-correlation header without a valid signature is a
--- fail-closed statement. The business update and audit event both roll back.
-select set_config(
-  'request.headers',
-  pg_catalog.jsonb_build_object(
-    'x-laparpo-request-id',
-    '93000000-0000-4000-8000-000000000599',
-    'x-laparpo-request-operation',
-    'update_company',
-    'x-laparpo-request-issued-at',
-    extract(epoch from pg_catalog.clock_timestamp())::bigint::text,
-    'x-laparpo-request-signature',
-    repeat('0', 64)
-  )::text,
-  false
-);
+-- Each malformed or untrusted context is exercised separately. The helper
+-- catches only H7's fail-closed SQLSTATE; the failed UPDATE remains rolled back
+-- by the PL/pgSQL subtransaction.
+create function pg_temp.expect_h7_context_rejected(
+  test_name text,
+  request_headers jsonb
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  rejected boolean := false;
+begin
+  perform pg_catalog.set_config(
+    'request.headers',
+    request_headers::text,
+    false
+  );
+
+  begin
+    update public.profiles
+    set full_name = 'H7 rejected context: ' || test_name
+    where id = '93000000-0000-4000-8000-000000000002';
+  exception
+    when invalid_parameter_value then rejected := true;
+  end;
+
+  if not rejected then
+    raise exception 'H7 context case was not rejected: %', test_name;
+  end if;
+end;
+$$;
+
 set role authenticated;
 select set_config(
   'request.jwt.claim.sub',
@@ -560,22 +829,254 @@ select set_config(
   false
 );
 
+select pg_temp.expect_h7_context_rejected(
+  'partial headers',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000561'
+  )
+);
+
+select pg_temp.expect_h7_context_rejected(
+  'malformed request UUID',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id', 'not-a-uuid',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at',
+    extract(epoch from pg_catalog.clock_timestamp())::bigint::text,
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+
+select pg_temp.expect_h7_context_rejected(
+  'malformed issued-at',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000562',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at', 'not-an-epoch',
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+
+select pg_temp.expect_h7_context_rejected(
+  'issued-at overflow',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000563',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at', repeat('9', 32),
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+
+select pg_temp.expect_h7_context_rejected(
+  'expired issued-at',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000564',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at', '1000000000',
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+
+select pg_temp.expect_h7_context_rejected(
+  'excessively future issued-at',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000565',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at', '9999999999',
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+
+select pg_temp.expect_h7_context_rejected(
+  'malformed signature',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000566',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at',
+    extract(epoch from pg_catalog.clock_timestamp())::bigint::text,
+    'x-laparpo-request-signature', 'ABC'
+  )
+);
+
+select pg_temp.expect_h7_context_rejected(
+  'wrong signature',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000599',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at',
+    extract(epoch from pg_catalog.clock_timestamp())::bigint::text,
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+
+select pg_temp.expect_h7_context_rejected(
+  'unknown operation',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000567',
+    'x-laparpo-request-operation', 'generic_update',
+    'x-laparpo-request-issued-at',
+    extract(epoch from pg_catalog.clock_timestamp())::bigint::text,
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+
+-- Exact release-blocker proof: an SQL-capable authenticated actor can still
+-- set the obsolete custom GUC and self-sign with attacker secret B, but the
+-- verifier reads private secret A and rejects the claimed application context.
+select pg_catalog.set_config(
+  'app.settings.mutation_audit_correlation_secret',
+  'attacker-controlled-session-secret-2026',
+  false
+);
+select pg_temp.expect_h7_context_rejected(
+  'attacker GUC self-sign',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000598',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at', issued_at.value,
+    'x-laparpo-request-signature',
+    pg_catalog.encode(
+      public.hmac(
+        '93000000-0000-4000-8000-000000000598:'
+          || issued_at.value
+          || ':update_company',
+        'attacker-controlled-session-secret-2026',
+        'sha256'
+      ),
+      'hex'
+    )
+  )
+)
+from (
+  select extract(
+    epoch from pg_catalog.clock_timestamp()
+  )::bigint::text as value
+) as issued_at;
+select pg_catalog.set_config(
+  'app.settings.mutation_audit_correlation_secret',
+  '',
+  false
+);
+reset role;
+
+-- A missing private verifier secret fails a claimed application context
+-- closed. It never downgrades the event to source=database.
+delete from mutation_audit_private.mutation_correlation_secret;
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '93000000-0000-4000-8000-000000000001',
+  false
+);
+select set_config('request.headers', '{}'::jsonb::text, false);
+update public.profiles
+set full_name = 'H7 direct mutation without verifier secret'
+where id = '93000000-0000-4000-8000-000000000002';
+
+select pg_temp.expect_h7_context_rejected(
+  'missing private secret',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000568',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at',
+    extract(epoch from pg_catalog.clock_timestamp())::bigint::text,
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+reset role;
+insert into mutation_audit_private.mutation_correlation_secret (
+  singleton,
+  secret
+) values (
+  true,
+  :'correlation_secret'
+);
+
+-- Blank and short private values fail closed independently.
+update mutation_audit_private.mutation_correlation_secret
+set secret = '                                ';
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '93000000-0000-4000-8000-000000000001',
+  false
+);
+select pg_temp.expect_h7_context_rejected(
+  'blank private secret',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000569',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at',
+    extract(epoch from pg_catalog.clock_timestamp())::bigint::text,
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+reset role;
+
+update mutation_audit_private.mutation_correlation_secret
+set secret = 'too-short';
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '93000000-0000-4000-8000-000000000001',
+  false
+);
+select pg_temp.expect_h7_context_rejected(
+  'short private secret',
+  pg_catalog.jsonb_build_object(
+    'x-laparpo-request-id',
+    '93000000-0000-4000-8000-000000000570',
+    'x-laparpo-request-operation', 'update_company',
+    'x-laparpo-request-issued-at',
+    extract(epoch from pg_catalog.clock_timestamp())::bigint::text,
+    'x-laparpo-request-signature', repeat('0', 64)
+  )
+);
+reset role;
+
+update mutation_audit_private.mutation_correlation_secret
+set secret = :'correlation_secret';
+
+-- The singleton key prevents ambiguous active verifier rows.
 do $$
 declare
-  rejected boolean := false;
+  duplicate_blocked boolean := false;
 begin
   begin
-    update public.profiles
-    set full_name = 'forged correlation must roll back'
-    where id = '93000000-0000-4000-8000-000000000002';
-  exception
-    when invalid_parameter_value then rejected := true;
+    insert into mutation_audit_private.mutation_correlation_secret (
+      singleton,
+      secret
+    ) values (
+      true,
+      'not-a-real-secret'
+    );
+  exception when unique_violation then
+    duplicate_blocked := true;
   end;
-  if not rejected then
-    raise exception 'Forged application correlation was accepted';
+
+  if not duplicate_blocked then
+    raise exception 'Private verifier store accepted ambiguous rows';
   end if;
 end;
 $$;
+
+set role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '93000000-0000-4000-8000-000000000001',
+  false
+);
 
 -- Ordinary actors cannot read, forge, rewrite, delete, or truncate audit
 -- history even when they know a real resource identifier.
@@ -644,17 +1145,44 @@ begin
     select 1
     from public.profiles
     where id = '93000000-0000-4000-8000-000000000002'
-      and full_name = 'forged correlation must roll back'
+      and full_name like 'H7 rejected context:%'
   ) then
-    raise exception 'Forged-correlation business update did not roll back';
+    raise exception 'Rejected-context business update did not roll back';
+  end if;
+
+  if not exists (
+    select 1
+    from public.mutation_audit_events
+    where resource_type = 'profile'
+      and resource_id = '93000000-0000-4000-8000-000000000002'
+      and source = 'database'
+      and request_id is null
+      and application_operation is null
+      and actor_id = '93000000-0000-4000-8000-000000000001'
+      and changed_fields @> array['full_name']
+  ) then
+    raise exception 'Direct mutation without verifier secret was not audited';
   end if;
 
   if exists (
     select 1
     from public.mutation_audit_events
-    where request_id = '93000000-0000-4000-8000-000000000599'
+    where request_id = any (array[
+      '93000000-0000-4000-8000-000000000561'::uuid,
+      '93000000-0000-4000-8000-000000000562'::uuid,
+      '93000000-0000-4000-8000-000000000563'::uuid,
+      '93000000-0000-4000-8000-000000000564'::uuid,
+      '93000000-0000-4000-8000-000000000565'::uuid,
+      '93000000-0000-4000-8000-000000000566'::uuid,
+      '93000000-0000-4000-8000-000000000567'::uuid,
+      '93000000-0000-4000-8000-000000000568'::uuid,
+      '93000000-0000-4000-8000-000000000569'::uuid,
+      '93000000-0000-4000-8000-000000000570'::uuid,
+      '93000000-0000-4000-8000-000000000598'::uuid,
+      '93000000-0000-4000-8000-000000000599'::uuid
+    ])
   ) then
-    raise exception 'Forged application correlation created audit evidence';
+    raise exception 'Rejected application correlation created audit evidence';
   end if;
 end;
 $$;
