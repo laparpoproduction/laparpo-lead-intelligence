@@ -27,6 +27,13 @@ verify all of the following:
   `LEAD_DUPLICATE_CONFIRMATION_SECRET` are server-only production values of at
   least 32 characters. Never echo them or expose them through a
   `NEXT_PUBLIC_` variable.
+- `MUTATION_AUDIT_CORRELATION_SECRET` is a server-only production value of at
+  least 32 random characters. After migration 023 creates the private verifier
+  store, a separately approved privileged database/secret-management procedure
+  must provision the same value into its single mutation-correlation slot.
+  Verify matching configuration without printing either value. A missing,
+  blank, short, duplicated or mismatched value is a deployment failure: signed
+  application mutations deliberately fail closed rather than lose correlation.
 - `LAPARPO_DEMO_MODE` is unset or exactly `false`. It must never be `true` in
   production. Missing, partial, blank or invalid Supabase configuration is a
   deployment failure, not a reason to enter demo mode.
@@ -137,13 +144,26 @@ Perform the release in this order:
    from `supabase/migrations/`, in filename order.
 8. Compare the facility's applied-version report with the complete migration
    directory at the release commit. Stop if any version is absent or failed.
-9. Complete the non-destructive database and staging checks below.
-10. Deploy or start the exact validated application artifact.
-11. Complete post-deploy health, authentication and read-path verification.
+9. After migration 023 exists, use a separately approved procedure running as
+   the migration/database owner to provision exactly one value into
+   `mutation_audit_private.mutation_correlation_secret`. Application roles,
+   including `service_role`, must not receive schema, table or helper-function
+   access. Do not persist the value with `ALTER DATABASE SET`, `ALTER ROLE SET`
+   or another session setting, and do not place it in migration SQL, source,
+   command history or release evidence.
+10. Verify, without printing values, that the server-only application secret
+    and private database verifier secret match. Stop if the private slot is
+    absent, invalid or mismatched.
+11. Complete the non-destructive database and staging checks below, including
+    a correlated application mutation in isolated staging data and verification
+    that its database audit event shares the server log request ID.
+12. Deploy or start the exact validated application artifact.
+13. Complete post-deploy health, authentication and read-path verification.
 
-Do not start the new application before its required migrations are complete.
+Do not start the new application before its required migrations are complete
+and the private verifier secret has been provisioned and verified.
 If a release platform deploys automatically, configure or pause promotion so
-steps 5–9 remain a blocking precondition.
+steps 5–11 remain a blocking precondition.
 
 ## 5. Migration failure and recovery
 
@@ -177,6 +197,11 @@ Before application rollout, verify:
   directory as successfully applied;
 - read-only catalog or migration metadata confirms the expected hardened
   database objects from the release;
+- the append-only mutation audit table and triggers exist, ordinary application
+  roles have no direct access to audit history or the private verifier store,
+  no H7 verifier value is persisted through database/role settings, and the
+  approved staging proof shows signed application correlation fails closed when
+  invalid;
 - exact-head CI passed migration/legacy-upgrade coverage, RLS/database smokes,
   profile privilege protection, Company hard-delete/soft-delete protection,
   immutable creation audit metadata, conversion/restore/concurrency integrity
@@ -194,6 +219,13 @@ In controlled staging, confirm:
 - Companies, Contacts, Leads, Lead Activities and Opportunity
   list/detail/pipeline reads work for authorized roles.
 
+The database audit trail is authoritative for successful committed mutations
+only. Its event is written in the business transaction and therefore rolls back
+when that transaction fails. Application logs use the same server-generated
+request ID for safe failure correlation, but do not claim a failed database
+event or durable failure evidence unless the deployment's log sink supplies
+that retention.
+
 After application deployment, perform non-destructive production checks:
 
 - the service health route and login page respond normally;
@@ -204,7 +236,9 @@ After application deployment, perform non-destructive production checks:
 - authorized basic reads work for Companies, Contacts and Leads;
 - authorized Opportunity list, detail and pipeline reads work; and
 - logs contain no migration, authentication, configuration or database errors
-  and expose no secret values.
+  and expose no secret values. Mutation logs may contain request IDs and
+  resource IDs, while database audit evidence contains changed field names;
+  neither may contain CRM field values or correlation signatures.
 
 Record the release commit, application artifact/version, migration version
 report and verification outcome. A missing proof is a failed release gate.

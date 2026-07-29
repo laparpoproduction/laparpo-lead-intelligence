@@ -1,6 +1,7 @@
 import { appRoleSchema } from "@/lib/auth/permissions";
 import { getApplicationMode } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
+import type { MutationRequest } from "@/lib/mutation-audit";
 import { SupabaseCompanyRepository } from "./company.repository";
 import { CompanyService } from "./company.service";
 import type { CompanyActor } from "./company.types";
@@ -23,12 +24,14 @@ export type CompanyMutationContext = {
   service: CompanyService;
 };
 
-export async function createCompanyMutationContext(): Promise<CompanyMutationContext> {
+export async function createCompanyMutationContext(
+  mutationRequest?: MutationRequest,
+): Promise<CompanyMutationContext> {
   if (getApplicationMode() !== "configured") {
     throw new CompanyMutationAuthError("unavailable");
   }
 
-  const supabase = await createClient();
+  const supabase = await createClient({ mutationRequest });
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     throw new CompanyMutationAuthError("unauthenticated");

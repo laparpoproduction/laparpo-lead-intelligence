@@ -1,6 +1,7 @@
 import { appRoleSchema } from "@/lib/auth/permissions";
 import { getApplicationMode } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
+import type { MutationRequest } from "@/lib/mutation-audit";
 import { SupabaseOpportunityRepository } from "./opportunity.repository";
 import { LeadConversionService } from "./opportunity.service";
 import type { LeadConversionActor } from "./opportunity.types";
@@ -23,12 +24,14 @@ export type LeadConversionContext = {
   service: LeadConversionService;
 };
 
-export async function createLeadConversionContext(): Promise<LeadConversionContext> {
+export async function createLeadConversionContext(
+  mutationRequest?: MutationRequest,
+): Promise<LeadConversionContext> {
   if (getApplicationMode() !== "configured") {
     throw new LeadConversionAuthError("unavailable");
   }
 
-  const supabase = await createClient();
+  const supabase = await createClient({ mutationRequest });
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     throw new LeadConversionAuthError("unauthenticated");

@@ -10,6 +10,8 @@ const validEnvironment = {
     "ci-contact-confirmation-secret-value",
   LEAD_DUPLICATE_CONFIRMATION_SECRET:
     "ci-lead-confirmation-secret-value",
+  MUTATION_AUDIT_CORRELATION_SECRET:
+    "ci-mutation-audit-correlation-secret-value",
 };
 
 async function importNextConfig(
@@ -64,5 +66,13 @@ describe("next.config production validation integration", () => {
     await expect(
       importNextConfig({ LAPARPO_DEMO_MODE: "true" }),
     ).rejects.toThrow("Invalid application configuration");
+  });
+
+  it("rejects production without mutation audit correlation", async () => {
+    await expect(
+      importNextConfig({
+        MUTATION_AUDIT_CORRELATION_SECRET: undefined,
+      }),
+    ).rejects.toThrow();
   });
 });

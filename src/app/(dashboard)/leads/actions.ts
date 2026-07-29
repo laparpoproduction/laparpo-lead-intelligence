@@ -12,7 +12,12 @@ import { parseCreateLeadForm, parseDeleteLeadForm, parseUpdateLeadForm } from "@
 import { LeadRepositoryNotFoundError } from "@/lib/leads/lead.repository";
 import { LeadDuplicateError, LeadNotFoundError, LeadPermissionError, LeadValidationError } from "@/lib/leads/lead.service";
 import { LeadMutationAuthError, createLeadMutationContext, type LeadMutationContext } from "@/lib/leads/lead.server";
-import { logger } from "@/lib/logger";
+import {
+  createMutationRequest,
+  logMutationOutcome,
+  type MutationOutcome,
+  type MutationRequest,
+} from "@/lib/mutation-audit";
 
 const duplicateCandidateLimit = 20;
 
@@ -48,12 +53,22 @@ function authErrorState(error: LeadMutationAuthError): LeadFormState {
   };
 }
 
-async function mutationContext(): Promise<{ context: LeadMutationContext } | { state: LeadFormState }> {
+async function mutationContext(request: MutationRequest): Promise<{ context: LeadMutationContext } | { state: LeadFormState }> {
   try {
-    return { context: await createLeadMutationContext() };
+    return { context: await createLeadMutationContext(request) };
   } catch (error) {
-    if (error instanceof LeadMutationAuthError) return { state: authErrorState(error) };
-    logger.error("Lead mutation context failed", {
+    if (error instanceof LeadMutationAuthError) {
+      logMutationOutcome(
+        request,
+        error.code === "unauthenticated"
+          ? "unauthenticated"
+          : error.code === "inactive"
+            ? "inactive"
+            : "unavailable",
+      );
+      return { state: authErrorState(error) };
+    }
+    logMutationOutcome(request, "infrastructure", {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
     return {
@@ -87,7 +102,10 @@ function invalidConfirmationState(): LeadFormState {
   };
 }
 
-function duplicateWarningState(error: LeadDuplicateError, binding: LeadConfirmationBinding): LeadFormState {
+function duplicateWarningState(
+  error: LeadDuplicateError,
+  binding: LeadConfirmationBinding,
+): LeadFormState {
   try {
     return {
       status: "duplicate_warning",
@@ -95,25 +113,41 @@ function duplicateWarningState(error: LeadDuplicateError, binding: LeadConfirmat
       duplicateCandidateIds: error.candidateIds.slice(0, duplicateCandidateLimit),
       confirmationToken: createLeadConfirmationToken(binding),
     };
-  } catch (tokenError) {
-    return unexpectedErrorState(binding.operation, tokenError, binding.actorId);
+  } catch {
+    return unexpectedErrorState();
   }
 }
 
-function unexpectedErrorState(operation: "create" | "update" | "soft_delete" | "restore", error: unknown, actorId?: string): LeadFormState {
-  logger.error("Lead mutation failed", {
-    operation,
-    actorId,
-    errorName: error instanceof Error ? error.name : "UnknownError",
-  });
+function unexpectedErrorState(): LeadFormState {
   return {
     status: "error",
     message: "The lead could not be saved. Try again or contact an administrator.",
   };
 }
 
+function outcomeForState(state: LeadFormState): MutationOutcome {
+  if (state.status === "validation_error") return "validation";
+  if (state.status === "permission_error") return "forbidden";
+  if (state.status === "not_found") return "not_found";
+  if (state.status === "duplicate_warning") return "confirmation_required";
+  if (state.status === "already_processed") return "already_applied";
+  if (state.status === "success") return "succeeded";
+  return "unexpected";
+}
+
+function finish(
+  request: MutationRequest,
+  state: LeadFormState,
+  context: { actorId?: string; resourceId?: string; outcome?: MutationOutcome } = {},
+): LeadFormState {
+  const { outcome, ...logContext } = context;
+  logMutationOutcome(request, outcome ?? outcomeForState(state), logContext);
+  return state;
+}
+
 export async function createLeadAction(_state: LeadFormState, formData: FormData): Promise<LeadFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("create_lead", "lead");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -127,46 +161,64 @@ export async function createLeadAction(_state: LeadFormState, formData: FormData
     let leadId: string;
     if (parsed.confirmationToken) {
       const verified = verifyLeadConfirmationToken(parsed.confirmationToken, binding);
-      if (!verified) return invalidConfirmationState();
+      if (!verified) {
+        return finish(request, invalidConfirmationState(), {
+          actorId: actor.userId,
+          outcome: "invalid_confirmation",
+        });
+      }
       const result = await service.createConfirmedDuplicate(parsed.input, actor, {
         ...verified,
         operation: "create",
       });
       leadId = result.leadId;
       revalidatePath("/leads");
-      return {
+      return finish(request, {
         status: result.status === "already_processed" ? "already_processed" : "success",
         message: result.status === "already_processed"
           ? "This confirmed lead was already created."
           : "Lead created successfully.",
         leadId,
         redirectTo: `/leads/${leadId}`,
-      };
+      }, {
+        actorId: actor.userId,
+        resourceId: leadId,
+        outcome: result.status === "already_processed"
+          ? "already_applied"
+          : "succeeded",
+      });
     } else {
       leadId = (await service.create(parsed.input, actor)).id;
     }
     revalidatePath("/leads");
-    return {
+    return finish(request, {
       status: "success",
       message: "Lead created successfully.",
       leadId,
       redirectTo: `/leads/${leadId}`,
-    };
+    }, { actorId: actor.userId, resourceId: leadId });
   } catch (error) {
     if (error instanceof LeadDuplicateError) {
       const parsed = parseCreateLeadForm(formData);
-      return duplicateWarningState(error, {
+      return finish(request, duplicateWarningState(error, {
         actorId: actor.userId,
         operation: "create",
         submission: parsed.input,
-      });
+      }), { actorId: actor.userId });
     }
-    return knownErrorState(error) ?? unexpectedErrorState("create", error, actor.userId);
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
 export async function updateLeadAction(_state: LeadFormState, formData: FormData): Promise<LeadFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("update_lead", "lead");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -181,7 +233,13 @@ export async function updateLeadAction(_state: LeadFormState, formData: FormData
     let leadId: string;
     if (parsed.confirmationToken) {
       const verified = verifyLeadConfirmationToken(parsed.confirmationToken, binding);
-      if (!verified) return invalidConfirmationState();
+      if (!verified) {
+        return finish(request, invalidConfirmationState(), {
+          actorId: actor.userId,
+          resourceId: parsed.leadId,
+          outcome: "invalid_confirmation",
+        });
+      }
       const result = await service.updateConfirmedDuplicate(parsed.leadId, parsed.input, actor, {
         ...verified,
         operation: "update",
@@ -190,39 +248,55 @@ export async function updateLeadAction(_state: LeadFormState, formData: FormData
       leadId = result.leadId;
       revalidatePath("/leads");
       revalidatePath(`/leads/${leadId}`);
-      return {
+      return finish(request, {
         status: result.status === "already_processed" ? "already_processed" : "success",
         message: result.status === "already_processed"
           ? "This confirmed lead update was already applied."
           : "Lead updated successfully.",
         leadId,
-      };
+      }, {
+        actorId: actor.userId,
+        resourceId: leadId,
+        outcome: result.status === "already_processed"
+          ? "already_applied"
+          : "succeeded",
+      });
     } else {
       leadId = (await service.update(parsed.leadId, parsed.input, actor)).id;
     }
     revalidatePath("/leads");
     revalidatePath(`/leads/${leadId}`);
-    return {
+    return finish(request, {
       status: "success",
       message: "Lead updated successfully.",
       leadId,
-    };
+    }, { actorId: actor.userId, resourceId: leadId });
   } catch (error) {
     if (error instanceof LeadDuplicateError) {
       const parsed = parseUpdateLeadForm(formData);
-      return duplicateWarningState(error, {
+      return finish(request, duplicateWarningState(error, {
         actorId: actor.userId,
         operation: "update",
         leadId: parsed.leadId,
         submission: parsed.input,
+      }), {
+        actorId: actor.userId,
+        resourceId: parsed.leadId,
       });
     }
-    return knownErrorState(error) ?? unexpectedErrorState("update", error, actor.userId);
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
 export async function archiveLeadAction(_state: LeadFormState, formData: FormData): Promise<LeadFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("archive_lead", "lead");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -231,19 +305,26 @@ export async function archiveLeadAction(_state: LeadFormState, formData: FormDat
     await service.softDelete(parsed.leadId, actor);
     revalidatePath("/leads");
     revalidatePath(`/leads/${parsed.leadId}`);
-    return {
+    return finish(request, {
       status: "success",
       message: "Lead archived successfully.",
       leadId: parsed.leadId,
       redirectTo: "/leads",
-    };
+    }, { actorId: actor.userId, resourceId: parsed.leadId });
   } catch (error) {
-    return knownErrorState(error) ?? unexpectedErrorState("soft_delete", error, actor.userId);
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
 export async function restoreLeadAction(_state: LeadFormState, formData: FormData): Promise<LeadFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("restore_lead", "lead");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -252,13 +333,19 @@ export async function restoreLeadAction(_state: LeadFormState, formData: FormDat
     await service.restore(parsed.leadId, actor);
     revalidatePath("/leads");
     revalidatePath(`/leads/${parsed.leadId}`);
-    return {
+    return finish(request, {
       status: "success",
       message: "Lead restored successfully.",
       leadId: parsed.leadId,
       redirectTo: "/leads",
-    };
+    }, { actorId: actor.userId, resourceId: parsed.leadId });
   } catch (error) {
-    return knownErrorState(error) ?? unexpectedErrorState("restore", error, actor.userId);
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }

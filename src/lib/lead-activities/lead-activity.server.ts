@@ -2,6 +2,7 @@ import { appRoleSchema } from "@/lib/auth/permissions";
 import { getApplicationMode } from "@/lib/env";
 import { SupabaseLeadRepository } from "@/lib/leads/lead.repository";
 import { createClient } from "@/lib/supabase/server";
+import type { MutationRequest } from "@/lib/mutation-audit";
 import { SupabaseLeadActivityRepository } from "./lead-activity.repository";
 import { LeadActivityService } from "./lead-activity.service";
 import type { LeadActivityActor } from "./lead-activity.types";
@@ -24,12 +25,14 @@ export type LeadActivityMutationContext = {
   service: LeadActivityService;
 };
 
-export async function createLeadActivityMutationContext(): Promise<LeadActivityMutationContext> {
+export async function createLeadActivityMutationContext(
+  mutationRequest?: MutationRequest,
+): Promise<LeadActivityMutationContext> {
   if (getApplicationMode() !== "configured") {
     throw new LeadActivityMutationAuthError("unavailable");
   }
 
-  const supabase = await createClient();
+  const supabase = await createClient({ mutationRequest });
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     throw new LeadActivityMutationAuthError("unauthenticated");

@@ -1,6 +1,7 @@
 import { appRoleSchema } from "@/lib/auth/permissions";
 import { getApplicationMode } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
+import type { MutationRequest } from "@/lib/mutation-audit";
 import { SupabaseContactRepository } from "./contact.repository";
 import { ContactService } from "./contact.service";
 import type { ContactActor } from "./contact.types";
@@ -23,12 +24,14 @@ export type ContactMutationContext = {
   service: ContactService;
 };
 
-export async function createContactMutationContext(): Promise<ContactMutationContext> {
+export async function createContactMutationContext(
+  mutationRequest?: MutationRequest,
+): Promise<ContactMutationContext> {
   if (getApplicationMode() !== "configured") {
     throw new ContactMutationAuthError("unavailable");
   }
 
-  const supabase = await createClient();
+  const supabase = await createClient({ mutationRequest });
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     throw new ContactMutationAuthError("unauthenticated");

@@ -18,6 +18,7 @@ const serverEnvSchema = z.object({
   COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   CONTACT_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   LEAD_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
+  MUTATION_AUDIT_CORRELATION_SECRET: z.string().min(32).optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
@@ -59,6 +60,7 @@ const productionServerEnvSchema = z.object({
   COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().trim().min(32),
   CONTACT_DUPLICATE_CONFIRMATION_SECRET: z.string().trim().min(32),
   LEAD_DUPLICATE_CONFIRMATION_SECRET: z.string().trim().min(32),
+  MUTATION_AUDIT_CORRELATION_SECRET: z.string().trim().min(32),
 });
 
 export class ApplicationConfigurationError extends Error {
@@ -156,6 +158,7 @@ export function validateProductionServerEnvironment(input: {
   companyDuplicateConfirmationSecret?: string;
   contactDuplicateConfirmationSecret?: string;
   leadDuplicateConfirmationSecret?: string;
+  mutationAuditCorrelationSecret?: string;
 }): void {
   if (input.nodeEnv !== "production") return;
 
@@ -171,6 +174,8 @@ export function validateProductionServerEnvironment(input: {
       input.contactDuplicateConfirmationSecret || undefined,
     LEAD_DUPLICATE_CONFIRMATION_SECRET:
       input.leadDuplicateConfirmationSecret || undefined,
+    MUTATION_AUDIT_CORRELATION_SECRET:
+      input.mutationAuditCorrelationSecret || undefined,
   });
 }
 
@@ -187,6 +192,8 @@ export function assertProductionServerEnvironment(): void {
       process.env.CONTACT_DUPLICATE_CONFIRMATION_SECRET,
     leadDuplicateConfirmationSecret:
       process.env.LEAD_DUPLICATE_CONFIRMATION_SECRET,
+    mutationAuditCorrelationSecret:
+      process.env.MUTATION_AUDIT_CORRELATION_SECRET,
   });
 }
 
@@ -207,6 +214,8 @@ export function getServerEnv(): ServerEnv {
       process.env.CONTACT_DUPLICATE_CONFIRMATION_SECRET || undefined,
     LEAD_DUPLICATE_CONFIRMATION_SECRET:
       process.env.LEAD_DUPLICATE_CONFIRMATION_SECRET || undefined,
+    MUTATION_AUDIT_CORRELATION_SECRET:
+      process.env.MUTATION_AUDIT_CORRELATION_SECRET || undefined,
     LOG_LEVEL: process.env.LOG_LEVEL,
   });
   validateProductionServerEnvironment({
@@ -221,6 +230,8 @@ export function getServerEnv(): ServerEnv {
       env.CONTACT_DUPLICATE_CONFIRMATION_SECRET,
     leadDuplicateConfirmationSecret:
       env.LEAD_DUPLICATE_CONFIRMATION_SECRET,
+    mutationAuditCorrelationSecret:
+      env.MUTATION_AUDIT_CORRELATION_SECRET,
   });
   return env;
 }

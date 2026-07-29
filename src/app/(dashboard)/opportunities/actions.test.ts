@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   createOpportunityContext: vi.fn(),
   revalidatePath: vi.fn(),
   loggerError: vi.fn(),
+  loggerInfo: vi.fn(),
+  loggerWarn: vi.fn(),
   changePipelineStage: vi.fn(),
   assignOwner: vi.fn(),
   setExpectedCloseDate: vi.fn(),
@@ -17,7 +19,12 @@ vi.mock("next/cache", () => ({
   revalidatePath: mocks.revalidatePath,
 }));
 vi.mock("@/lib/logger", () => ({
-  logger: { error: mocks.loggerError },
+  logger: {
+    debug: vi.fn(),
+    error: mocks.loggerError,
+    info: mocks.loggerInfo,
+    warn: mocks.loggerWarn,
+  },
 }));
 vi.mock("@/lib/opportunities/opportunity.server", async () => {
   const actual = await vi.importActual<
@@ -286,12 +293,15 @@ describe("Opportunity mutation actions", () => {
     expect(result).toMatchObject({ status: "unavailable" });
     expect(result.message).not.toContain("secret");
     expect(mocks.loggerError).toHaveBeenCalledWith(
-      "Opportunity mutation failed",
-      {
-        operation: "mark_won",
+      "CRM mutation failed",
+      expect.objectContaining({
+        operation: "mark_opportunity_won",
         actorId: actor.userId,
         errorName: "Error",
-      },
+        outcome: "unexpected",
+        requestId: expect.any(String),
+        resourceType: "opportunity",
+      }),
     );
   });
 });

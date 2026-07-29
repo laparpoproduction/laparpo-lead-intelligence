@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { LeadConversionActionState } from "./form-state";
-import { logger } from "@/lib/logger";
+import {
+  createMutationRequest,
+  logMutationOutcome,
+  type MutationOutcome,
+  type MutationRequest,
+} from "@/lib/mutation-audit";
 import { parseLeadConversionForm } from "@/lib/opportunities/opportunity-form";
 import {
   LeadConversionEligibilityError,
@@ -52,22 +57,42 @@ function authState(error: LeadConversionAuthError): LeadConversionActionState {
   };
 }
 
+function finish(
+  request: MutationRequest,
+  state: LeadConversionActionState,
+  outcome: MutationOutcome,
+  context: { actorId?: string; resourceId?: string; errorName?: string } = {},
+): LeadConversionActionState {
+  logMutationOutcome(request, outcome, context);
+  return state;
+}
+
 export async function convertLeadToOpportunityAction(
   _state: LeadConversionActionState,
   formData: FormData,
 ): Promise<LeadConversionActionState> {
+  const request = createMutationRequest("convert_lead", "lead_conversion");
   let context;
   try {
-    context = await createLeadConversionContext();
+    context = await createLeadConversionContext(request);
   } catch (error) {
-    if (error instanceof LeadConversionAuthError) return authState(error);
-    logger.error("Lead conversion context failed", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
-    });
-    return {
+    if (error instanceof LeadConversionAuthError) {
+      return finish(
+        request,
+        authState(error),
+        error.code === "unauthenticated"
+          ? "unauthenticated"
+          : error.code === "inactive"
+            ? "inactive"
+            : "unavailable",
+      );
+    }
+    return finish(request, {
       status: "unavailable",
       message: "Lead conversion is temporarily unavailable.",
-    };
+    }, "infrastructure", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
   }
 
   try {
@@ -75,7 +100,7 @@ export async function convertLeadToOpportunityAction(
     const result = await context.service.convert(input, context.actor);
     revalidatePath("/leads");
     revalidatePath(`/leads/${result.leadId}`);
-    return {
+    return finish(request, {
       status:
         result.status === "already_converted"
           ? "already_converted"
@@ -86,53 +111,67 @@ export async function convertLeadToOpportunityAction(
           : "Lead converted to an Opportunity successfully.",
       leadId: result.leadId,
       opportunityId: result.opportunityId,
-    };
+    }, result.status === "already_converted" ? "already_applied" : "succeeded", {
+      actorId: context.actor.userId,
+      resourceId: result.leadId,
+    });
   } catch (error) {
-    if (error instanceof z.ZodError) return validationState(error.issues);
+    if (error instanceof z.ZodError) {
+      return finish(
+        request,
+        validationState(error.issues),
+        "validation",
+        { actorId: context.actor.userId },
+      );
+    }
     if (error instanceof LeadConversionValidationError) {
-      return validationState(error.issues);
+      return finish(
+        request,
+        validationState(error.issues),
+        "validation",
+        { actorId: context.actor.userId },
+      );
     }
     if (error instanceof LeadConversionPermissionError) {
-      return {
+      return finish(request, {
         status: "forbidden",
         message: "You cannot convert this Lead.",
-      };
+      }, "forbidden", { actorId: context.actor.userId });
     }
     if (error instanceof LeadConversionNotFoundError) {
-      return {
+      return finish(request, {
         status: "not_found",
         message: "The Lead could not be found.",
-      };
+      }, "not_found", { actorId: context.actor.userId });
     }
     if (error instanceof LeadConversionEligibilityError) {
       if (error.reason === "legacy") {
-        return {
+        return finish(request, {
           status: "legacy_unresolved",
           message:
             "This historical converted Lead has no verified conversion relationship. It requires manual reconciliation.",
-        };
+        }, "ineligible", { actorId: context.actor.userId });
       }
-      return {
+      return finish(request, {
         status: "ineligible",
         message:
           error.reason === "terminal"
             ? "Lost or disqualified Leads cannot be converted."
             : "This Lead is not eligible for conversion.",
-      };
+      }, "ineligible", { actorId: context.actor.userId });
     }
     if (error instanceof LeadConversionUnavailableError) {
-      return {
+      return finish(request, {
         status: "unavailable",
         message: "Lead conversion is temporarily unavailable. Try again.",
-      };
+      }, "unavailable", { actorId: context.actor.userId });
     }
-    logger.error("Lead conversion action failed", {
+    return finish(request, {
+      status: "unavailable",
+      message: "Lead conversion is temporarily unavailable. Try again.",
+    }, "unexpected", {
       actorId: context.actor.userId,
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
-    return {
-      status: "unavailable",
-      message: "Lead conversion is temporarily unavailable. Try again.",
-    };
   }
 }

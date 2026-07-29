@@ -24,7 +24,12 @@ import {
   createCompanyMutationContext,
   type CompanyMutationContext,
 } from "@/lib/companies/company.server";
-import { logger } from "@/lib/logger";
+import {
+  createMutationRequest,
+  logMutationOutcome,
+  type MutationOutcome,
+  type MutationRequest,
+} from "@/lib/mutation-audit";
 
 const duplicateCandidateLimit = 20;
 
@@ -60,14 +65,24 @@ function authErrorState(error: CompanyMutationAuthError): CompanyFormState {
   };
 }
 
-async function mutationContext(): Promise<
+async function mutationContext(request: MutationRequest): Promise<
   { context: CompanyMutationContext } | { state: CompanyFormState }
 > {
   try {
-    return { context: await createCompanyMutationContext() };
+    return { context: await createCompanyMutationContext(request) };
   } catch (error) {
-    if (error instanceof CompanyMutationAuthError) return { state: authErrorState(error) };
-    logger.error("Company mutation context failed", {
+    if (error instanceof CompanyMutationAuthError) {
+      logMutationOutcome(
+        request,
+        error.code === "unauthenticated"
+          ? "unauthenticated"
+          : error.code === "inactive"
+            ? "inactive"
+            : "unavailable",
+      );
+      return { state: authErrorState(error) };
+    }
+    logMutationOutcome(request, "infrastructure", {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
     return {
@@ -114,32 +129,43 @@ function duplicateWarningState(
       duplicateCandidateIds: error.candidateIds.slice(0, duplicateCandidateLimit),
       confirmationToken: createCompanyConfirmationToken(binding),
     };
-  } catch (tokenError) {
-    return unexpectedErrorState(binding.operation, tokenError, binding.actorId);
+  } catch {
+    return unexpectedErrorState();
   }
 }
 
-function unexpectedErrorState(
-  operation: "create" | "update" | "soft_delete",
-  error: unknown,
-  userId?: string,
-): CompanyFormState {
-  logger.error("Company mutation failed", {
-    operation,
-    userId,
-    errorName: error instanceof Error ? error.name : "UnknownError",
-  });
+function unexpectedErrorState(): CompanyFormState {
   return {
     status: "error",
     message: "The company could not be saved. Try again or contact an administrator.",
   };
 }
 
+function outcomeForState(state: CompanyFormState): MutationOutcome {
+  if (state.status === "validation_error") return "validation";
+  if (state.status === "permission_error") return "forbidden";
+  if (state.status === "not_found") return "not_found";
+  if (state.status === "duplicate_warning") return "confirmation_required";
+  if (state.status === "success") return "succeeded";
+  return "unexpected";
+}
+
+function finish(
+  request: MutationRequest,
+  state: CompanyFormState,
+  context: { actorId?: string; resourceId?: string; outcome?: MutationOutcome } = {},
+): CompanyFormState {
+  const { outcome, ...logContext } = context;
+  logMutationOutcome(request, outcome ?? outcomeForState(state), logContext);
+  return state;
+}
+
 export async function createCompanyAction(
   _state: CompanyFormState,
   formData: FormData,
 ): Promise<CompanyFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("create_company", "company");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -154,7 +180,12 @@ export async function createCompanyAction(
     let alreadyConsumed = false;
     if (parsed.confirmationToken) {
       const verified = verifyCompanyConfirmationToken(parsed.confirmationToken, binding);
-      if (!verified) return invalidConfirmationState();
+      if (!verified) {
+        return finish(request, invalidConfirmationState(), {
+          actorId: actor.userId,
+          outcome: "invalid_confirmation",
+        });
+      }
       const result = await service.createConfirmedDuplicate(parsed.input, actor, {
         ...verified,
         operation: "create",
@@ -165,24 +196,34 @@ export async function createCompanyAction(
       companyId = (await service.create(parsed.input, actor)).id;
     }
     revalidatePath("/companies");
-    return {
+    return finish(request, {
       status: "success",
       message: alreadyConsumed
         ? "This confirmed company was already created. Returning the original result."
         : "Company created successfully.",
       companyId,
       redirectTo: `/companies/${companyId}`,
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: companyId,
+      outcome: alreadyConsumed ? "already_applied" : "succeeded",
+    });
   } catch (error) {
     if (error instanceof CompanyDuplicateError) {
       const parsed = parseCreateCompanyForm(formData);
-      return duplicateWarningState(error, {
+      return finish(request, duplicateWarningState(error, {
         actorId: actor.userId,
         operation: "create",
         submission: parsed.input,
-      });
+      }), { actorId: actor.userId });
     }
-    return knownErrorState(error) ?? unexpectedErrorState("create", error, actor.userId);
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
@@ -190,7 +231,8 @@ export async function updateCompanyAction(
   _state: CompanyFormState,
   formData: FormData,
 ): Promise<CompanyFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("update_company", "company");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -206,7 +248,13 @@ export async function updateCompanyAction(
     let alreadyConsumed = false;
     if (parsed.confirmationToken) {
       const verified = verifyCompanyConfirmationToken(parsed.confirmationToken, binding);
-      if (!verified) return invalidConfirmationState();
+      if (!verified) {
+        return finish(request, invalidConfirmationState(), {
+          actorId: actor.userId,
+          resourceId: parsed.companyId,
+          outcome: "invalid_confirmation",
+        });
+      }
       const result = await service.updateConfirmedDuplicate(
         parsed.companyId,
         parsed.input,
@@ -224,24 +272,37 @@ export async function updateCompanyAction(
     }
     revalidatePath("/companies");
     revalidatePath(`/companies/${companyId}`);
-    return {
+    return finish(request, {
       status: "success",
       message: alreadyConsumed
         ? "This confirmed update was already applied."
         : "Company updated successfully.",
       companyId,
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: companyId,
+      outcome: alreadyConsumed ? "already_applied" : "succeeded",
+    });
   } catch (error) {
     if (error instanceof CompanyDuplicateError) {
       const parsed = parseUpdateCompanyForm(formData);
-      return duplicateWarningState(error, {
+      return finish(request, duplicateWarningState(error, {
         actorId: actor.userId,
         operation: "update",
         companyId: parsed.companyId,
         submission: parsed.input,
+      }), {
+        actorId: actor.userId,
+        resourceId: parsed.companyId,
       });
     }
-    return knownErrorState(error) ?? unexpectedErrorState("update", error, actor.userId);
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
@@ -249,7 +310,8 @@ export async function softDeleteCompanyAction(
   _state: CompanyFormState,
   formData: FormData,
 ): Promise<CompanyFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("archive_company", "company");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -258,15 +320,22 @@ export async function softDeleteCompanyAction(
     await service.softDelete(parsed.companyId, actor);
     revalidatePath("/companies");
     revalidatePath(`/companies/${parsed.companyId}`);
-    return {
+    return finish(request, {
       status: "success",
       message: "Company deleted successfully.",
       companyId: parsed.companyId,
       redirectTo: "/companies",
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: parsed.companyId,
+    });
   } catch (error) {
-    return (
-      knownErrorState(error) ?? unexpectedErrorState("soft_delete", error, actor.userId)
-    );
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }

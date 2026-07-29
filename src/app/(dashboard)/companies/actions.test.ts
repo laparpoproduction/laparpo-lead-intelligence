@@ -18,6 +18,7 @@ import {
   updateCompanyAction,
 } from "./actions";
 import { initialCompanyFormState } from "./form-state";
+import { logger } from "@/lib/logger";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
@@ -93,6 +94,7 @@ beforeEach(() => {
     service: service as CompanyService,
   });
   vi.mocked(revalidatePath).mockReset();
+  vi.mocked(logger.info).mockReset();
 });
 
 describe("Companies server actions", () => {
@@ -129,6 +131,7 @@ describe("Companies server actions", () => {
     form.set("createdBy", "99999999-9999-4999-8999-999999999999");
     form.set("createdAt", "2000-01-01T00:00:00.000Z");
     form.set("deletedAt", "2026-07-12T00:00:00.000Z");
+    form.set("requestId", "client-forged-request-id");
 
     await createCompanyAction(initialCompanyFormState, form);
     const submitted = vi.mocked(service.create).mock.calls[0]?.[0];
@@ -138,6 +141,19 @@ describe("Companies server actions", () => {
     expect(submitted).not.toHaveProperty("createdAt");
     expect(submitted).not.toHaveProperty("deletedAt");
     expect(service.create).toHaveBeenCalledWith(expect.any(Object), actor);
+    const request = vi.mocked(createCompanyMutationContext).mock.calls[0]?.[0];
+    expect(request?.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(request?.requestId).not.toBe("client-forged-request-id");
+    expect(logger.info).toHaveBeenCalledWith(
+      "CRM mutation completed",
+      expect.objectContaining({
+        requestId: request?.requestId,
+        operation: "create_company",
+        outcome: "succeeded",
+      }),
+    );
   });
 
   it("creates a company and revalidates the list", async () => {
