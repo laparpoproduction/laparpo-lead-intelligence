@@ -235,6 +235,32 @@ insert into public.leads (
   'H7 private lead notes must never enter audit evidence'
 );
 
+insert into public.leads (
+  id,
+  company_id,
+  primary_contact_id,
+  title,
+  stage,
+  created_by,
+  source_type,
+  source_url,
+  discovered_at,
+  service_interest,
+  notes
+) values (
+  '93000000-0000-4000-8000-000000000302',
+  '93000000-0000-4000-8000-000000000101',
+  '93000000-0000-4000-8000-000000000201',
+  'H7 audit lifecycle lead',
+  'qualified',
+  '93000000-0000-4000-8000-000000000001',
+  'company_website',
+  'https://h7-audit-company.test/lifecycle-brief',
+  now(),
+  'food_review',
+  'H7 private lifecycle notes must never enter audit evidence'
+);
+
 insert into public.lead_activities (
   id,
   lead_id,
@@ -434,9 +460,9 @@ where id = '93000000-0000-4000-8000-000000000201';
 
 update public.leads
 set deleted_at = now()
-where id = '93000000-0000-4000-8000-000000000301';
+where id = '93000000-0000-4000-8000-000000000302';
 select public.restore_archived_lead(
-  '93000000-0000-4000-8000-000000000301'
+  '93000000-0000-4000-8000-000000000302'
 );
 
 update public.companies
@@ -481,13 +507,13 @@ begin
     select 1
     from public.mutation_audit_events
     where resource_type = 'lead'
-      and resource_id = '93000000-0000-4000-8000-000000000301'
+      and resource_id = '93000000-0000-4000-8000-000000000302'
       and operation = 'archive'
   ) or not exists (
     select 1
     from public.mutation_audit_events
     where resource_type = 'lead'
-      and resource_id = '93000000-0000-4000-8000-000000000301'
+      and resource_id = '93000000-0000-4000-8000-000000000302'
       and operation = 'restore'
   ) then
     raise exception 'Lead archive/restore was not audited';
