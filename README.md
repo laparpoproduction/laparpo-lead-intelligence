@@ -28,10 +28,10 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
 ## Local setup
 
 1. Install Node.js 20.9 or newer.
-2. Install dependencies:
+2. Install the lockfile exactly:
 
    ```bash
-   npm install
+   npm ci
    ```
 
 3. Copy the environment template:
@@ -46,18 +46,11 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `COMPANY_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
    - `CONTACT_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
    - `LEAD_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
-5. Apply migrations in filename order:
-   - `202607110001_sprint_1_core_schema.sql`
-   - `202607110002_align_foundation_schema.sql`
-   - `202607110003_crm_companies_foundation.sql`
-   - `202607110004_companies_soft_delete.sql`
-   - `202607110005_companies_rls_and_duplicate_candidates.sql`
-   - `202607110006_company_mutation_idempotency.sql`
-   - `202607110007_contacts_foundation.sql`
-   - `202607110008_contacts_duplicate_candidates.sql`
-   - `202607110009_contact_mutation_idempotency.sql`
-   - `202607140010_leads_foundation.sql`
-   - `202607140011_lead_mutation_idempotency.sql`
+5. Apply **every** migration currently present in `supabase/migrations/` in
+   filename order. The directory, not this README, is the migration source of
+   truth. Do not select only a historical subset. Follow the
+   [deployment and database migration runbook](docs/deployment.md) before
+   targeting any shared or production database.
 6. Create the first user through Supabase Auth and promote that account to `ceo_admin`.
 7. Start the app:
 
@@ -272,6 +265,7 @@ stored in the ledger.
 ## Quality checks
 
 ```bash
+npm audit --omit=dev --audit-level=high
 npm run lint
 npm run typecheck
 npm run test
@@ -279,15 +273,15 @@ npm run build
 npm run test:e2e
 ```
 
-GitHub Actions applies all migrations to PostgreSQL and runs the general RLS test,
-`supabase/tests/companies_smoke.sql`, `supabase/tests/contacts_smoke.sql` and
-`supabase/tests/contact_actions_smoke.sql`, plus the Lead legacy migration fixture
-and `supabase/tests/leads_smoke.sql`. The workflow also runs
-`supabase/tests/lead_actions_smoke.sql` for atomic confirmation, replay, ledger
-isolation and failed-mutation rollback. The Contacts test verifies normalization,
-provenance, non-unique duplicate signals,
-nullable company relationships, management/representative access, archived-record
-isolation and safe company relationships.
+GitHub Actions performs a production-dependency audit, lint, type checking,
+Vitest and a production build. Its disposable PostgreSQL job covers migration
+ordering and legacy upgrade fixtures; general RLS and CRM database smoke tests;
+profile privilege, Company hard-delete/soft-delete and immutable creation
+metadata hardening; Companies, Contacts, Leads and Lead Activities; conversion,
+retry, concurrency, immutable ledger and restore behavior; and Opportunity
+list/detail/pipeline, CAS and Won/Lost concurrency. Playwright covers browser
+behavior. This summary is categorical: the workflow itself is authoritative for
+the exact current test steps.
 
 ## Manual test checklist
 
@@ -317,14 +311,9 @@ isolation and safe company relationships.
 - Company and assignee controls use validated UUID inputs. Bounded searchable
   selectors and profile display names remain deferred to avoid full-table reads.
 - Contact confirmation ledger cleanup/retention automation is not yet scheduled.
-- Leads now have database, repository/service and server-action foundations.
-  Leads UI, scoring, Opportunity conversion, quotations, follow-up reminders and
-  activity workflows are not built.
+- Lead management, activities, conversion and restore workflows and the
+  Opportunity list/detail/pipeline workspace are implemented. Quotations,
+  finance workflows and follow-up reminder automation are not implemented.
 - Account invitation, password reset and role-management screens are not implemented.
 - Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
-- Dashboard metrics remain placeholders until lead-management workflows are delivered.
-
-## Recommended next sprint
-
-Build the separately scoped Leads user interface without beginning Opportunity
-conversion, messaging, discovery or AI enrichment.
+- Dashboard metrics remain placeholders.
