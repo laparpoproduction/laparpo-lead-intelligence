@@ -19,9 +19,12 @@ import {
   createLeadActivityMutationContext,
   type LeadActivityMutationContext,
 } from "@/lib/lead-activities/lead-activity.server";
-import { logger } from "@/lib/logger";
-
-type Operation = "create" | "update" | "archive" | "restore";
+import {
+  createMutationRequest,
+  logMutationOutcome,
+  type MutationOutcome,
+  type MutationRequest,
+} from "@/lib/mutation-audit";
 
 function issuesState(issues: z.ZodIssue[]): LeadActivityFormState {
   const fieldErrors: Record<string, string[]> = {};
@@ -60,16 +63,24 @@ function authErrorState(
   };
 }
 
-async function mutationContext(): Promise<
+async function mutationContext(request: MutationRequest): Promise<
   { context: LeadActivityMutationContext } | { state: LeadActivityFormState }
 > {
   try {
-    return { context: await createLeadActivityMutationContext() };
+    return { context: await createLeadActivityMutationContext(request) };
   } catch (error) {
     if (error instanceof LeadActivityMutationAuthError) {
+      logMutationOutcome(
+        request,
+        error.code === "unauthenticated"
+          ? "unauthenticated"
+          : error.code === "inactive"
+            ? "inactive"
+            : "unavailable",
+      );
       return { state: authErrorState(error) };
     }
-    logger.error("Lead activity mutation context failed", {
+    logMutationOutcome(request, "infrastructure", {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
     return {
@@ -108,22 +119,37 @@ function knownErrorState(error: unknown): LeadActivityFormState | null {
   return null;
 }
 
-function unexpectedErrorState(
-  operation: Operation,
-  error: unknown,
-  actorId?: string,
-): LeadActivityFormState {
-  logger.error("Lead activity mutation failed", {
-    operation,
-    actorId,
-    errorName: error instanceof Error ? error.name : "UnknownError",
-  });
+function unexpectedErrorState(): LeadActivityFormState {
   return {
     status: "error",
     code: "unexpected",
     message:
       "The Lead activity could not be saved. Try again or contact an administrator.",
   };
+}
+
+function outcomeForState(state: LeadActivityFormState): MutationOutcome {
+  if (state.status === "validation_error") return "validation";
+  if (state.status === "permission_error") {
+    return state.code === "unauthenticated"
+      ? "unauthenticated"
+      : state.code === "inactive"
+        ? "inactive"
+        : "forbidden";
+  }
+  if (state.status === "not_found") return "not_found";
+  if (state.status === "success") return "succeeded";
+  return "unexpected";
+}
+
+function finish(
+  request: MutationRequest,
+  state: LeadActivityFormState,
+  context: { actorId?: string; resourceId?: string; outcome?: MutationOutcome } = {},
+): LeadActivityFormState {
+  const { outcome, ...logContext } = context;
+  logMutationOutcome(request, outcome ?? outcomeForState(state), logContext);
+  return state;
 }
 
 function revalidateActiveLead(leadId: string): void {
@@ -141,7 +167,11 @@ export async function createLeadActivityAction(
   _state: LeadActivityFormState,
   formData: FormData,
 ): Promise<LeadActivityFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest(
+    "create_lead_activity",
+    "lead_activity",
+  );
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -151,17 +181,23 @@ export async function createLeadActivityAction(
       actor,
     );
     revalidateActiveLead(activity.leadId);
-    return {
+    return finish(request, {
       status: "success",
       message: "Lead activity created successfully.",
       activityId: activity.id,
       leadId: activity.leadId,
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: activity.id,
+    });
   } catch (error) {
-    return (
-      knownErrorState(error) ??
-      unexpectedErrorState("create", error, actor.userId)
-    );
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
@@ -169,7 +205,11 @@ export async function updateLeadActivityAction(
   _state: LeadActivityFormState,
   formData: FormData,
 ): Promise<LeadActivityFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest(
+    "update_lead_activity",
+    "lead_activity",
+  );
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -181,17 +221,23 @@ export async function updateLeadActivityAction(
       actor,
     );
     revalidateActiveLead(activity.leadId);
-    return {
+    return finish(request, {
       status: "success",
       message: "Lead activity updated successfully.",
       activityId: activity.id,
       leadId: activity.leadId,
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: activity.id,
+    });
   } catch (error) {
-    return (
-      knownErrorState(error) ??
-      unexpectedErrorState("update", error, actor.userId)
-    );
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
@@ -199,7 +245,11 @@ export async function archiveLeadActivityAction(
   _state: LeadActivityFormState,
   formData: FormData,
 ): Promise<LeadActivityFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest(
+    "archive_lead_activity",
+    "lead_activity",
+  );
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -207,17 +257,23 @@ export async function archiveLeadActivityAction(
     const { activityId } = parseLeadActivityMutationForm(formData);
     const archived = await service.softDelete(activityId, actor);
     revalidateArchivedLead(archived.leadId);
-    return {
+    return finish(request, {
       status: "success",
       message: "Lead activity archived successfully.",
       activityId,
       leadId: archived.leadId,
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: activityId,
+    });
   } catch (error) {
-    return (
-      knownErrorState(error) ??
-      unexpectedErrorState("archive", error, actor.userId)
-    );
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
@@ -225,7 +281,11 @@ export async function restoreLeadActivityAction(
   _state: LeadActivityFormState,
   formData: FormData,
 ): Promise<LeadActivityFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest(
+    "restore_lead_activity",
+    "lead_activity",
+  );
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -233,16 +293,22 @@ export async function restoreLeadActivityAction(
     const { activityId } = parseLeadActivityMutationForm(formData);
     const restored = await service.restore(activityId, actor);
     revalidateArchivedLead(restored.leadId);
-    return {
+    return finish(request, {
       status: "success",
       message: "Lead activity restored successfully.",
       activityId,
       leadId: restored.leadId,
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: activityId,
+    });
   } catch (error) {
-    return (
-      knownErrorState(error) ??
-      unexpectedErrorState("restore", error, actor.userId)
-    );
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }

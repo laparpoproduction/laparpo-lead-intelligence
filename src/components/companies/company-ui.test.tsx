@@ -30,7 +30,14 @@ const router = {
 };
 
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
-vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }));
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    debug: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
+}));
 vi.mock("@/app/(dashboard)/companies/actions", () => ({
   createCompanyAction: vi.fn(),
   updateCompanyAction: vi.fn(),

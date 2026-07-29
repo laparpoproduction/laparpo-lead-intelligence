@@ -19,6 +19,8 @@ const validSecrets = {
     "production-contact-confirmation-secret-32",
   leadDuplicateConfirmationSecret:
     "production-lead-confirmation-secret-32",
+  mutationAuditCorrelationSecret:
+    "production-mutation-audit-correlation-secret-32",
 };
 
 function productionInput(
@@ -183,7 +185,7 @@ describe("application mode", () => {
 });
 
 describe("production server environment", () => {
-  it("accepts valid Supabase configuration and all confirmation secrets", () => {
+  it("accepts valid Supabase configuration and all server-only secrets", () => {
     expect(() =>
       validateProductionServerEnvironment({
         ...productionInput(),
@@ -223,7 +225,7 @@ describe("production server environment", () => {
     ).toThrow(ApplicationConfigurationError);
   });
 
-  it("requires every namespaced confirmation secret in production", () => {
+  it("requires every namespaced confirmation and audit secret in production", () => {
     expect(() =>
       validateProductionServerEnvironment(productionInput()),
     ).toThrow();
@@ -233,6 +235,17 @@ describe("production server environment", () => {
         companyDuplicateConfirmationSecret: "too-short",
         contactDuplicateConfirmationSecret: "too-short",
         leadDuplicateConfirmationSecret: "too-short",
+        mutationAuditCorrelationSecret: "too-short",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects production without the mutation audit correlation secret", () => {
+    expect(() =>
+      validateProductionServerEnvironment({
+        ...productionInput(),
+        ...validSecrets,
+        mutationAuditCorrelationSecret: undefined,
       }),
     ).toThrow();
   });

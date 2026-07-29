@@ -46,6 +46,9 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `COMPANY_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
    - `CONTACT_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
    - `LEAD_DUPLICATE_CONFIRMATION_SECRET` with at least 32 random characters
+   - `MUTATION_AUDIT_CORRELATION_SECRET` with at least 32 random characters,
+     matching the protected database setting described in the deployment
+     runbook
 5. Apply **every** migration currently present in `supabase/migrations/` in
    filename order. The directory, not this README, is the migration source of
    truth. Do not select only a historical subset. Follow the
@@ -75,15 +78,16 @@ production, is visibly labelled and cannot create a real mutation context.
 | `COMPANY_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for company mutations | Signs short-lived duplicate confirmation tokens; use at least 32 random characters |
 | `CONTACT_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for contact mutations | Signs namespaced, short-lived Contact confirmation tokens; use at least 32 random characters |
 | `LEAD_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for lead mutations | Signs namespaced, short-lived lead confirmation tokens; use at least 32 random characters |
+| `MUTATION_AUDIT_CORRELATION_SECRET` | Server only | Yes for production mutations | Signs short-lived request correlation sent only by the server Supabase client; must match the protected database setting |
 | `OPENAI_API_KEY` | Server only | No | Reserved for a later AI sprint |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
 Production builds fail during Next.js configuration when
 the Supabase URL/key is missing, partial or invalid; demo mode is enabled or
-malformed; or any duplicate-confirmation secret is missing or shorter than 32
-characters. Demo mode is forbidden in production.
-Tests and local development may omit the duplicate-confirmation secrets until
+malformed; or any duplicate-confirmation/audit-correlation secret is missing or
+shorter than 32 characters. Demo mode is forbidden in production.
+Tests and local development may omit the server-only mutation secrets until
 those workflows are exercised. Supabase values may be omitted only for the
 explicit non-production demo described above; production-like local builds must
 provide URL/key and explicit test-only confirmation values.
@@ -102,6 +106,20 @@ The migrations provide:
   sales context, outcome consistency, soft delete and duplicate signals
 - `lead_signals`, `lead_activities` and `sales_tasks`
 - compatibility tables for `lead_sources` and `opportunities`
+
+Successful CRM mutations are also recorded by PostgreSQL in an append-only
+audit trail. The trigger derives the authenticated actor and actual changed
+field names inside the same transaction; it never stores CRM before/after
+values. Server actions generate a fresh request ID and sign a short-lived
+PostgREST context so the same ID appears in structured application logs and
+database events. Direct authenticated PostgREST mutations remain audited with
+no invented application correlation.
+
+Database audit events prove only successful committed mutations: an event in a
+failed transaction rolls back with that transaction. Structured application
+logs correlate safe failure outcomes, but they are not presented as
+database-authoritative or guaranteed durable unless the deployment's log sink
+provides that retention. No historical audit events are backfilled.
 
 Every new company requires a public source URL and discovery timestamp. Leads
 retain direct source type and discovery provenance; public-directory, website and

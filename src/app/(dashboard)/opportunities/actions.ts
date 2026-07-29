@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { OpportunityMutationActionState } from "./form-state";
-import { logger } from "@/lib/logger";
+import {
+  createMutationRequest,
+  logMutationOutcome,
+  type MutationOperation,
+  type MutationOutcome,
+  type MutationRequest,
+} from "@/lib/mutation-audit";
 import {
   parseOpportunityExpectedCloseMutationForm,
   parseOpportunityLostMutationForm,
@@ -38,6 +44,16 @@ type Operation =
   | "clear_probability"
   | "mark_won"
   | "mark_lost";
+
+const correlatedOperations: Record<Operation, MutationOperation> = {
+  change_stage: "change_opportunity_stage",
+  assign_owner: "assign_opportunity_owner",
+  set_expected_close: "set_opportunity_expected_close",
+  override_probability: "override_opportunity_probability",
+  clear_probability: "clear_opportunity_probability",
+  mark_won: "mark_opportunity_won",
+  mark_lost: "mark_opportunity_lost",
+};
 
 function validationState(
   issues: z.ZodIssue[],
@@ -76,16 +92,24 @@ function authState(
   };
 }
 
-async function mutationContext(): Promise<
+async function mutationContext(request: MutationRequest): Promise<
   { context: LeadConversionContext } | { state: OpportunityMutationActionState }
 > {
   try {
-    return { context: await createOpportunityContext() };
+    return { context: await createOpportunityContext(request) };
   } catch (error) {
     if (error instanceof LeadConversionAuthError) {
+      logMutationOutcome(
+        request,
+        error.code === "unauthenticated"
+          ? "unauthenticated"
+          : error.code === "inactive"
+            ? "inactive"
+            : "unavailable",
+      );
       return { state: authState(error) };
     }
-    logger.error("Opportunity mutation context failed", {
+    logMutationOutcome(request, "infrastructure", {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
     return {
@@ -162,6 +186,36 @@ function resultState(
   };
 }
 
+function outcomeForState(
+  state: OpportunityMutationActionState,
+): MutationOutcome {
+  if (state.status === "validation_error") return "validation";
+  if (state.status === "unauthenticated") return "unauthenticated";
+  if (state.status === "inactive") return "inactive";
+  if (state.status === "forbidden") return "forbidden";
+  if (state.status === "not_found") return "not_found";
+  if (state.status === "conflict") return "conflict";
+  if (state.status === "ineligible") return "ineligible";
+  if (state.status === "already_applied") return "already_applied";
+  if (state.status === "success") return "succeeded";
+  return "unavailable";
+}
+
+function finish(
+  request: MutationRequest,
+  state: OpportunityMutationActionState,
+  context: {
+    actorId?: string;
+    resourceId?: string;
+    errorName?: string;
+    outcome?: MutationOutcome;
+  } = {},
+): OpportunityMutationActionState {
+  const { outcome, ...logContext } = context;
+  logMutationOutcome(request, outcome ?? outcomeForState(state), logContext);
+  return state;
+}
+
 async function runMutation<T>(
   operation: Operation,
   formData: FormData,
@@ -172,25 +226,34 @@ async function runMutation<T>(
     actor: LeadConversionActor,
   ) => Promise<OpportunityMutationResult>,
 ): Promise<OpportunityMutationActionState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest(
+    correlatedOperations[operation],
+    "opportunity",
+  );
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { context } = resolved;
 
   try {
     const input = parse(formData);
-    return resultState(await invoke(context, input, context.actor));
+    const state = resultState(await invoke(context, input, context.actor));
+    return finish(request, state, {
+      actorId: context.actor.userId,
+      resourceId: state.opportunityId,
+    });
   } catch (error) {
     const known = knownErrorState(error);
-    if (known) return known;
-    logger.error("Opportunity mutation failed", {
-      operation,
-      actorId: context.actor.userId,
-      errorName: error instanceof Error ? error.name : "UnknownError",
-    });
-    return {
+    if (known) {
+      return finish(request, known, { actorId: context.actor.userId });
+    }
+    return finish(request, {
       status: "unavailable",
       message: "The Opportunity could not be changed. Try again.",
-    };
+    }, {
+      actorId: context.actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      outcome: "unexpected",
+    });
   }
 }
 

@@ -25,7 +25,12 @@ import {
   createContactMutationContext,
   type ContactMutationContext,
 } from "@/lib/contacts/contact.server";
-import { logger } from "@/lib/logger";
+import {
+  createMutationRequest,
+  logMutationOutcome,
+  type MutationOutcome,
+  type MutationRequest,
+} from "@/lib/mutation-audit";
 
 const duplicateCandidateLimit = 20;
 
@@ -61,16 +66,24 @@ function authErrorState(error: ContactMutationAuthError): ContactFormState {
   };
 }
 
-async function mutationContext(): Promise<
+async function mutationContext(request: MutationRequest): Promise<
   { context: ContactMutationContext } | { state: ContactFormState }
 > {
   try {
-    return { context: await createContactMutationContext() };
+    return { context: await createContactMutationContext(request) };
   } catch (error) {
     if (error instanceof ContactMutationAuthError) {
+      logMutationOutcome(
+        request,
+        error.code === "unauthenticated"
+          ? "unauthenticated"
+          : error.code === "inactive"
+            ? "inactive"
+            : "unavailable",
+      );
       return { state: authErrorState(error) };
     }
-    logger.error("Contact mutation context failed", {
+    logMutationOutcome(request, "infrastructure", {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
     return {
@@ -107,16 +120,7 @@ function invalidConfirmationState(): ContactFormState {
   };
 }
 
-function unexpectedErrorState(
-  operation: "create" | "update" | "soft_delete",
-  error: unknown,
-  actorId?: string,
-): ContactFormState {
-  logger.error("Contact mutation failed", {
-    operation,
-    actorId,
-    errorName: error instanceof Error ? error.name : "UnknownError",
-  });
+function unexpectedErrorState(): ContactFormState {
   return {
     status: "error",
     message: "The contact could not be saved. Try again or contact an administrator.",
@@ -134,16 +138,37 @@ function duplicateWarningState(
       duplicateCandidateIds: error.candidateIds.slice(0, duplicateCandidateLimit),
       confirmationToken: createContactConfirmationToken(binding),
     };
-  } catch (tokenError) {
-    return unexpectedErrorState(binding.operation, tokenError, binding.actorId);
+  } catch {
+    return unexpectedErrorState();
   }
+}
+
+function outcomeForState(state: ContactFormState): MutationOutcome {
+  if (state.status === "validation_error") return "validation";
+  if (state.status === "permission_error") return "forbidden";
+  if (state.status === "not_found") return "not_found";
+  if (state.status === "duplicate_warning") return "confirmation_required";
+  if (state.status === "already_processed") return "already_applied";
+  if (state.status === "success") return "succeeded";
+  return "unexpected";
+}
+
+function finish(
+  request: MutationRequest,
+  state: ContactFormState,
+  context: { actorId?: string; resourceId?: string; outcome?: MutationOutcome } = {},
+): ContactFormState {
+  const { outcome, ...logContext } = context;
+  logMutationOutcome(request, outcome ?? outcomeForState(state), logContext);
+  return state;
 }
 
 export async function createContactAction(
   _state: ContactFormState,
   formData: FormData,
 ): Promise<ContactFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("create_contact", "contact");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -162,7 +187,12 @@ export async function createContactAction(
         parsed.confirmationToken,
         binding,
       );
-      if (!verified) return invalidConfirmationState();
+      if (!verified) {
+        return finish(request, invalidConfirmationState(), {
+          actorId: actor.userId,
+          outcome: "invalid_confirmation",
+        });
+      }
       const result = await service.createConfirmedDuplicate(parsed.input, actor, {
         ...verified,
         operation: "create",
@@ -174,24 +204,34 @@ export async function createContactAction(
     }
 
     revalidatePath("/contacts");
-    return {
+    return finish(request, {
       status: alreadyProcessed ? "already_processed" : "success",
       message: alreadyProcessed
         ? "This confirmed contact was already created. Returning the original result."
         : "Contact created successfully.",
       contactId,
       redirectTo: `/contacts/${contactId}`,
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: contactId,
+      outcome: alreadyProcessed ? "already_applied" : "succeeded",
+    });
   } catch (error) {
     if (error instanceof ContactDuplicateError) {
       const parsed = parseCreateContactForm(formData);
-      return duplicateWarningState(error, {
+      return finish(request, duplicateWarningState(error, {
         actorId: actor.userId,
         operation: "create",
         submission: parsed.input,
-      });
+      }), { actorId: actor.userId });
     }
-    return knownErrorState(error) ?? unexpectedErrorState("create", error, actor.userId);
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
@@ -199,7 +239,8 @@ export async function updateContactAction(
   _state: ContactFormState,
   formData: FormData,
 ): Promise<ContactFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("update_contact", "contact");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -219,7 +260,13 @@ export async function updateContactAction(
         parsed.confirmationToken,
         binding,
       );
-      if (!verified) return invalidConfirmationState();
+      if (!verified) {
+        return finish(request, invalidConfirmationState(), {
+          actorId: actor.userId,
+          resourceId: parsed.contactId,
+          outcome: "invalid_confirmation",
+        });
+      }
       const result = await service.updateConfirmedDuplicate(
         parsed.contactId,
         parsed.input,
@@ -238,25 +285,38 @@ export async function updateContactAction(
 
     revalidatePath("/contacts");
     revalidatePath(`/contacts/${contactId}`);
-    return {
+    return finish(request, {
       status: alreadyProcessed ? "already_processed" : "success",
       message: alreadyProcessed
         ? "This confirmed contact update was already applied."
         : "Contact updated successfully.",
       contactId,
       redirectTo: `/contacts/${contactId}`,
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: contactId,
+      outcome: alreadyProcessed ? "already_applied" : "succeeded",
+    });
   } catch (error) {
     if (error instanceof ContactDuplicateError) {
       const parsed = parseUpdateContactForm(formData);
-      return duplicateWarningState(error, {
+      return finish(request, duplicateWarningState(error, {
         actorId: actor.userId,
         operation: "update",
         contactId: parsed.contactId,
         submission: parsed.input,
+      }), {
+        actorId: actor.userId,
+        resourceId: parsed.contactId,
       });
     }
-    return knownErrorState(error) ?? unexpectedErrorState("update", error, actor.userId);
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }
 
@@ -264,7 +324,8 @@ export async function softDeleteContactAction(
   _state: ContactFormState,
   formData: FormData,
 ): Promise<ContactFormState> {
-  const resolved = await mutationContext();
+  const request = createMutationRequest("archive_contact", "contact");
+  const resolved = await mutationContext(request);
   if ("state" in resolved) return resolved.state;
   const { actor, service } = resolved.context;
 
@@ -273,13 +334,22 @@ export async function softDeleteContactAction(
     await service.softDelete(parsed.contactId, actor);
     revalidatePath("/contacts");
     revalidatePath(`/contacts/${parsed.contactId}`);
-    return {
+    return finish(request, {
       status: "success",
       message: "Contact archived successfully.",
       contactId: parsed.contactId,
       redirectTo: "/contacts",
-    };
+    }, {
+      actorId: actor.userId,
+      resourceId: parsed.contactId,
+    });
   } catch (error) {
-    return knownErrorState(error) ?? unexpectedErrorState("soft_delete", error, actor.userId);
+    const known = knownErrorState(error);
+    if (known) return finish(request, known, { actorId: actor.userId });
+    logMutationOutcome(request, "unexpected", {
+      actorId: actor.userId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return unexpectedErrorState();
   }
 }

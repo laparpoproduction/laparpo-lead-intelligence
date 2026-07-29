@@ -1,6 +1,7 @@
 import { appRoleSchema } from "@/lib/auth/permissions";
 import { getApplicationMode } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
+import type { MutationRequest } from "@/lib/mutation-audit";
 import { SupabaseLeadRepository } from "./lead.repository";
 import { LeadService } from "./lead.service";
 import type { LeadActor } from "./lead.types";
@@ -23,12 +24,14 @@ export type LeadMutationContext = {
   service: LeadService;
 };
 
-export async function createLeadMutationContext(): Promise<LeadMutationContext> {
+export async function createLeadMutationContext(
+  mutationRequest?: MutationRequest,
+): Promise<LeadMutationContext> {
   if (getApplicationMode() !== "configured") {
     throw new LeadMutationAuthError("unavailable");
   }
 
-  const supabase = await createClient();
+  const supabase = await createClient({ mutationRequest });
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     throw new LeadMutationAuthError("unauthenticated");
