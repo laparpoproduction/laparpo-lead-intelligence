@@ -49,6 +49,8 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `MUTATION_AUDIT_CORRELATION_SECRET` with at least 32 random characters,
      matching the protected private database secret described in the deployment
      runbook
+   - optional `OPENAI_API_KEY` to enable Company intelligence and optional
+     allow-listed `OPENAI_MODEL` (`gpt-5.6-terra` or `gpt-5.6-luna`)
 5. Apply **every** migration currently present in `supabase/migrations/` in
    filename order. The directory, not this README, is the migration source of
    truth. Do not select only a historical subset. Follow the
@@ -83,7 +85,8 @@ production, is visibly labelled and cannot create a real mutation context.
 | `CONTACT_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for contact mutations | Signs namespaced, short-lived Contact confirmation tokens; use at least 32 random characters |
 | `LEAD_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for lead mutations | Signs namespaced, short-lived lead confirmation tokens; use at least 32 random characters |
 | `MUTATION_AUDIT_CORRELATION_SECRET` | Server only | Yes for production mutations | Signs short-lived request correlation sent only by the server Supabase client; must match the protected private database secret |
-| `OPENAI_API_KEY` | Server only | No | Reserved for a later AI sprint |
+| `OPENAI_API_KEY` | Server only | No | Enables the optional read-only Company intelligence action |
+| `OPENAI_MODEL` | Server only | No | Allow-listed Company intelligence model; defaults safely to `gpt-5.6-terra` |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
@@ -166,7 +169,49 @@ name or domain search, company type, industry, city and state filters, safe sort
 and deterministic 25-record server pagination. Empty and invalid parameters are
 canonicalized, filter changes reset to page one, and pagination links preserve the
 active query. Company rows open a protected details route with a verified-record
-placeholder; timeline, analytics and contact workflows remain separately scoped.
+workspace and an opt-in transient Company intelligence section; timeline,
+analytics and contact workflows remain separately scoped.
+
+### AI Phase 1A: public Company intelligence
+
+The protected Company detail workspace can generate a concise business summary,
+business signals, data-quality gaps and non-binding next-step suggestions. It is
+a server-only read/analyze/recommend flow:
+
+1. the Server Action resolves the authenticated active actor;
+2. the existing Company service and RLS establish access to the target ID;
+3. an explicit GREEN projection selects only legal/display name, Company type,
+   industry, description, city, state, country, estimated branch count, website
+   URL, source URL and source type;
+4. the official OpenAI SDK calls the Responses API with a fixed prompt,
+   Structured Outputs, `store: false`, an allow-listed model, bounded output,
+   a 20-second timeout and no automatic retry; and
+5. Zod validates the returned object again before the transient result reaches
+   the UI.
+
+The browser supplies only the target Company ID. It cannot supply Company
+content, a model name, tools or authority. Company URLs are opaque untrusted
+strings: this feature never fetches, browses, verifies, links or dereferences
+them. No OpenAI web search, function tool, MCP, service-role Supabase client,
+database write, cache revalidation, AI history or H7 mutation event is involved.
+Demo and misconfigured modes cannot call the provider.
+
+Contacts, emails, phone/WhatsApp values, Leads, Activities, notes, Profile data,
+auth/session data, audit data, confirmation values and secrets are excluded from
+the model request. Requests set `store: false`, which disables Responses
+application-state storage for this use; it does not by itself override provider
+abuse-monitoring retention or the organization's API data controls. Production
+use still requires approval of the provider terms and project data settings.
+
+The implementation applies a five-second per-user cooldown and five requests per
+minute within one application runtime, caps input fields and structured output,
+and records only safe metadata such as request/resource IDs, model, duration and
+token counts. It never logs prompts, Company payloads, generated prose, provider
+raw responses or provider errors. This local limiter is deliberately not
+presented as durable or distributed. Before broad AI production rollout,
+configure provider project spend/rate controls and alerts, add a distributed
+limiter, retain privacy-safe application logs, and complete TEST-010's
+authenticated database-backed browser journey.
 
 ### Contacts database foundation
 
@@ -303,7 +348,8 @@ metadata hardening; Companies, Contacts, Leads and Lead Activities; conversion,
 retry, concurrency, immutable ledger and restore behavior; and Opportunity
 list/detail/pipeline, CAS and Won/Lost concurrency. Playwright covers browser
 behavior. This summary is categorical: the workflow itself is authoritative for
-the exact current test steps.
+the exact current test steps. Company intelligence tests use fakes and captured
+request objects; CI never needs `OPENAI_API_KEY` and never calls OpenAI.
 
 ## Manual test checklist
 
@@ -325,11 +371,16 @@ the exact current test steps.
     confirm or revise it, open the details route, and archive as management.
 13. Search and filter Contacts, change sorting, navigate pages, refresh the page
     and confirm the canonical URL restores the same result state.
+14. In controlled staging with an approved OpenAI project, generate Company
+    intelligence for an accessible Company, verify the result is labelled
+    non-binding and transient, and confirm an inaccessible Company cannot invoke
+    the provider. Do not use Contact PII or private notes.
 
 ## Known limitations
 
-- The company details route is a protected placeholder only; timeline, analytics
-  and contact workflows are not implemented.
+- The Company details route includes the verified profile and transient public
+  Company intelligence, but timeline, analytics and Contact workflows are not
+  implemented.
 - Company and assignee controls use validated UUID inputs. Bounded searchable
   selectors and profile display names remain deferred to avoid full-table reads.
 - Contact confirmation ledger cleanup/retention automation is not yet scheduled.
@@ -337,5 +388,8 @@ the exact current test steps.
   Opportunity list/detail/pipeline workspace are implemented. Quotations,
   finance workflows and follow-up reminder automation are not implemented.
 - Account invitation, password reset and role-management screens are not implemented.
-- Automated discovery, OpenAI enrichment, external scraping and scheduled jobs are not implemented.
+- Company intelligence does not persist, bulk-process, discover, scrape, browse,
+  ingest websites, process Contact PII or mutate CRM data. Durable distributed
+  AI rate limiting and TEST-010 remain gates before broad AI production rollout.
+- External discovery, web ingestion and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders.

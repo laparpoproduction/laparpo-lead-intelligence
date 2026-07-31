@@ -34,6 +34,21 @@ verify all of the following:
   Verify matching configuration without printing either value. A missing,
   blank, short, duplicated or mismatched value is a deployment failure: signed
   application mutations deliberately fail closed rather than lose correlation.
+- If optional Company intelligence will be enabled, `OPENAI_API_KEY` is present
+  only in the server runtime and `OPENAI_MODEL` is absent or one of
+  `gpt-5.6-terra` and `gpt-5.6-luna`. Do not expose either through
+  `NEXT_PUBLIC_`, build output, logs or screenshots. The rest of the CRM must
+  remain deployable when AI is not configured.
+- Before enabling Company intelligence for production, approve the OpenAI API
+  data-processing terms and project abuse-monitoring/data-retention settings;
+  configure project spend limits, usage alerts and provider rate controls; and
+  configure a retained privacy-safe structured-log sink. `store: false`
+  prevents Responses application-state storage for this request but is not a
+  universal zero-retention claim.
+- Broad AI production rollout additionally requires a durable distributed rate
+  limiter and TEST-010's authenticated database-backed browser journey. The
+  current in-runtime cooldown/window is defense-in-depth for a controlled first
+  slice, not a global quota.
 - `LAPARPO_DEMO_MODE` is unset or exactly `false`. It must never be `true` in
   production. Missing, partial, blank or invalid Supabase configuration is a
   deployment failure, not a reason to enter demo mode.
@@ -219,6 +234,21 @@ In controlled staging, confirm:
 - Companies, Contacts, Leads, Lead Activities and Opportunity
   list/detail/pipeline reads work for authorized roles.
 
+If Company intelligence is enabled in this release, also confirm:
+
+- an active authorized user can explicitly generate a transient recommendation
+  for one accessible Company and the result disappears after refresh;
+- inaccessible, archived and malformed Company IDs use the same non-enumerating
+  failure behavior and do not call the provider;
+- Demo and misconfigured modes do not call OpenAI;
+- the request contains only the documented GREEN Company projection and no
+  Contact, Lead, Activity, note, auth/session, audit or secret data;
+- Company website/source values remain opaque strings and are never fetched;
+- prompts, Company payloads, output prose, provider raw errors and API keys are
+  absent from application logs; and
+- no database row, H7 audit event, AI history or other persistent artifact is
+  created by generation.
+
 The database audit trail is authoritative for successful committed mutations
 only. Its event is written in the business transaction and therefore rolls back
 when that transaction fails. Application logs use the same server-generated
@@ -234,7 +264,10 @@ After application deployment, perform non-destructive production checks:
   identity exists; otherwise rely on the controlled staging proof;
 - the UI is not labelled as demo and no configuration-failure page appears;
 - authorized basic reads work for Companies, Contacts and Leads;
-- authorized Opportunity list, detail and pipeline reads work; and
+- authorized Opportunity list, detail and pipeline reads work;
+- if enabled, authorized Company intelligence generation works without changing
+  CRM data, while an environment without `OPENAI_API_KEY` shows the safe
+  unavailable state; and
 - logs contain no migration, authentication, configuration or database errors
   and expose no secret values. Mutation logs may contain request IDs and
   resource IDs, while database audit evidence contains changed field names;
