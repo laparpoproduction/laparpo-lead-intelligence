@@ -5,7 +5,7 @@ const urlLikePattern =
 const browsingClaimPattern =
   /\b(?:i|we)\s+(?:visited|browsed|inspected|checked|verified|opened)\s+(?:the\s+)?(?:website|url|link|page)\b/i;
 const directMutationPattern =
-  /\b(?:create\s+(?:this\s+)?lead|mark\s+(?:this\s+)?opportunity\s+(?:won|lost)|send\s+(?:a\s+)?whatsapp|update\s+(?:this\s+)?company)\b/i;
+  /\b(?:create\s+(?:(?:this|an?)\s+)?(?:lead|opportunity)|mark\s+(?:this\s+)?opportunity\s+(?:won|lost)|set\s+(?:the\s+)?lead\s+status\s+to\s+\w+|contact\s+\S+\s+at\s+\S+|send\s+(?:a\s+)?whatsapp|update\s+(?:this\s+)?company)\b/i;
 
 function boundedText(max: number) {
   return z

@@ -95,9 +95,16 @@ function IntelligenceResult({
           items={result.recommendedNextSteps}
         />
       </div>
-      <p className="text-xs font-bold uppercase tracking-[0.08em] text-zinc-500">
-        Confidence: {result.confidence}
-      </p>
+      <div className="text-xs text-zinc-500">
+        <p className="font-bold uppercase tracking-[0.08em]">
+          Confidence: {result.confidence}
+        </p>
+        <p className="mt-1 max-w-3xl leading-5">
+          Confidence reflects how well this recommendation is supported by the
+          available Company metadata. It is not a sales probability or external
+          verification.
+        </p>
+      </div>
     </div>
   );
 }

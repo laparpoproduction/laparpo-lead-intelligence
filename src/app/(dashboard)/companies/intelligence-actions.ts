@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { ZodError } from "zod";
 import { companyIntelligenceRateLimiter } from "@/lib/ai/company-intelligence.rate-limit";
+import { CompanyIntelligenceInputTooLargeError } from "@/lib/ai/company-intelligence.input";
 import {
   CompanyIntelligenceProviderError,
   CompanyIntelligenceProviderRefusalError,
@@ -33,7 +34,8 @@ function safeFailure(
   >,
 ): CompanyIntelligenceActionState {
   const messages: Record<typeof status, string> = {
-    validation_error: "The Company request was invalid.",
+    validation_error:
+      "The available Company metadata exceeds the safe AI input limit.",
     permission_error: "Sign in with an active account to use Company intelligence.",
     not_found: "Company intelligence is unavailable for this record.",
     ai_not_configured: "Company intelligence is not configured for this environment.",
@@ -152,6 +154,16 @@ export async function generateCompanyIntelligenceAction(
         companyId,
       });
       return safeFailure("not_found");
+    }
+    if (error instanceof CompanyIntelligenceInputTooLargeError) {
+      logOutcome("warn", requestId, "input_rejected", {
+        actorId: actor.userId,
+        companyId,
+        limitCategory: error.category,
+        actualSize: error.actualSize,
+        limit: error.limit,
+      });
+      return safeFailure("validation_error");
     }
     if (
       error instanceof InvalidCompanyIntelligenceOutputError ||

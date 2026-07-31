@@ -52,6 +52,11 @@ describe("Company intelligence UI", () => {
       screen.getByRole("heading", { name: "Recommended next steps" }),
     ).toBeDefined();
     expect(screen.getByText("Confidence: medium")).toBeDefined();
+    expect(
+      screen.getByText(
+        "Confidence reflects how well this recommendation is supported by the available Company metadata. It is not a sales probability or external verification.",
+      ),
+    ).toBeDefined();
     expect(document.querySelector('input[name="companyId"]')?.getAttribute("value")).toBe(
       companyId,
     );

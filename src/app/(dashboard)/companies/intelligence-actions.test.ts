@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyIntelligenceService } from "@/lib/ai/company-intelligence.service";
+import { CompanyIntelligenceInputTooLargeError } from "@/lib/ai/company-intelligence.input";
 import {
   CompanyNotFoundError,
   CompanyPermissionError,
@@ -101,7 +102,7 @@ describe("Generate Company intelligence action", () => {
     });
     expect(getById).toHaveBeenCalledWith(companyId, actor);
     expect(generate).toHaveBeenCalledWith(
-      companyIntelligenceEvaluationFixtures.populatedFnb,
+      companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
     );
     const serializedProjection = JSON.stringify(generate.mock.calls[0]?.[0]);
     expect(serializedProjection).not.toContain("client-controlled-company");
@@ -205,6 +206,37 @@ describe("Generate Company intelligence action", () => {
     expect(serializedLogs).not.toContain("sk-sensitive");
     expect(serializedLogs).not.toContain("raw-provider-secret");
     expect(serializedLogs).not.toContain(JSON.stringify(companyFixture));
+  });
+
+  it("returns a safe oversized-input error and logs only size metadata", async () => {
+    const oversizedSentinel = "oversized-sensitive-company-description";
+    getById.mockResolvedValueOnce({
+      ...companyFixture,
+      description: oversizedSentinel.repeat(100),
+    });
+    generate.mockRejectedValueOnce(
+      new CompanyIntelligenceInputTooLargeError("description", 2_100, 2_000),
+    );
+
+    const state = await generateCompanyIntelligenceAction(
+      initialCompanyIntelligenceActionState,
+      form(),
+    );
+
+    expect(state).toEqual({
+      status: "validation_error",
+      message:
+        "The available Company metadata exceeds the safe AI input limit.",
+    });
+    const serializedLogs = JSON.stringify([
+      ...vi.mocked(logger.info).mock.calls,
+      ...vi.mocked(logger.warn).mock.calls,
+      ...vi.mocked(logger.error).mock.calls,
+    ]);
+    expect(serializedLogs).toContain('"limitCategory":"description"');
+    expect(serializedLogs).toContain('"actualSize":2100');
+    expect(serializedLogs).not.toContain(oversizedSentinel);
+    expect(serializedLogs).not.toContain("oversized-sensitive");
   });
 
   it("rejects invalid target IDs without a provider call", async () => {

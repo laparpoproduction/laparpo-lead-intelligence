@@ -54,7 +54,7 @@ describe("OpenAI Company intelligence provider", () => {
       client as never,
     );
     const request = buildCompanyIntelligenceRequest(
-      companyIntelligenceEvaluationFixtures.populatedFnb,
+      companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
       "gpt-5.6-terra",
     );
 
@@ -92,7 +92,7 @@ describe("OpenAI Company intelligence provider", () => {
     await expect(
       provider.generate(
         buildCompanyIntelligenceRequest(
-          companyIntelligenceEvaluationFixtures.populatedFnb,
+          companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
           "gpt-5.6-terra",
         ),
       ),
@@ -101,7 +101,7 @@ describe("OpenAI Company intelligence provider", () => {
 
   it("maps timeouts and rate limits to narrow safe error codes", async () => {
     const request = buildCompanyIntelligenceRequest(
-      companyIntelligenceEvaluationFixtures.populatedFnb,
+      companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
       "gpt-5.6-terra",
     );
     const timeoutClient = fakeClient(null);

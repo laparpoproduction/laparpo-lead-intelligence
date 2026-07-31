@@ -183,11 +183,20 @@ a server-only read/analyze/recommend flow:
 3. an explicit GREEN projection selects only legal/display name, Company type,
    industry, description, city, state, country, estimated branch count, website
    URL, source URL and source type;
-4. the official OpenAI SDK calls the Responses API with a fixed prompt,
+4. an AI-specific trust-boundary validator rejects oversized fields and rejects
+   serialized Company metadata above 8,192 UTF-8 bytes before provider invocation;
+5. the official OpenAI SDK calls the Responses API with a fixed prompt,
    Structured Outputs, `store: false`, an allow-listed model, bounded output,
    a 20-second timeout and no automatic retry; and
-5. Zod validates the returned object again before the transient result reaches
+6. Zod validates the returned object again before the transient result reaches
    the UI.
+
+The per-field AI limits are: legal and display name 200 characters each,
+industry/city/state 120 each, description 2,000, country 2, website/source URL
+2,048 each, source type 100, and estimated branch count 100,000. Oversized input
+is rejected rather than truncated so meaning and provenance cannot be silently
+altered. Safe rejection logs contain only request/actor/Company IDs, the limit
+category, and size metadata—not the rejected value or serialized projection.
 
 The browser supplies only the target Company ID. It cannot supply Company
 content, a model name, tools or authority. Company URLs are opaque untrusted
@@ -212,6 +221,19 @@ presented as durable or distributed. Before broad AI production rollout,
 configure provider project spend/rate controls and alerts, add a distributed
 limiter, retain privacy-safe application logs, and complete TEST-010's
 authenticated database-backed browser journey.
+
+`confidence` means how strongly the recommendation is supported by the Company
+metadata supplied for that request. It is not external verification, sales or
+conversion probability, a Lead score, Opportunity probability, financial
+confidence, or certainty that the Company will buy. Sparse or ambiguous metadata
+must lower confidence.
+
+Deterministic CI uses provider stubs and a distinct A–J synthetic evaluation
+matrix for grounding, invented facts, missing-field gaps, non-binding
+recommendations and confidence calibration. It makes no live OpenAI calls and
+does not guarantee live-model quality. The controlled evaluation record and
+manual Terra procedure are in
+[`docs/ai-company-intelligence-quality-evaluation.md`](docs/ai-company-intelligence-quality-evaluation.md).
 
 ### Contacts database foundation
 

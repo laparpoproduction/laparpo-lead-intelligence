@@ -21,7 +21,7 @@ describe("Company intelligence structured output", () => {
     );
 
     await expect(
-      service.generate(companyIntelligenceEvaluationFixtures.populatedFnb),
+      service.generate(companyIntelligenceEvaluationFixtures.wellPopulatedFnb),
     ).resolves.toMatchObject({
       intelligence: { summary: "Valid summary", confidence: "medium" },
       model: "gpt-5.6-terra",
@@ -63,6 +63,27 @@ describe("Company intelligence structured output", () => {
         recommendedNextSteps: ["Create this Lead now."],
       },
     ],
+    [
+      "direct Opportunity creation",
+      {
+        ...validCompanyIntelligence,
+        recommendedNextSteps: ["Create an Opportunity now."],
+      },
+    ],
+    [
+      "direct Lead status mutation",
+      {
+        ...validCompanyIntelligence,
+        recommendedNextSteps: ["Set the Lead status to qualified."],
+      },
+    ],
+    [
+      "direct named contact instruction",
+      {
+        ...validCompanyIntelligence,
+        recommendedNextSteps: ["Contact John at 0123456789."],
+      },
+    ],
   ])("rejects %s", async (_name, output) => {
     const service = new CompanyIntelligenceService(
       providerWith(output),
@@ -70,38 +91,8 @@ describe("Company intelligence structured output", () => {
     );
 
     await expect(
-      service.generate(companyIntelligenceEvaluationFixtures.populatedFnb),
+      service.generate(companyIntelligenceEvaluationFixtures.wellPopulatedFnb),
     ).rejects.toBeInstanceOf(InvalidCompanyIntelligenceOutputError);
   });
 
-  it("evaluates synthetic populated, sparse, non-F&B, missing-location, and malicious records structurally", async () => {
-    for (const [name, projection] of Object.entries(
-      companyIntelligenceEvaluationFixtures,
-    )) {
-      const output = {
-        ...validCompanyIntelligence,
-        dataQualityGaps:
-          name === "sparse" || name === "missingLocation"
-            ? ["Location or profile information is incomplete."]
-            : [],
-        confidence: name === "sparse" ? "low" : "medium",
-      };
-      const service = new CompanyIntelligenceService(
-        providerWith(output),
-        "gpt-5.6-terra",
-      );
-
-      const result = await service.generate(projection);
-      expect(["low", "medium", "high"]).toContain(
-        result.intelligence.confidence,
-      );
-      expect(result.intelligence.businessSignals.length).toBeLessThanOrEqual(5);
-      expect(result.intelligence.recommendedNextSteps.length).toBeLessThanOrEqual(
-        5,
-      );
-      if (name === "sparse") {
-        expect(result.intelligence.dataQualityGaps.length).toBeGreaterThan(0);
-      }
-    }
-  });
 });

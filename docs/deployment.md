@@ -49,6 +49,15 @@ verify all of the following:
   limiter and TEST-010's authenticated database-backed browser journey. The
   current in-runtime cooldown/window is defense-in-depth for a controlled first
   slice, not a global quota.
+- Company intelligence rejects any AI-bound field above its documented
+  per-field limit and rejects serialized Company metadata above 8,192 UTF-8
+  bytes before provider invocation. It never silently truncates provenance.
+- Confidence is recommendation-support confidence based only on supplied
+  Company metadata. It is not external verification, sales probability, Lead
+  score, Opportunity probability or financial confidence.
+- Deterministic CI uses provider stubs and does not prove live-model quality.
+  Any Terra evaluation must be an explicit manual run using synthetic GREEN
+  fixtures only; ordinary tests, builds and Playwright must remain offline.
 - `LAPARPO_DEMO_MODE` is unset or exactly `false`. It must never be `true` in
   production. Missing, partial, blank or invalid Supabase configuration is a
   deployment failure, not a reason to enter demo mode.
