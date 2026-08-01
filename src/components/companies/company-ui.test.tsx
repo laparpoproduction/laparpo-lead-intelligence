@@ -43,6 +43,9 @@ vi.mock("@/app/(dashboard)/companies/actions", () => ({
   updateCompanyAction: vi.fn(),
   softDeleteCompanyAction: vi.fn(),
 }));
+vi.mock("@/app/(dashboard)/companies/intelligence-actions", () => ({
+  generateCompanyIntelligenceAction: vi.fn().mockResolvedValue({ status: "idle" }),
+}));
 
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function showModal() {

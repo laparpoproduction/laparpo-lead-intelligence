@@ -14,7 +14,8 @@ const publicEnvSchema = z.object({
 });
 
 const serverEnvSchema = z.object({
-  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_API_KEY: z.string().trim().min(1).optional(),
+  OPENAI_MODEL: z.string().trim().min(1).optional(),
   COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   CONTACT_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   LEAD_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
@@ -207,7 +208,8 @@ export function getPublicEnv(): PublicEnv {
 
 export function getServerEnv(): ServerEnv {
   const env = serverEnvSchema.parse({
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY || undefined,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY?.trim() || undefined,
+    OPENAI_MODEL: process.env.OPENAI_MODEL?.trim() || undefined,
     COMPANY_DUPLICATE_CONFIRMATION_SECRET:
       process.env.COMPANY_DUPLICATE_CONFIRMATION_SECRET || undefined,
     CONTACT_DUPLICATE_CONFIRMATION_SECRET:

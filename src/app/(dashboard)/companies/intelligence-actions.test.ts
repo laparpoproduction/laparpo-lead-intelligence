@@ -1,0 +1,254 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CompanyIntelligenceService } from "@/lib/ai/company-intelligence.service";
+import { CompanyIntelligenceInputTooLargeError } from "@/lib/ai/company-intelligence.input";
+import {
+  CompanyNotFoundError,
+  CompanyPermissionError,
+  type CompanyService,
+} from "@/lib/companies/company.service";
+import {
+  CompanyMutationAuthError,
+  createCompanyMutationContext,
+} from "@/lib/companies/company.server";
+import {
+  companyFixture,
+  companyId,
+  userId,
+} from "@/lib/companies/company.test-fixtures";
+import { getApplicationMode } from "@/lib/env";
+import { logger } from "@/lib/logger";
+import { createCompanyIntelligenceService } from "@/lib/ai/company-intelligence.server";
+import { companyIntelligenceRateLimiter } from "@/lib/ai/company-intelligence.rate-limit";
+import {
+  companyIntelligenceEvaluationFixtures,
+  validCompanyIntelligence,
+} from "@/lib/ai/company-intelligence.test-fixtures";
+import { generateCompanyIntelligenceAction } from "./intelligence-actions";
+import { initialCompanyIntelligenceActionState } from "./intelligence-state";
+
+vi.mock("@/lib/env", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/env")>();
+  return { ...actual, getApplicationMode: vi.fn() };
+});
+vi.mock("@/lib/companies/company.server", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/companies/company.server")>();
+  return { ...actual, createCompanyMutationContext: vi.fn() };
+});
+vi.mock("@/lib/ai/company-intelligence.server", () => ({
+  createCompanyIntelligenceService: vi.fn(),
+}));
+vi.mock("@/lib/ai/company-intelligence.rate-limit", () => ({
+  companyIntelligenceRateLimiter: { consume: vi.fn() },
+}));
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    debug: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
+}));
+
+const actor = {
+  userId,
+  role: "sales_manager" as const,
+  isActive: true,
+};
+const getById = vi.fn();
+const generate = vi.fn();
+
+function form(id = companyId): FormData {
+  const value = new FormData();
+  value.set("companyId", id);
+  return value;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getApplicationMode).mockReturnValue("configured");
+  getById.mockResolvedValue(companyFixture);
+  vi.mocked(createCompanyMutationContext).mockResolvedValue({
+    actor,
+    service: { getById } as unknown as CompanyService,
+  });
+  generate.mockResolvedValue({
+    intelligence: validCompanyIntelligence,
+    model: "gpt-5.6-terra",
+    usage: { inputTokens: 100, outputTokens: 40, totalTokens: 140 },
+  });
+  vi.mocked(createCompanyIntelligenceService).mockReturnValue({
+    generate,
+  } as unknown as CompanyIntelligenceService);
+  vi.mocked(companyIntelligenceRateLimiter.consume).mockReturnValue(true);
+});
+
+describe("Generate Company intelligence action", () => {
+  it("retrieves the target server-side under existing authorization and sends only the GREEN projection", async () => {
+    const submitted = form();
+    submitted.set("displayName", "client-controlled-company");
+    submitted.set("publicEmail", "forbidden-email-sentinel@example.test");
+    submitted.set("role", "ceo_admin");
+    submitted.set("OPENAI_API_KEY", "forbidden-key-sentinel");
+
+    const state = await generateCompanyIntelligenceAction(
+      initialCompanyIntelligenceActionState,
+      submitted,
+    );
+
+    expect(state).toMatchObject({
+      status: "success",
+      intelligence: validCompanyIntelligence,
+    });
+    expect(getById).toHaveBeenCalledWith(companyId, actor);
+    expect(generate).toHaveBeenCalledWith(
+      companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
+    );
+    const serializedProjection = JSON.stringify(generate.mock.calls[0]?.[0]);
+    expect(serializedProjection).not.toContain("client-controlled-company");
+    expect(serializedProjection).not.toContain(
+      "forbidden-email-sentinel@example.test",
+    );
+    expect(serializedProjection).not.toContain("forbidden-key-sentinel");
+    expect(JSON.stringify(state)).not.toContain("fnb_business_profile");
+    expect(JSON.stringify(state)).not.toContain("websiteUrl");
+  });
+
+  it("does not call the provider for demo or misconfigured modes", async () => {
+    for (const mode of ["demo", "misconfigured"] as const) {
+      vi.mocked(getApplicationMode).mockReturnValueOnce(mode);
+      await expect(
+        generateCompanyIntelligenceAction(
+          initialCompanyIntelligenceActionState,
+          form(),
+        ),
+      ).resolves.toMatchObject({ status: "ai_not_configured" });
+    }
+
+    expect(createCompanyMutationContext).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("denies unauthenticated and inactive actors before Company retrieval", async () => {
+    vi.mocked(createCompanyMutationContext)
+      .mockRejectedValueOnce(new CompanyMutationAuthError("unauthenticated"))
+      .mockRejectedValueOnce(new CompanyMutationAuthError("inactive"));
+
+    await expect(
+      generateCompanyIntelligenceAction(
+        initialCompanyIntelligenceActionState,
+        form(),
+      ),
+    ).resolves.toMatchObject({ status: "permission_error" });
+    await expect(
+      generateCompanyIntelligenceAction(
+        initialCompanyIntelligenceActionState,
+        form(),
+      ),
+    ).resolves.toMatchObject({ status: "permission_error" });
+    expect(getById).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new CompanyPermissionError(),
+    new CompanyNotFoundError(),
+  ])("uses non-enumerating behavior for inaccessible Companies", async (error) => {
+    getById.mockRejectedValueOnce(error);
+
+    const state = await generateCompanyIntelligenceAction(
+      initialCompanyIntelligenceActionState,
+      form(),
+    );
+    expect(state).toMatchObject({
+      status: "not_found",
+      message: "Company intelligence is unavailable for this record.",
+    });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("fails safely when AI is not configured or the local limiter rejects the actor", async () => {
+    vi.mocked(createCompanyIntelligenceService).mockReturnValueOnce(null);
+    await expect(
+      generateCompanyIntelligenceAction(
+        initialCompanyIntelligenceActionState,
+        form(),
+      ),
+    ).resolves.toMatchObject({ status: "ai_not_configured" });
+
+    vi.mocked(companyIntelligenceRateLimiter.consume).mockReturnValueOnce(false);
+    await expect(
+      generateCompanyIntelligenceAction(
+        initialCompanyIntelligenceActionState,
+        form(),
+      ),
+    ).resolves.toMatchObject({ status: "rate_limited" });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("never exposes raw provider errors, prompts, or secrets in client state or logs", async () => {
+    generate.mockRejectedValueOnce(
+      new Error("raw-provider-secret OPENAI_API_KEY=sk-sensitive"),
+    );
+
+    const state = await generateCompanyIntelligenceAction(
+      initialCompanyIntelligenceActionState,
+      form(),
+    );
+    expect(state).toEqual({
+      status: "unexpected",
+      message: "Company intelligence could not be generated.",
+    });
+
+    const serializedLogs = JSON.stringify([
+      ...vi.mocked(logger.info).mock.calls,
+      ...vi.mocked(logger.warn).mock.calls,
+      ...vi.mocked(logger.error).mock.calls,
+    ]);
+    expect(serializedLogs).not.toContain("sk-sensitive");
+    expect(serializedLogs).not.toContain("raw-provider-secret");
+    expect(serializedLogs).not.toContain(JSON.stringify(companyFixture));
+  });
+
+  it("returns a safe oversized-input error and logs only size metadata", async () => {
+    const oversizedSentinel = "oversized-sensitive-company-description";
+    getById.mockResolvedValueOnce({
+      ...companyFixture,
+      description: oversizedSentinel.repeat(100),
+    });
+    generate.mockRejectedValueOnce(
+      new CompanyIntelligenceInputTooLargeError("description", 2_100, 2_000),
+    );
+
+    const state = await generateCompanyIntelligenceAction(
+      initialCompanyIntelligenceActionState,
+      form(),
+    );
+
+    expect(state).toEqual({
+      status: "validation_error",
+      message:
+        "The available Company metadata exceeds the safe AI input limit.",
+    });
+    const serializedLogs = JSON.stringify([
+      ...vi.mocked(logger.info).mock.calls,
+      ...vi.mocked(logger.warn).mock.calls,
+      ...vi.mocked(logger.error).mock.calls,
+    ]);
+    expect(serializedLogs).toContain('"limitCategory":"description"');
+    expect(serializedLogs).toContain('"actualSize":2100');
+    expect(serializedLogs).not.toContain(oversizedSentinel);
+    expect(serializedLogs).not.toContain("oversized-sensitive");
+  });
+
+  it("rejects invalid target IDs without a provider call", async () => {
+    await expect(
+      generateCompanyIntelligenceAction(
+        initialCompanyIntelligenceActionState,
+        form("not-a-uuid"),
+      ),
+    ).resolves.toMatchObject({ status: "not_found" });
+    expect(getById).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+});

@@ -1,4 +1,5 @@
 import { CompanyPageHeader } from "@/components/companies/company-page-header";
+import { CompanyIntelligence } from "@/components/companies/company-intelligence";
 import type { Company, CompanyType } from "@/lib/companies/company.types";
 
 const companyTypeLabels: Record<CompanyType, string> = {
@@ -53,6 +54,7 @@ export function CompanyDetailsPlaceholder({ company }: { company: Company }) {
           </p>
         </aside>
       </div>
+      <CompanyIntelligence companyId={company.id} />
     </section>
   );
 }
