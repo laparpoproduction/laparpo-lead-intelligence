@@ -27,14 +27,25 @@ semantic concepts and failure patterns rather than exact prose.
 | I | Long-but-valid input | Well-populated | Supplied sector/location retained after boundary validation | Incompatible type claims rejected | Present website/description/location not marked missing | Profile review suggested | Medium/high accepted |
 | J | Unicode business name | Well-populated | Malay/Chinese identity and location retained | Incompatible type claims rejected | Unicode name/description/location not marked missing | Multilingual identity preservation suggested | Medium/high accepted |
 
-The negative controls prove the harness detects:
+Fixture I serializes to exactly 7,583 UTF-8 bytes, or 92.57% of the 8,192-byte
+ceiling. Every field remains within its individual limit. The test proves the
+provider is called exactly once with the complete serialized projection unchanged
+and that no truncation occurs.
+
+The all-prose negative controls inspect the summary, every business signal, every
+data-quality gap and every recommendation. They prove the harness detects:
 
 - an agency described as an established food business;
 - a hotel assigned a fabricated restaurant-chain signal;
 - an invented Penang location when location is absent;
 - a claimed industry when industry is absent;
 - high confidence for sparse metadata;
-- fabricated revenue, employee count and market share;
+- fabricated named customers and named campaigns;
+- numeric and written-number employee counts;
+- fabricated revenue, market share and exact branch counts;
+- fabricated awards, external research, website verification and social-media
+  verification;
+- invented facts phrased inside recommendations;
 - false website/description gaps; and
 - a direct Opportunity-creation command.
 

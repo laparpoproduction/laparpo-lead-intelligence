@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   COMPANY_INTELLIGENCE_INPUT_LIMITS,
   COMPANY_INTELLIGENCE_MAX_INPUT_BYTES,
+  serializeCompanyIntelligenceInput,
 } from "./company-intelligence.input";
 import { CompanyIntelligenceService } from "./company-intelligence.service";
 import {
@@ -200,5 +201,58 @@ describe("Company intelligence input boundary", () => {
       category: "serializedInputBytes",
     });
     expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("sends Fixture I unchanged near the serialized byte ceiling", async () => {
+    const { generate, service } = serviceWithProviderSpy();
+    const fixture = companyIntelligenceEvaluationFixtures.longButValid;
+    const serialized = serializeCompanyIntelligenceInput(fixture);
+    const serializedBytes = Buffer.byteLength(serialized, "utf8");
+    const utilization = (serializedBytes / COMPANY_INTELLIGENCE_MAX_INPUT_BYTES) * 100;
+
+    expect(serializedBytes).toBe(7_583);
+    expect(serializedBytes).toBeGreaterThanOrEqual(7_500);
+    expect(serializedBytes).toBeLessThanOrEqual(
+      COMPANY_INTELLIGENCE_MAX_INPUT_BYTES,
+    );
+    expect(utilization).toBeCloseTo(92.57, 2);
+
+    for (const field of [
+      "legalName",
+      "displayName",
+      "industry",
+      "description",
+      "city",
+      "state",
+      "country",
+      "websiteUrl",
+      "sourceUrl",
+      "sourceType",
+    ] as const) {
+      const value = fixture[field];
+      if (value !== null) {
+        expect(Array.from(value).length).toBeLessThanOrEqual(
+          COMPANY_INTELLIGENCE_INPUT_LIMITS[field],
+        );
+      }
+    }
+    expect(fixture.estimatedBranchCount).toBeLessThanOrEqual(
+      COMPANY_INTELLIGENCE_INPUT_LIMITS.estimatedBranchCount,
+    );
+
+    await expect(service.generate(fixture)).resolves.toMatchObject({
+      intelligence: validCompanyIntelligence,
+    });
+    expect(generate).toHaveBeenCalledOnce();
+
+    const request = generate.mock.calls[0]?.[0];
+    expect(request).toBeDefined();
+    const userContent = request!.input[1].content;
+    const serializedAtProvider = userContent
+      .split("<company_data>\n")[1]
+      ?.split("\n</company_data>")[0];
+
+    expect(serializedAtProvider).toBe(serialized);
+    expect(JSON.parse(serializedAtProvider!)).toEqual(fixture);
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { containsDirectCrmOrContactCommand } from "./company-intelligence.output-safety";
 import { CompanyIntelligenceService } from "./company-intelligence.service";
 import { companyIntelligenceEvaluationFixtures } from "./company-intelligence.test-fixtures";
 import type {
@@ -23,39 +24,106 @@ type QualityCase = {
 };
 
 const globalInventedFactPatterns = [
-  /\b(?:annual )?revenue\b/i,
-  /\b\d+\s+employees?\b/i,
-  /\bmarket share\b/i,
-  /\bnamed customers?\b/i,
-  /\bnamed campaigns?\b/i,
-  /\baward(?:s|ed)?\b/i,
-  /\bexternally researched\b/i,
-  /\b(?:website|social media)\s+(?:is\s+)?verified\b/i,
+  {
+    category: "named customer",
+    pattern:
+      /\b[\p{L}\p{N}][\p{L}\p{N}'’&.-]*(?:\s+[\p{L}\p{N}][\p{L}\p{N}'’&.-]*){0,5}\s+(?:is|are)\s+(?:(?:a|an|the)\s+)?(?:customer|client)s?\b/iu,
+  },
+  {
+    category: "named campaign",
+    pattern:
+      /\b(?:the\s+)?[\p{L}\p{N}'’&.-]+(?:\s+[\p{L}\p{N}'’&.-]+){1,5}\s+campaign\s+(?:delivered|generated|achieved|reached|won|produced)\b/iu,
+  },
+  {
+    category: "numeric employee count",
+    pattern: /\b(?:has\s+|employs?\s+)?\d[\d,]*\s+employees?\b/iu,
+  },
+  {
+    category: "written-number employee count",
+    pattern:
+      /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)(?:[-\s]+(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand))*\s+employees?\b/iu,
+  },
+  {
+    category: "revenue",
+    pattern:
+      /\b(?:(?:annual\s+)?revenue\s+(?:is|was|of|totals?|reaches?)\s+(?:RM|MYR|USD|\$)\s*\d[\d,.]*(?:\s+(?:thousand|million|billion))?|(?:RM|MYR|USD|\$)\s*\d[\d,.]*(?:\s+(?:thousand|million|billion))?\s+(?:annual\s+)?revenue)\b/iu,
+  },
+  {
+    category: "market share",
+    pattern:
+      /\b(?:(?:has|holds|commands|owns)\s+(?:a\s+)?(?:leading|dominant|largest|\d+(?:\.\d+)?%?)?\s*market share|(?:leading|dominant|largest)\s+market share)\b/iu,
+  },
+  {
+    category: "awards",
+    pattern:
+      /\b(?:has|have)\s+(?:won|received|earned)\b[^.!?]{0,80}\bawards?\b/iu,
+  },
+  {
+    category: "external research",
+    pattern:
+      /\bexternal research\s+(?:confirms?|shows?|indicates?|establishes?|verifies?|found)\b/iu,
+  },
+  {
+    category: "website verification",
+    pattern:
+      /\b(?:the\s+)?website\s+(?:was|is|has\s+been)\s+verified\b/iu,
+  },
+  {
+    category: "social-media verification",
+    pattern:
+      /\b(?:the\s+)?social[- ]media(?:\s+presence)?\s+(?:was|is|has\s+been)\s+verified\b/iu,
+  },
 ];
 const suggestionPattern =
   /^(?:consider|review|explore|verify|assess|clarify|confirm|discuss|evaluate)\b/i;
-const mutationCommandPattern =
-  /\b(?:create (?:an? |this )?(?:lead|opportunity)|set (?:the )?lead status|mark (?:this )?opportunity|contact \S+ at|update (?:this )?company)\b/i;
 
 function joinedGroundingText(output: CompanyIntelligence): string {
   return [output.summary, ...output.businessSignals].join(" ");
 }
 
+function joinedProseText(output: CompanyIntelligence): string {
+  return [
+    output.summary,
+    ...output.businessSignals,
+    ...output.dataQualityGaps,
+    ...output.recommendedNextSteps,
+  ].join(" ");
+}
+
+function inventedFactFailures(
+  company: CompanyIntelligenceProjection,
+  output: CompanyIntelligence,
+): string[] {
+  const prose = joinedProseText(output);
+  const failures = globalInventedFactPatterns
+    .filter(({ pattern }) => pattern.test(prose))
+    .map(({ category }) => `invented fact: ${category}`);
+
+  if (
+    company.estimatedBranchCount === null &&
+    /\b\d+\s+(?:branches|locations|properties|offices)\b/iu.test(prose)
+  ) {
+    failures.push("invented fact: exact branch count");
+  }
+
+  return failures;
+}
+
 function semanticFailures(testCase: QualityCase): string[] {
   const failures: string[] = [];
   const groundingText = joinedGroundingText(testCase.output);
+  const proseText = joinedProseText(testCase.output);
   const gaps = testCase.output.dataQualityGaps.join(" ");
+
+  failures.push(...inventedFactFailures(testCase.company, testCase.output));
 
   for (const concept of testCase.expectedSummaryConcepts) {
     if (!concept.test(groundingText)) {
       failures.push(`missing grounded concept ${concept}`);
     }
   }
-  for (const concept of [
-    ...globalInventedFactPatterns,
-    ...testCase.forbiddenGroundingConcepts,
-  ]) {
-    if (concept.test(groundingText)) {
+  for (const concept of testCase.forbiddenGroundingConcepts) {
+    if (concept.test(proseText)) {
       failures.push(`invented or incompatible concept ${concept}`);
     }
   }
@@ -69,21 +137,51 @@ function semanticFailures(testCase: QualityCase): string[] {
     if (!suggestionPattern.test(recommendation)) {
       failures.push(`binding recommendation: ${recommendation}`);
     }
-    if (mutationCommandPattern.test(recommendation)) {
+    if (containsDirectCrmOrContactCommand(recommendation)) {
       failures.push(`CRM mutation command: ${recommendation}`);
     }
   }
   if (!testCase.acceptableConfidence.includes(testCase.output.confidence)) {
     failures.push(`miscalibrated confidence ${testCase.output.confidence}`);
   }
-  if (
-    testCase.company.estimatedBranchCount === null &&
-    /\b\d+\s+(?:branches|locations|properties|offices)\b/i.test(groundingText)
-  ) {
-    failures.push("invented exact branch count");
-  }
-
   return failures;
+}
+
+const hallucinationControls = [
+  ["named customer", "McDonald’s is a customer."],
+  [
+    "campaign",
+    "The Ramadan Mega Sale campaign delivered strong engagement.",
+  ],
+  ["numeric employee count", "The company has 50 employees."],
+  ["written-number employee count", "The company employs fifty employees."],
+  ["revenue", "Annual revenue is RM10 million."],
+  ["market share", "The Company has leading market share."],
+  ["awards", "The Company has won multiple industry awards."],
+  ["external research", "External research confirms regional leadership."],
+  ["website verification", "The website was verified yesterday."],
+  ["social-media verification", "The social-media presence was verified."],
+  [
+    "recommendation-field revenue",
+    "Consider using its RM10 million annual revenue in outreach.",
+  ],
+  ["exact branch count", "The Company operates 12 branches."],
+] as const;
+
+const proseLocations = [
+  "summary",
+  "businessSignals",
+  "dataQualityGaps",
+  "recommendedNextSteps",
+] as const;
+
+function injectProse(
+  output: CompanyIntelligence,
+  location: (typeof proseLocations)[number],
+  value: string,
+): CompanyIntelligence {
+  if (location === "summary") return { ...output, summary: value };
+  return { ...output, [location]: [value] };
 }
 
 const matrix: QualityCase[] = [
@@ -443,4 +541,19 @@ describe("Company intelligence synthetic grounding evaluation", () => {
       }),
     ).not.toEqual([]);
   });
+
+  it.each(
+    hallucinationControls.flatMap(([category, value]) =>
+      proseLocations.map((location) => ({ category, value, location })),
+    ),
+  )(
+    "detects $category when injected into $location",
+    ({ value, location }) => {
+      const sparse = matrix.find(({ id }) => id === "B")!;
+      const output = injectProse(sparse.output, location, value);
+
+      expect(inventedFactFailures(sparse.company, output)).not.toEqual([]);
+      expect(semanticFailures({ ...sparse, output })).not.toEqual([]);
+    },
+  );
 });

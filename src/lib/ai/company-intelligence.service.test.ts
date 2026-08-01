@@ -95,4 +95,21 @@ describe("Company intelligence structured output", () => {
     ).rejects.toBeInstanceOf(InvalidCompanyIntelligenceOutputError);
   });
 
+  it.each([
+    "Create the Opportunity now.",
+    "Update the Company now.",
+    "Set this Lead status to qualified.",
+    "Contact John Doe at 0123456789.",
+    "See example.dev/path for details.",
+    "See 192.0.2.1/path for details.",
+  ])("does not return a successful service result for: %s", async (unsafeText) => {
+    const service = new CompanyIntelligenceService(
+      providerWith({ ...validCompanyIntelligence, summary: unsafeText }),
+      "gpt-5.6-terra",
+    );
+
+    await expect(
+      service.generate(companyIntelligenceEvaluationFixtures.wellPopulatedFnb),
+    ).rejects.toBeInstanceOf(InvalidCompanyIntelligenceOutputError);
+  });
 });

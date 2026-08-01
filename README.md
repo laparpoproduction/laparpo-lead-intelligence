@@ -189,7 +189,8 @@ a server-only read/analyze/recommend flow:
    Structured Outputs, `store: false`, an allow-listed model, bounded output,
    a 20-second timeout and no automatic retry; and
 6. Zod validates the returned object again before the transient result reaches
-   the UI.
+   the UI, rejecting direct CRM/contact commands, generated URLs or network
+   destinations, and claims of external browsing or verification.
 
 The per-field AI limits are: legal and display name 200 characters each,
 industry/city/state 120 each, description 2,000, country 2, website/source URL
@@ -229,10 +230,11 @@ confidence, or certainty that the Company will buy. Sparse or ambiguous metadata
 must lower confidence.
 
 Deterministic CI uses provider stubs and a distinct A–J synthetic evaluation
-matrix for grounding, invented facts, missing-field gaps, non-binding
-recommendations and confidence calibration. It makes no live OpenAI calls and
-does not guarantee live-model quality. The controlled evaluation record and
-manual Terra procedure are in
+matrix for grounding, all-prose invented facts, missing-field gaps, non-binding
+recommendations and confidence calibration. The long-but-valid fixture reaches
+92.57% of the serialized input ceiling without truncation. CI makes no live
+OpenAI calls and does not guarantee live-model quality. The controlled evaluation
+record and manual Terra procedure are in
 [`docs/ai-company-intelligence-quality-evaluation.md`](docs/ai-company-intelligence-quality-evaluation.md).
 
 ### Contacts database foundation

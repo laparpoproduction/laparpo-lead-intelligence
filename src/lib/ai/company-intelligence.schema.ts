@@ -1,11 +1,9 @@
 import { z } from "zod";
-
-const urlLikePattern =
-  /\b(?:(?:https?|ftp|javascript|data|file|mailto):|www\.|[a-z0-9-]+\.(?:com|net|org|my|co|io|ai)(?:\b|\/))/i;
-const browsingClaimPattern =
-  /\b(?:i|we)\s+(?:visited|browsed|inspected|checked|verified|opened)\s+(?:the\s+)?(?:website|url|link|page)\b/i;
-const directMutationPattern =
-  /\b(?:create\s+(?:(?:this|an?)\s+)?(?:lead|opportunity)|mark\s+(?:this\s+)?opportunity\s+(?:won|lost)|set\s+(?:the\s+)?lead\s+status\s+to\s+\w+|contact\s+\S+\s+at\s+\S+|send\s+(?:a\s+)?whatsapp|update\s+(?:this\s+)?company)\b/i;
+import {
+  containsDirectCrmOrContactCommand,
+  containsExternalVerificationClaim,
+  containsGeneratedNetworkLocation,
+} from "./company-intelligence.output-safety";
 
 function boundedText(max: number) {
   return z
@@ -13,14 +11,14 @@ function boundedText(max: number) {
     .trim()
     .min(1)
     .max(max)
-    .refine((value) => !urlLikePattern.test(value), {
-      message: "AI output must not contain URLs",
+    .refine((value) => !containsGeneratedNetworkLocation(value), {
+      message: "AI output must not contain network destinations",
     })
-    .refine((value) => !browsingClaimPattern.test(value), {
-      message: "AI output must not claim external browsing",
+    .refine((value) => !containsExternalVerificationClaim(value), {
+      message: "AI output must not claim external browsing or verification",
     })
-    .refine((value) => !directMutationPattern.test(value), {
-      message: "AI output must not direct CRM mutations",
+    .refine((value) => !containsDirectCrmOrContactCommand(value), {
+      message: "AI output must not direct CRM mutations or contact",
     });
 }
 
