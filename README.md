@@ -174,9 +174,11 @@ analytics and contact workflows remain separately scoped.
 
 ### AI Phase 1A: public Company intelligence
 
-The protected Company detail workspace can generate a concise business summary,
-business signals, data-quality gaps and non-binding next-step suggestions. It is
-a server-only read/analyze/recommend flow:
+The protected Company detail workspace can generate evidence-bound Company
+intelligence. The model selects only allow-listed profile, business-signal,
+missing-field and recommendation codes; trusted application templates render the
+visible summary, signals, gaps and non-binding suggestions. It is a server-only
+read/analyze/recommend flow:
 
 1. the Server Action resolves the authenticated active actor;
 2. the existing Company service and RLS establish access to the target ID;
@@ -188,9 +190,22 @@ a server-only read/analyze/recommend flow:
 5. the official OpenAI SDK calls the Responses API with a fixed prompt,
    Structured Outputs, `store: false`, an allow-listed model, bounded output,
    a 20-second timeout and no automatic retry; and
-6. Zod validates the returned object again before the transient result reaches
-   the UI, rejecting direct CRM/contact commands, generated URLs or network
-   destinations, and claims of external browsing or verification.
+6. strict Zod schemas reject extra properties and anything outside the closed
+   enum contract;
+7. an application validator checks every selected code, gap, evidence reference
+   and confidence value against the actual GREEN projection; and
+8. the application renderer maps the validated codes to fixed text before the
+   transient result reaches the UI.
+
+The provider output has no arbitrary summary, signal, gap or recommendation text.
+Its evidence references are limited to the same 12 GREEN projection fields and
+all arrays are bounded. Profile assessment is one of
+`well_populated_public_profile`, `partially_populated_public_profile` or
+`sparse_public_profile`. Business and recommendation codes describe only supplied
+business categories, recorded metadata, possible partnership-review fit,
+clarification or human review. There is no code for a CRM mutation, contact
+instruction, generated destination, customer, campaign, revenue, employee count,
+award, market share or external verification.
 
 The per-field AI limits are: legal and display name 200 characters each,
 industry/city/state 120 each, description 2,000, country 2, website/source URL
@@ -216,8 +231,8 @@ use still requires approval of the provider terms and project data settings.
 The implementation applies a five-second per-user cooldown and five requests per
 minute within one application runtime, caps input fields and structured output,
 and records only safe metadata such as request/resource IDs, model, duration and
-token counts. It never logs prompts, Company payloads, generated prose, provider
-raw responses or provider errors. This local limiter is deliberately not
+token counts. It never logs prompts, Company payloads, structured model output,
+rendered text, provider raw responses or provider errors. This local limiter is deliberately not
 presented as durable or distributed. Before broad AI production rollout,
 configure provider project spend/rate controls and alerts, add a distributed
 limiter, retain privacy-safe application logs, and complete TEST-010's
@@ -230,8 +245,10 @@ confidence, or certainty that the Company will buy. Sparse or ambiguous metadata
 must lower confidence.
 
 Deterministic CI uses provider stubs and a distinct A–J synthetic evaluation
-matrix for grounding, all-prose invented facts, missing-field gaps, non-binding
-recommendations and confidence calibration. The long-but-valid fixture reaches
+matrix for accepted and incompatible codes, evidence consistency, missing-field
+consistency, deterministic rendering and confidence calibration. The closed
+contract cannot represent unsupported customer, campaign, financial, staffing,
+award, market-share or external-verification claims. The long-but-valid fixture reaches
 92.57% of the serialized input ceiling without truncation. CI makes no live
 OpenAI calls and does not guarantee live-model quality. The controlled evaluation
 record and manual Terra procedure are in

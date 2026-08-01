@@ -15,7 +15,7 @@ import {
 import { buildCompanyIntelligenceRequest } from "./company-intelligence.prompt";
 import {
   companyIntelligenceEvaluationFixtures,
-  validCompanyIntelligence,
+  validCompanyIntelligenceOutput,
 } from "./company-intelligence.test-fixtures";
 
 function fakeClient(response: unknown) {
@@ -43,10 +43,10 @@ describe("OpenAI Company intelligence provider", () => {
       output: [
         {
           type: "message",
-          content: [{ type: "output_text", text: "structured", parsed: validCompanyIntelligence }],
+          content: [{ type: "output_text", text: "structured", parsed: validCompanyIntelligenceOutput }],
         },
       ],
-      output_parsed: validCompanyIntelligence,
+      output_parsed: validCompanyIntelligenceOutput,
       usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
     });
     const provider = new OpenAICompanyIntelligenceProvider(
@@ -59,7 +59,7 @@ describe("OpenAI Company intelligence provider", () => {
     );
 
     await expect(provider.generate(request)).resolves.toEqual({
-      output: validCompanyIntelligence,
+      output: validCompanyIntelligenceOutput,
       usage: { inputTokens: 100, outputTokens: 40, totalTokens: 140 },
     });
     const body = client.responses.parse.mock.calls[0]?.[0];
@@ -71,6 +71,11 @@ describe("OpenAI Company intelligence provider", () => {
     });
     expect(body).not.toHaveProperty("tools");
     expect(body.text.format.type).toBe("json_schema");
+    const format = JSON.stringify(body.text.format);
+    expect(format).toContain("profileAssessment");
+    expect(format).toContain("fnb_business_profile");
+    expect(format).toContain("review_public_company_profile");
+    expect(format).not.toContain('"summary"');
   });
 
   it("rejects a provider safety refusal without exposing its text", async () => {

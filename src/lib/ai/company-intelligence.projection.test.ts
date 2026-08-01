@@ -41,6 +41,12 @@ describe("Company intelligence GREEN projection", () => {
     expect(request.input[0].content).toContain(
       "Lower confidence when important Company metadata is missing",
     );
+    expect(request.input[0].content).toContain(
+      "Return only allow-listed codes, confidence, and GREEN evidence field references",
+    );
+    expect(request.input[0].content).toContain(
+      "Do not output prose, URLs, contact details, contact instructions, CRM commands",
+    );
     expect(request.input[1].role).toBe("user");
     expect(request.input[1].content).toContain("<company_data>");
     expect(request.input[1].content).toContain(

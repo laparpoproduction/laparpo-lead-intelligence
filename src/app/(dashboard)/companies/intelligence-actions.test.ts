@@ -110,6 +110,8 @@ describe("Generate Company intelligence action", () => {
       "forbidden-email-sentinel@example.test",
     );
     expect(serializedProjection).not.toContain("forbidden-key-sentinel");
+    expect(JSON.stringify(state)).not.toContain("fnb_business_profile");
+    expect(JSON.stringify(state)).not.toContain("websiteUrl");
   });
 
   it("does not call the provider for demo or misconfigured modes", async () => {

@@ -11,43 +11,42 @@ OpenAI calls; their evidence is deterministic and provider-stubbed.
 ## Deterministic A–J report
 
 The assertions live in
-`src/lib/ai/company-intelligence.quality-evaluation.test.ts`. They validate
-semantic concepts and failure patterns rather than exact prose.
+`src/lib/ai/company-intelligence.quality-evaluation.test.ts`. They validate the
+closed code/evidence contract and deterministic renderer. They do not compare or
+scan arbitrary model prose because the provider schema contains no prose field.
 
-| ID | Company category | Completeness | Grounded summary | Invented facts | Gap correctness | Recommendations | Confidence behavior |
+| ID | Company category | Profile code | Accepted signal | Rejected example | Gap behavior | Recommendation | Confidence behavior |
 |---|---|---|---|---|---|---|---|
-| A | Well-populated F&B | Well-populated | F&B and supplied Penang location retained | None accepted | No false website/description/location gap | Non-binding verification suggestion | Medium/high accepted |
-| B | Sparse F&B | Sparse | Only supplied F&B type treated as known | Established/location claims rejected | Industry, description, location and website gaps required | Human verification suggested | Low required |
-| C | Agency | Well-populated | Agency/advertising concepts required | F&B, restaurant and hotel claims rejected | Missing branch count recognized | Production-partner exploration suggested | Medium/high accepted |
-| D | Hotel | Well-populated | Hotel/hospitality and Melaka retained | Restaurant-chain claims rejected | No false core-field gap | Lifestyle-content assessment suggested | Medium/high accepted |
-| E | Non-F&B / other | Well-populated | Manufacturing and Kulim retained | F&B, hotel and agency claims rejected | No false core-field gap | Corporate case-study assessment suggested | Medium/high accepted |
-| F | Missing location | Partial | F&B retained without invented geography | Named Malaysian locations rejected | City/state/location gap required | Location clarification suggested | Low/medium accepted |
-| G | Missing industry | Partial | Industry treated as unknown | Known-industry claims rejected | Industry gap required; description/location/website not marked missing | Industry clarification suggested | Low/medium accepted |
-| H | Malicious metadata | Partial/unreliable | Only safe classification and uncertainty retained | Embedded secret/role/mutation text rejected | Unclear name/description/provenance recognized | Approved human verification suggested | Low required |
-| I | Long-but-valid input | Well-populated | Supplied sector/location retained after boundary validation | Incompatible type claims rejected | Present website/description/location not marked missing | Profile review suggested | Medium/high accepted |
-| J | Unicode business name | Well-populated | Malay/Chinese identity and location retained | Incompatible type claims rejected | Unicode name/description/location not marked missing | Multilingual identity preservation suggested | Medium/high accepted |
+| A | Well-populated F&B | Well populated | F&B/content fit | Agency | No false website gap | Content-fit assessment | High allowed |
+| B | Sparse F&B | Sparse | F&B only | Website present | Missing industry/description/location/website | Clarify industry/location | Low required |
+| C | Agency | Well populated | Agency/production fit | F&B | Missing branch count accepted | Production-fit assessment | High allowed |
+| D | Hotel | Well populated | Hotel/content fit | Agency | No false description gap | Content-fit assessment | High allowed |
+| E | Non-F&B / other | Well populated | Other profile | Content fit | No false city gap | Public-positioning review | High allowed |
+| F | Missing location | Partial | F&B | Location present | City/state gaps accepted | Clarify location | High rejected |
+| G | Missing industry | Partial | Description present | Agency | Industry gap accepted | Clarify industry | High rejected |
+| H | Malicious metadata | Partial/unreliable | Other profile | Website present | Invalid website/source gaps accepted | Public-profile review | Low required |
+| I | Long-but-valid input | Well populated | F&B/description/website | Agency | No false website gap | Public-positioning review | High allowed |
+| J | Unicode business name | Well populated | F&B/location | Hotel | No false description gap | Public-profile review | High allowed |
 
 Fixture I serializes to exactly 7,583 UTF-8 bytes, or 92.57% of the 8,192-byte
 ceiling. Every field remains within its individual limit. The test proves the
 provider is called exactly once with the complete serialized projection unchanged
 and that no truncation occurs.
 
-The all-prose negative controls inspect the summary, every business signal, every
-data-quality gap and every recommendation. They prove the harness detects:
+The deterministic negative controls prove that incompatible Company-category
+codes, absent-field evidence, present-field gaps, duplicate or irrelevant
+evidence, duplicate codes and unjustified confidence are rejected before
+rendering. The schema itself has no place to express free-form CRM/contact
+commands, URLs, external-verification claims, named customers or campaigns,
+revenue, staffing, awards or market share. Dedicated security tests inject
+representative strings as extra properties, invalid enum values, invalid evidence
+and invalid types and prove that strict parsing fails.
 
-- an agency described as an established food business;
-- a hotel assigned a fabricated restaurant-chain signal;
-- an invented Penang location when location is absent;
-- a claimed industry when industry is absent;
-- high confidence for sparse metadata;
-- fabricated named customers and named campaigns;
-- numeric and written-number employee counts;
-- fabricated revenue, market share and exact branch counts;
-- fabricated awards, external research, website verification and social-media
-  verification;
-- invented facts phrased inside recommendations;
-- false website/description gaps; and
-- a direct Opportunity-creation command.
+All visible text comes from application-owned templates. Renderer tests cover
+every allowed profile, signal, gap and recommendation code; recommendations are
+non-binding and the renderer produces no href, contact destination, CRM command,
+generated URL or external-verification claim. These deterministic tests establish
+schema safety and grounding constraints, not live-model code-selection quality.
 
 ## Manual Terra procedure
 
@@ -57,14 +56,15 @@ A live evaluation is optional and must remain explicit:
    server runtime.
 2. Use only the ten synthetic GREEN fixtures from
    `company-intelligence.test-fixtures.ts`; never load a real CRM Company.
-3. Invoke the existing server-side provider contract with
-   `gpt-5.6-terra`, `store: false`, low reasoning effort, 1,200 output tokens,
-   a 20-second timeout, zero retries and no tools or web search.
-4. Record only pass/fail judgments for the report columns above. Do not record
-   prompts, serialized projections, URLs, model prose or raw provider errors.
+3. Invoke the existing server-side provider contract with `gpt-5.6-terra`,
+   `store: false`, low reasoning effort, 1,200 output tokens, a 20-second timeout,
+   zero retries and no tools or web search.
+4. Record only pass/fail judgments for valid code selection, relevant evidence,
+   gap consistency and confidence. Do not record prompts, serialized projections,
+   URLs, raw structured output or provider errors.
 5. Keep the procedure outside ordinary `npm test`, build, Playwright and CI.
-6. If any grounding, invented-fact, gap, recommendation or confidence check
-   fails, treat the live evaluation as failed; do not tune tests to exact prose.
+6. If any schema, evidence, gap, incompatible-code or confidence check fails,
+   treat the live evaluation as failed; do not weaken the closed contract.
 
 TEST-010, a durable distributed limiter, provider project controls and retained
 privacy-safe operational logging remain broad-production gates.

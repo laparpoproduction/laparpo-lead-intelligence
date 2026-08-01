@@ -253,7 +253,7 @@ If Company intelligence is enabled in this release, also confirm:
 - the request contains only the documented GREEN Company projection and no
   Contact, Lead, Activity, note, auth/session, audit or secret data;
 - Company website/source values remain opaque strings and are never fetched;
-- prompts, Company payloads, output prose, provider raw errors and API keys are
+- prompts, Company payloads, structured model output, rendered text, provider raw errors and API keys are
   absent from application logs; and
 - no database row, H7 audit event, AI history or other persistent artifact is
   created by generation.

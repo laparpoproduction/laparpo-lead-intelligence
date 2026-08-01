@@ -60,7 +60,7 @@ function IntelligenceResult({
 
   return (
     <div
-      aria-label="AI-generated Company intelligence"
+      aria-label="Company intelligence recommendation"
       className="mt-6 grid gap-5 border-t border-zinc-200 pt-6"
       role="region"
     >
@@ -119,14 +119,14 @@ export function CompanyIntelligence({ companyId }: { companyId: string }) {
   return (
     <section className="mt-5 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
       <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#e5222a]">
-        AI-generated
+        AI-assisted
       </p>
       <h2 className="mt-2 text-lg font-black text-zinc-950">
         Company intelligence
       </h2>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
-        Generate a non-binding summary and next-step suggestions from allow-listed
-        public Company metadata only.
+        Generate evidence-bound recommendations from allow-listed public Company
+        metadata. Visible text is rendered from trusted application templates.
       </p>
       <p className="mt-2 text-sm font-semibold text-zinc-800">
         Recommendation only — no CRM data will be changed.

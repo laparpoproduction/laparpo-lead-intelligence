@@ -5,9 +5,10 @@ import {
   serializeCompanyIntelligenceInput,
 } from "./company-intelligence.input";
 import { CompanyIntelligenceService } from "./company-intelligence.service";
+import { renderCompanyIntelligence } from "./company-intelligence.render";
 import {
   companyIntelligenceEvaluationFixtures,
-  validCompanyIntelligence,
+  validCompanyIntelligenceOutput,
 } from "./company-intelligence.test-fixtures";
 import type {
   CompanyIntelligenceProjection,
@@ -16,7 +17,7 @@ import type {
 
 function serviceWithProviderSpy() {
   const generate = vi.fn().mockResolvedValue({
-    output: validCompanyIntelligence,
+    output: validCompanyIntelligenceOutput,
     usage: null,
   });
   const provider: CompanyIntelligenceProvider = { generate };
@@ -182,7 +183,10 @@ describe("Company intelligence input boundary", () => {
     };
 
     await expect(service.generate(maximumInput)).resolves.toMatchObject({
-      intelligence: validCompanyIntelligence,
+      intelligence: renderCompanyIntelligence(
+        maximumInput,
+        validCompanyIntelligenceOutput,
+      ),
     });
     expect(generate).toHaveBeenCalledOnce();
   });
@@ -241,7 +245,10 @@ describe("Company intelligence input boundary", () => {
     );
 
     await expect(service.generate(fixture)).resolves.toMatchObject({
-      intelligence: validCompanyIntelligence,
+      intelligence: renderCompanyIntelligence(
+        fixture,
+        validCompanyIntelligenceOutput,
+      ),
     });
     expect(generate).toHaveBeenCalledOnce();
 

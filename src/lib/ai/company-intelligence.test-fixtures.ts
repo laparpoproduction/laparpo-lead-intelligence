@@ -3,8 +3,10 @@ import { companyFixture } from "@/lib/companies/company.test-fixtures";
 import type {
   CompanyIntelligence,
   CompanyIntelligenceProjection,
+  CompanyIntelligenceStructuredOutput,
 } from "./company-intelligence.types";
 import { projectCompanyForIntelligence } from "./company-intelligence.projection";
+import { renderCompanyIntelligence } from "./company-intelligence.render";
 
 function fixture(overrides: Partial<Company>): CompanyIntelligenceProjection {
   return projectCompanyForIntelligence({ ...companyFixture, ...overrides });
@@ -126,12 +128,52 @@ export const companyIntelligenceEvaluationFixtures = {
   }),
 } as const;
 
-export const validCompanyIntelligence: CompanyIntelligence = {
-  summary: "The supplied public metadata describes an established food business.",
-  businessSignals: ["The record identifies the business as F&B."],
+export const validCompanyIntelligenceOutput: CompanyIntelligenceStructuredOutput = {
+  profileAssessment: {
+    code: "well_populated_public_profile",
+    evidenceFields: ["companyType", "industry", "description", "websiteUrl"],
+  },
+  businessSignals: [
+    { code: "fnb_business_profile", evidenceFields: ["companyType"] },
+    { code: "public_description_present", evidenceFields: ["description"] },
+    { code: "public_website_recorded", evidenceFields: ["websiteUrl"] },
+    {
+      code: "location_recorded",
+      evidenceFields: ["city", "state", "country"],
+    },
+    {
+      code: "branch_count_recorded",
+      evidenceFields: ["estimatedBranchCount"],
+    },
+    {
+      code: "potential_content_partnership_fit",
+      evidenceFields: ["companyType", "industry"],
+    },
+  ],
   dataQualityGaps: [],
   recommendedNextSteps: [
-    "Consider confirming whether the public branch count remains current.",
+    {
+      code: "review_public_company_profile",
+      evidenceFields: ["displayName"],
+    },
+    {
+      code: "verify_branch_count_manually",
+      evidenceFields: ["estimatedBranchCount"],
+    },
+    {
+      code: "assess_content_partnership_fit",
+      evidenceFields: ["companyType", "industry"],
+    },
+    {
+      code: "review_available_public_provenance",
+      evidenceFields: ["sourceType"],
+    },
   ],
   confidence: "medium",
 };
+
+export const validCompanyIntelligence: CompanyIntelligence =
+  renderCompanyIntelligence(
+    companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
+    validCompanyIntelligenceOutput,
+  );

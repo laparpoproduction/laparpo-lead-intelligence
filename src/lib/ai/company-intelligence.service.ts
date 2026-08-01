@@ -1,5 +1,7 @@
 import { companyIntelligenceSchema } from "./company-intelligence.schema";
+import { validateCompanyIntelligenceEvidence } from "./company-intelligence.evidence";
 import { buildCompanyIntelligenceRequest } from "./company-intelligence.prompt";
+import { renderCompanyIntelligence } from "./company-intelligence.render";
 import type {
   CompanyIntelligence,
   CompanyIntelligenceModel,
@@ -36,8 +38,15 @@ export class CompanyIntelligenceService {
     const parsed = companyIntelligenceSchema.safeParse(response.output);
     if (!parsed.success) throw new InvalidCompanyIntelligenceOutputError();
 
+    let grounded;
+    try {
+      grounded = validateCompanyIntelligenceEvidence(company, parsed.data);
+    } catch {
+      throw new InvalidCompanyIntelligenceOutputError();
+    }
+
     return {
-      intelligence: parsed.data,
+      intelligence: renderCompanyIntelligence(company, grounded),
       model: this.model,
       usage: response.usage,
     };

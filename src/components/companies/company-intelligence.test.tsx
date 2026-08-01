@@ -30,11 +30,15 @@ describe("Company intelligence UI", () => {
     });
     render(<CompanyIntelligence companyId={companyId} />);
 
-    expect(screen.getByText("AI-generated")).toBeDefined();
+    expect(screen.getByText("AI-assisted")).toBeDefined();
     expect(
       screen.getByText("Recommendation only — no CRM data will be changed."),
     ).toBeDefined();
-    expect(screen.queryByRole("region", { name: /AI-generated/i })).toBeNull();
+    expect(
+      screen.queryByRole("region", {
+        name: /Company intelligence recommendation/i,
+      }),
+    ).toBeNull();
 
     await userEvent.click(
       screen.getByRole("button", { name: "Generate AI intelligence" }),
@@ -42,7 +46,7 @@ describe("Company intelligence UI", () => {
 
     expect(
       await screen.findByRole("region", {
-        name: "AI-generated Company intelligence",
+        name: "Company intelligence recommendation",
       }),
     ).toBeDefined();
     expect(screen.getByRole("heading", { name: "Summary" })).toBeDefined();
@@ -61,6 +65,17 @@ describe("Company intelligence UI", () => {
       companyId,
     );
     expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.getByText(validCompanyIntelligence.summary)).toBeDefined();
+    expect(
+      screen.getByText(validCompanyIntelligence.recommendedNextSteps[0]),
+    ).toBeDefined();
+    expect(screen.getByText(validCompanyIntelligence.summary).className).toContain(
+      "break-words",
+    );
+    for (const item of document.querySelectorAll("li span:last-child")) {
+      expect(item.className).toContain("min-w-0");
+      expect(item.className).toContain("break-words");
+    }
   });
 
   it("renders a safe visible error without raw provider details", async () => {

@@ -1,33 +1,61 @@
 import { z } from "zod";
 import {
-  containsDirectCrmOrContactCommand,
-  containsExternalVerificationClaim,
-  containsGeneratedNetworkLocation,
-} from "./company-intelligence.output-safety";
+  businessSignalCodeValues,
+  companyEvidenceFieldValues,
+  companyGapFieldValues,
+  companyIntelligenceConfidenceValues,
+  profileAssessmentCodeValues,
+  recommendationCodeValues,
+} from "./company-intelligence.types";
 
-function boundedText(max: number) {
+export const COMPANY_INTELLIGENCE_OUTPUT_BOUNDS = {
+  profileEvidenceFields: 6,
+  businessSignals: 6,
+  signalEvidenceFields: 3,
+  dataQualityGaps: 9,
+  recommendedNextSteps: 4,
+  recommendationEvidenceFields: 3,
+} as const;
+
+const evidenceFieldSchema = z.enum(companyEvidenceFieldValues);
+
+function evidenceBoundCodeSchema<T extends readonly [string, ...string[]]>(
+  codes: T,
+  maxEvidenceFields: number,
+) {
   return z
-    .string()
-    .trim()
-    .min(1)
-    .max(max)
-    .refine((value) => !containsGeneratedNetworkLocation(value), {
-      message: "AI output must not contain network destinations",
+    .object({
+      code: z.enum(codes),
+      evidenceFields: z.array(evidenceFieldSchema).min(1).max(maxEvidenceFields),
     })
-    .refine((value) => !containsExternalVerificationClaim(value), {
-      message: "AI output must not claim external browsing or verification",
-    })
-    .refine((value) => !containsDirectCrmOrContactCommand(value), {
-      message: "AI output must not direct CRM mutations or contact",
-    });
+    .strict();
 }
 
 export const companyIntelligenceSchema = z
   .object({
-    summary: boundedText(600),
-    businessSignals: z.array(boundedText(180)).max(5),
-    dataQualityGaps: z.array(boundedText(180)).max(5),
-    recommendedNextSteps: z.array(boundedText(220)).max(5),
-    confidence: z.enum(["low", "medium", "high"]),
+    profileAssessment: evidenceBoundCodeSchema(
+      profileAssessmentCodeValues,
+      COMPANY_INTELLIGENCE_OUTPUT_BOUNDS.profileEvidenceFields,
+    ),
+    businessSignals: z
+      .array(
+        evidenceBoundCodeSchema(
+          businessSignalCodeValues,
+          COMPANY_INTELLIGENCE_OUTPUT_BOUNDS.signalEvidenceFields,
+        ),
+      )
+      .max(COMPANY_INTELLIGENCE_OUTPUT_BOUNDS.businessSignals),
+    dataQualityGaps: z
+      .array(z.enum(companyGapFieldValues))
+      .max(COMPANY_INTELLIGENCE_OUTPUT_BOUNDS.dataQualityGaps),
+    recommendedNextSteps: z
+      .array(
+        evidenceBoundCodeSchema(
+          recommendationCodeValues,
+          COMPANY_INTELLIGENCE_OUTPUT_BOUNDS.recommendationEvidenceFields,
+        ),
+      )
+      .max(COMPANY_INTELLIGENCE_OUTPUT_BOUNDS.recommendedNextSteps),
+    confidence: z.enum(companyIntelligenceConfidenceValues),
   })
   .strict();

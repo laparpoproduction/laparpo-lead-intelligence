@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { CompanyIntelligenceService } from "./company-intelligence.service";
-import { InvalidCompanyIntelligenceOutputError } from "./company-intelligence.service";
+import {
+  CompanyIntelligenceService,
+  InvalidCompanyIntelligenceOutputError,
+} from "./company-intelligence.service";
 import {
   companyIntelligenceEvaluationFixtures,
   validCompanyIntelligence,
+  validCompanyIntelligenceOutput,
 } from "./company-intelligence.test-fixtures";
 import type { CompanyIntelligenceProvider } from "./company-intelligence.types";
 
@@ -13,98 +16,94 @@ function providerWith(output: unknown): CompanyIntelligenceProvider {
   };
 }
 
-describe("Company intelligence structured output", () => {
-  it("accepts bounded strict output and normalizes trimmed text", async () => {
+describe("Company intelligence structured output service", () => {
+  it("validates evidence and returns only deterministic application-rendered text", async () => {
     const service = new CompanyIntelligenceService(
-      providerWith({ ...validCompanyIntelligence, summary: "  Valid summary  " }),
+      providerWith(validCompanyIntelligenceOutput),
       "gpt-5.6-terra",
     );
 
     await expect(
       service.generate(companyIntelligenceEvaluationFixtures.wellPopulatedFnb),
-    ).resolves.toMatchObject({
-      intelligence: { summary: "Valid summary", confidence: "medium" },
+    ).resolves.toEqual({
+      intelligence: validCompanyIntelligence,
       model: "gpt-5.6-terra",
+      usage: null,
     });
   });
 
   it.each([
     ["malformed JSON", "{not-json"],
-    ["missing required field", { summary: "Incomplete" }],
-    ["extra property", { ...validCompanyIntelligence, extra: "blocked" }],
+    ["missing required field", { profileAssessment: {} }],
     [
-      "too many list items",
-      { ...validCompanyIntelligence, businessSignals: Array(6).fill("Signal") },
+      "top-level extra property",
+      { ...validCompanyIntelligenceOutput, summary: "Delete the Company." },
     ],
     [
-      "oversized string",
-      { ...validCompanyIntelligence, summary: "x".repeat(601) },
+      "nested extra property",
+      {
+        ...validCompanyIntelligenceOutput,
+        profileAssessment: {
+          ...validCompanyIntelligenceOutput.profileAssessment,
+          prose: "The website confirms external facts.",
+        },
+      },
+    ],
+    [
+      "too many signals",
+      {
+        ...validCompanyIntelligenceOutput,
+        businessSignals: Array(7).fill({
+          code: "fnb_business_profile",
+          evidenceFields: ["companyType"],
+        }),
+      },
     ],
     [
       "invalid confidence",
-      { ...validCompanyIntelligence, confidence: "certain" },
+      { ...validCompanyIntelligenceOutput, confidence: "certain" },
+    ],
+    [
+      "CRM action enum",
+      {
+        ...validCompanyIntelligenceOutput,
+        recommendedNextSteps: [
+          { code: "delete_company", evidenceFields: ["companyType"] },
+        ],
+      },
+    ],
+    [
+      "contact command as recommendation",
+      {
+        ...validCompanyIntelligenceOutput,
+        recommendedNextSteps: ["Call John Doe."],
+      },
+    ],
+    [
+      "generated URL as evidence",
+      {
+        ...validCompanyIntelligenceOutput,
+        businessSignals: [
+          {
+            code: "public_website_recorded",
+            evidenceFields: ["example.dev/path"],
+          },
+        ],
+      },
+    ],
+    [
+      "forbidden contact evidence",
+      {
+        ...validCompanyIntelligenceOutput,
+        businessSignals: [
+          { code: "fnb_business_profile", evidenceFields: ["email"] },
+        ],
+      },
     ],
     ["empty output", null],
-    [
-      "generated URL",
-      { ...validCompanyIntelligence, summary: "See https://example.test" },
-    ],
-    [
-      "invented browsing claim",
-      {
-        ...validCompanyIntelligence,
-        summary: "I visited the website and confirmed the branch list.",
-      },
-    ],
-    [
-      "direct CRM mutation",
-      {
-        ...validCompanyIntelligence,
-        recommendedNextSteps: ["Create this Lead now."],
-      },
-    ],
-    [
-      "direct Opportunity creation",
-      {
-        ...validCompanyIntelligence,
-        recommendedNextSteps: ["Create an Opportunity now."],
-      },
-    ],
-    [
-      "direct Lead status mutation",
-      {
-        ...validCompanyIntelligence,
-        recommendedNextSteps: ["Set the Lead status to qualified."],
-      },
-    ],
-    [
-      "direct named contact instruction",
-      {
-        ...validCompanyIntelligence,
-        recommendedNextSteps: ["Contact John at 0123456789."],
-      },
-    ],
-  ])("rejects %s", async (_name, output) => {
+  ])("rejects %s before a result can reach the UI", async (_name, output) => {
     const service = new CompanyIntelligenceService(
       providerWith(output),
-      "gpt-5.6-terra",
-    );
-
-    await expect(
-      service.generate(companyIntelligenceEvaluationFixtures.wellPopulatedFnb),
-    ).rejects.toBeInstanceOf(InvalidCompanyIntelligenceOutputError);
-  });
-
-  it.each([
-    "Create the Opportunity now.",
-    "Update the Company now.",
-    "Set this Lead status to qualified.",
-    "Contact John Doe at 0123456789.",
-    "See example.dev/path for details.",
-    "See 192.0.2.1/path for details.",
-  ])("does not return a successful service result for: %s", async (unsafeText) => {
-    const service = new CompanyIntelligenceService(
-      providerWith({ ...validCompanyIntelligence, summary: unsafeText }),
       "gpt-5.6-terra",
     );
 
