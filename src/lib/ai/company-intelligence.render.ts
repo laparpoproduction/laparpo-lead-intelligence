@@ -1,11 +1,12 @@
 import type {
   BusinessSignalCode,
+  CompanyEvidenceField,
   CompanyGapField,
   CompanyIntelligence,
   CompanyIntelligenceProjection,
-  CompanyIntelligenceStructuredOutput,
   ProfileAssessmentCode,
   RecommendationCode,
+  ValidatedCompanyIntelligenceOutput,
 } from "./company-intelligence.types";
 import { isUsableCompanyEvidenceField } from "./company-intelligence.evidence";
 
@@ -73,14 +74,6 @@ const companyTypeText = {
   other: "a Company in another business category",
 } as const;
 
-function safeMetadataLabel(value: string | null): string | null {
-  if (value === null) return null;
-  const compact = value.trim().replace(/\s+/gu, " ");
-  return /^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N} &'’(),/-]*$/u.test(compact)
-    ? compact
-    : null;
-}
-
 function joinList(items: string[]): string {
   if (items.length === 1) return items[0];
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
@@ -91,10 +84,10 @@ export function renderCompanyIntelligenceSummary(
   company: CompanyIntelligenceProjection,
   profileCode: ProfileAssessmentCode,
 ): string {
-  const city = safeMetadataLabel(company.city);
-  const state = safeMetadataLabel(company.state);
-  const industry = safeMetadataLabel(company.industry);
-  const location = city && state ? `${city}, ${state}` : city ?? state;
+  const industry = isUsableCompanyEvidenceField(company, "industry");
+  const location = ["city", "state", "country"].every((field) =>
+    isUsableCompanyEvidenceField(company, field as CompanyEvidenceField),
+  );
   const recorded = [
     industry ? "an industry" : null,
     isUsableCompanyEvidenceField(company, "description")
@@ -115,19 +108,17 @@ export function renderCompanyIntelligenceSummary(
       "The available public metadata partially describes",
     sparse_public_profile: "The limited public metadata records",
   };
-  const locationText = location ? ` in ${location}` : "";
-  const industryText = industry ? ` The recorded industry is ${industry}.` : "";
   const recordedText =
     recorded.length > 0
       ? ` The profile contains ${joinList(recorded)}.`
       : " The profile contains no additional assessment metadata.";
 
-  return `${completenessLead[profileCode]} ${companyTypeText[company.companyType]}${locationText}.${industryText}${recordedText}`;
+  return `${completenessLead[profileCode]} ${companyTypeText[company.companyType]}.${recordedText}`;
 }
 
 export function renderCompanyIntelligence(
   company: CompanyIntelligenceProjection,
-  output: CompanyIntelligenceStructuredOutput,
+  output: ValidatedCompanyIntelligenceOutput,
 ): CompanyIntelligence {
   return {
     summary: renderCompanyIntelligenceSummary(

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CompanyIntelligenceEvidenceError,
+  deriveCompanyIntelligenceConfidence,
   validateCompanyIntelligenceEvidence,
 } from "./company-intelligence.evidence";
 import {
@@ -27,7 +28,6 @@ function withSignal(
     businessSignals: [{ code, evidenceFields }],
     dataQualityGaps: [],
     recommendedNextSteps: [],
-    confidence: profileCode === "sparse_public_profile" ? "low" : "medium",
   };
 }
 
@@ -113,7 +113,6 @@ describe("Company intelligence evidence validation", () => {
       recommendedNextSteps: [
         { code: "clarify_industry", evidenceFields: ["companyType"] },
       ],
-      confidence: "medium",
     };
     expect(
       validateCompanyIntelligenceEvidence(missingIndustry, industryOutput),
@@ -224,49 +223,37 @@ describe("Company intelligence evidence validation", () => {
       businessSignals: [],
       dataQualityGaps: ["industry", "industry"],
       recommendedNextSteps: [],
-      confidence: "low",
     });
   });
 
-  it("enforces deterministic confidence upper bounds", () => {
-    const sparse = companyIntelligenceEvaluationFixtures.sparseFnb;
-    expectRejected(sparse, {
-      profileAssessment: {
-        code: "sparse_public_profile",
-        evidenceFields: ["companyType"],
-      },
-      businessSignals: [],
-      dataQualityGaps: [],
-      recommendedNextSteps: [],
-      confidence: "high",
-    });
+  it("derives Phase 1A confidence only from the validated profile code", () => {
+    expect(deriveCompanyIntelligenceConfidence("sparse_public_profile")).toBe(
+      "low",
+    );
+    expect(
+      deriveCompanyIntelligenceConfidence(
+        "partially_populated_public_profile",
+      ),
+    ).toBe("medium");
+    expect(
+      deriveCompanyIntelligenceConfidence("well_populated_public_profile"),
+    ).toBe("medium");
+    expect(new Set(["low", "medium"])).not.toContain("high");
+  });
 
-    const malicious = companyIntelligenceEvaluationFixtures.maliciousMetadata;
-    expectRejected(malicious, {
-      profileAssessment: {
-        code: "partially_populated_public_profile",
-        evidenceFields: ["companyType", "industry", "description"],
-      },
-      businessSignals: [],
-      dataQualityGaps: ["websiteUrl", "sourceUrl"],
-      recommendedNextSteps: [],
-      confidence: "high",
-    });
+  it("derives confidence only after profile and evidence validation succeeds", () => {
+    const validated = validateCompanyIntelligenceEvidence(
+      companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
+      validCompanyIntelligenceOutput,
+    );
+    expect(validated.confidence).toBe("medium");
 
-    const maliciousWithValidUrls = {
-      ...malicious,
-      websiteUrl: "https://example.test",
-      sourceUrl: "https://directory.example.test/record",
-    };
-    expectRejected(maliciousWithValidUrls, {
+    expectRejected(companyIntelligenceEvaluationFixtures.sparseFnb, {
+      ...validCompanyIntelligenceOutput,
       profileAssessment: {
         code: "well_populated_public_profile",
-        evidenceFields: ["companyType", "industry", "description", "websiteUrl"],
+        evidenceFields: ["companyType"],
       },
-      businessSignals: [],
-      dataQualityGaps: [],
-      recommendedNextSteps: [],
-      confidence: "high",
     });
   });
 });

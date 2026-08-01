@@ -52,9 +52,11 @@ verify all of the following:
 - Company intelligence rejects any AI-bound field above its documented
   per-field limit and rejects serialized Company metadata above 8,192 UTF-8
   bytes before provider invocation. It never silently truncates provenance.
-- Confidence is recommendation-support confidence based only on supplied
-  Company metadata. It is not external verification, sales probability, Lead
-  score, Opportunity probability or financial confidence.
+- Confidence is derived by the application from validated profile completeness.
+  Phase 1A uses Low for sparse profiles and Medium for partial or well-populated
+  profiles; High is unavailable. It is not external verification, factual
+  correctness, sales probability, conversion probability, Lead score,
+  Opportunity probability or financial confidence.
 - Deterministic CI uses provider stubs and does not prove live-model quality.
   Any Terra evaluation must be an explicit manual run using synthetic GREEN
   fixtures only; ordinary tests, builds and Playwright must remain offline.

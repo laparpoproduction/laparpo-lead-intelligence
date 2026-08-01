@@ -55,10 +55,16 @@ describe("Company intelligence UI", () => {
     expect(
       screen.getByRole("heading", { name: "Recommended next steps" }),
     ).toBeDefined();
-    expect(screen.getByText("Confidence: medium")).toBeDefined();
+    expect(screen.getByText("Confidence: Medium")).toBeDefined();
+    expect(screen.queryByText("Confidence: High")).toBeNull();
     expect(
       screen.getByText(
-        "Confidence reflects how well this recommendation is supported by the available Company metadata. It is not a sales probability or external verification.",
+        "Confidence is derived from the completeness of the available Company metadata. It is not external verification, sales probability or conversion probability.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText(
+        "Phase 1 recommendations use Low or Medium confidence only.",
       ),
     ).toBeDefined();
     expect(document.querySelector('input[name="companyId"]')?.getAttribute("value")).toBe(
@@ -76,6 +82,22 @@ describe("Company intelligence UI", () => {
       expect(item.className).toContain("min-w-0");
       expect(item.className).toContain("break-words");
     }
+  });
+
+  it("renders Low confidence without any High confidence path", async () => {
+    vi.mocked(generateCompanyIntelligenceAction).mockResolvedValueOnce({
+      status: "success",
+      message: "AI recommendation generated. No CRM data was changed.",
+      intelligence: { ...validCompanyIntelligence, confidence: "low" },
+    });
+    render(<CompanyIntelligence companyId={companyId} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Generate AI intelligence" }),
+    );
+
+    expect(await screen.findByText("Confidence: Low")).toBeDefined();
+    expect(screen.queryByText("Confidence: High")).toBeNull();
   });
 
   it("renders a safe visible error without raw provider details", async () => {

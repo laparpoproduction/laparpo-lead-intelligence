@@ -7,6 +7,7 @@ import type {
   CompanyIntelligenceStructuredOutput,
   ProfileAssessmentCode,
   RecommendationCode,
+  ValidatedCompanyIntelligenceOutput,
 } from "./company-intelligence.types";
 
 export class CompanyIntelligenceEvidenceError extends Error {
@@ -281,60 +282,16 @@ function recommendationIsGrounded(
   }
 }
 
-function confidenceIsGrounded(
-  company: CompanyIntelligenceProjection,
+export function deriveCompanyIntelligenceConfidence(
   profileCode: ProfileAssessmentCode,
-  confidence: CompanyIntelligenceConfidence,
-): boolean {
-  const instructionMarkers = [
-    "ignore previous",
-    "ignore all",
-    "system:",
-    "developer:",
-    "assistant:",
-    "reveal openai",
-    "openai_api_key",
-    "ceo_admin",
-    "make me admin",
-  ];
-  const unclearTextMetadata = [
-    company.legalName,
-    company.displayName,
-    company.industry,
-    company.description,
-    company.city,
-    company.state,
-    company.sourceType,
-  ].some((value) => {
-    const normalized = value?.toLocaleLowerCase() ?? "";
-    return instructionMarkers.some((marker) => normalized.includes(marker));
-  });
-  const unclearUrlMetadata =
-    (company.websiteUrl !== null &&
-      !isUsableCompanyEvidenceField(company, "websiteUrl")) ||
-    !isUsableCompanyEvidenceField(company, "sourceUrl");
-
-  if (
-    profileCode === "sparse_public_profile" ||
-    unclearTextMetadata ||
-    unclearUrlMetadata
-  ) {
-    return confidence === "low";
-  }
-  if (
-    profileCode === "partially_populated_public_profile" ||
-    (!isUsableCompanyEvidenceField(company, "industry") &&
-      !isUsableCompanyEvidenceField(company, "description"))
-  ) {
-    return confidence !== "high";
-  }
-  return true;
+): CompanyIntelligenceConfidence {
+  return profileCode === "sparse_public_profile" ? "low" : "medium";
 }
 
 export function validateCompanyIntelligenceEvidence(
   company: CompanyIntelligenceProjection,
   output: CompanyIntelligenceStructuredOutput,
-): CompanyIntelligenceStructuredOutput {
+): ValidatedCompanyIntelligenceOutput {
   const profileValid =
     output.profileAssessment.code === expectedProfileAssessment(company) &&
     validateEvidenceFields(
@@ -376,15 +333,15 @@ export function validateCompanyIntelligenceEvidence(
     !uniqueGaps ||
     !gapsValid ||
     !uniqueRecommendationCodes ||
-    !recommendationsValid ||
-    !confidenceIsGrounded(
-      company,
-      output.profileAssessment.code,
-      output.confidence,
-    )
+    !recommendationsValid
   ) {
     throw new CompanyIntelligenceEvidenceError();
   }
 
-  return output;
+  return {
+    ...output,
+    confidence: deriveCompanyIntelligenceConfidence(
+      output.profileAssessment.code,
+    ),
+  };
 }

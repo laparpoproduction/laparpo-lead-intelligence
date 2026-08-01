@@ -9,6 +9,7 @@ import type {
   BusinessSignalCode,
   CompanyGapField,
   CompanyIntelligenceProjection,
+  CompanyIntelligenceConfidence,
   CompanyIntelligenceProvider,
   CompanyIntelligenceStructuredOutput,
 } from "./company-intelligence.types";
@@ -20,7 +21,7 @@ type QualityCase = {
   output: CompanyIntelligenceStructuredOutput;
   incompatibleSignal: BusinessSignalCode;
   falseGap: CompanyGapField;
-  highConfidenceAllowed: boolean;
+  expectedConfidence: CompanyIntelligenceConfidence;
 };
 
 const matrix: QualityCase[] = [
@@ -62,11 +63,10 @@ const matrix: QualityCase[] = [
           evidenceFields: ["companyType", "industry"],
         },
       ],
-      confidence: "high",
     },
     incompatibleSignal: "agency_business_profile",
     falseGap: "websiteUrl",
-    highConfidenceAllowed: true,
+    expectedConfidence: "medium",
   },
   {
     id: "B",
@@ -96,11 +96,10 @@ const matrix: QualityCase[] = [
           evidenceFields: ["companyType", "country"],
         },
       ],
-      confidence: "low",
     },
     incompatibleSignal: "public_website_recorded",
     falseGap: "sourceType",
-    highConfidenceAllowed: false,
+    expectedConfidence: "low",
   },
   {
     id: "C",
@@ -129,11 +128,10 @@ const matrix: QualityCase[] = [
         },
         { code: "review_public_positioning", evidenceFields: ["description"] },
       ],
-      confidence: "high",
     },
     incompatibleSignal: "fnb_business_profile",
     falseGap: "industry",
-    highConfidenceAllowed: true,
+    expectedConfidence: "medium",
   },
   {
     id: "D",
@@ -162,11 +160,10 @@ const matrix: QualityCase[] = [
           evidenceFields: ["companyType", "description"],
         },
       ],
-      confidence: "high",
     },
     incompatibleSignal: "agency_business_profile",
     falseGap: "description",
-    highConfidenceAllowed: true,
+    expectedConfidence: "medium",
   },
   {
     id: "E",
@@ -185,11 +182,10 @@ const matrix: QualityCase[] = [
       recommendedNextSteps: [
         { code: "review_public_positioning", evidenceFields: ["description"] },
       ],
-      confidence: "high",
     },
     incompatibleSignal: "potential_content_partnership_fit",
     falseGap: "city",
-    highConfidenceAllowed: true,
+    expectedConfidence: "medium",
   },
   {
     id: "F",
@@ -210,11 +206,10 @@ const matrix: QualityCase[] = [
           evidenceFields: ["companyType", "country"],
         },
       ],
-      confidence: "medium",
     },
     incompatibleSignal: "location_recorded",
     falseGap: "industry",
-    highConfidenceAllowed: false,
+    expectedConfidence: "medium",
   },
   {
     id: "G",
@@ -232,11 +227,10 @@ const matrix: QualityCase[] = [
       recommendedNextSteps: [
         { code: "clarify_industry", evidenceFields: ["companyType"] },
       ],
-      confidence: "medium",
     },
     incompatibleSignal: "agency_business_profile",
     falseGap: "description",
-    highConfidenceAllowed: false,
+    expectedConfidence: "medium",
   },
   {
     id: "H",
@@ -254,11 +248,10 @@ const matrix: QualityCase[] = [
       recommendedNextSteps: [
         { code: "review_public_company_profile", evidenceFields: ["displayName"] },
       ],
-      confidence: "low",
     },
     incompatibleSignal: "public_website_recorded",
     falseGap: "sourceType",
-    highConfidenceAllowed: false,
+    expectedConfidence: "medium",
   },
   {
     id: "I",
@@ -278,11 +271,10 @@ const matrix: QualityCase[] = [
       recommendedNextSteps: [
         { code: "review_public_positioning", evidenceFields: ["description"] },
       ],
-      confidence: "high",
     },
     incompatibleSignal: "agency_business_profile",
     falseGap: "websiteUrl",
-    highConfidenceAllowed: true,
+    expectedConfidence: "medium",
   },
   {
     id: "J",
@@ -304,11 +296,10 @@ const matrix: QualityCase[] = [
       recommendedNextSteps: [
         { code: "review_public_company_profile", evidenceFields: ["displayName"] },
       ],
-      confidence: "high",
     },
     incompatibleSignal: "hotel_hospitality_profile",
     falseGap: "description",
-    highConfidenceAllowed: true,
+    expectedConfidence: "medium",
   },
 ];
 
@@ -340,9 +331,12 @@ describe("Company intelligence A-J structured quality evaluation", () => {
 
   it.each(matrix)(
     "$id accepts only grounded $category codes, gaps, evidence and confidence",
-    async ({ company, output }) => {
+    async ({ company, output, expectedConfidence }) => {
       await expect(service(output).generate(company)).resolves.toEqual({
-        intelligence: renderCompanyIntelligence(company, output),
+        intelligence: renderCompanyIntelligence(company, {
+          ...output,
+          confidence: expectedConfidence,
+        }),
         model: "gpt-5.6-terra",
         usage: null,
       });
@@ -378,24 +372,21 @@ describe("Company intelligence A-J structured quality evaluation", () => {
   );
 
   it.each(matrix)(
-    "$id enforces its deterministic confidence upper bound",
-    async ({ company, output, highConfidenceAllowed }) => {
-      const highOutput = { ...output, confidence: "high" as const };
-      const result = service(highOutput).generate(company);
-      if (highConfidenceAllowed) {
-        await expect(result).resolves.toBeDefined();
-      } else {
-        await expect(result).rejects.toBeInstanceOf(
-          InvalidCompanyIntelligenceOutputError,
-        );
-      }
+    "$id derives $expectedConfidence confidence from its validated profile",
+    async ({ company, output, expectedConfidence }) => {
+      await expect(service(output).generate(company)).resolves.toMatchObject({
+        intelligence: { confidence: expectedConfidence },
+      });
     },
   );
 
   it.each(matrix)(
     "$id renders fixed text rather than model-controlled prose",
-    ({ company, output }) => {
-      const rendered = renderCompanyIntelligence(company, output);
+    ({ company, output, expectedConfidence }) => {
+      const rendered = renderCompanyIntelligence(company, {
+        ...output,
+        confidence: expectedConfidence,
+      });
       const serialized = JSON.stringify(rendered);
       expect(serialized).not.toContain(output.profileAssessment.code);
       for (const item of [

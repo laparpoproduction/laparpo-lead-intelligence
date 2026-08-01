@@ -192,10 +192,11 @@ read/analyze/recommend flow:
    a 20-second timeout and no automatic retry; and
 6. strict Zod schemas reject extra properties and anything outside the closed
    enum contract;
-7. an application validator checks every selected code, gap, evidence reference
-   and confidence value against the actual GREEN projection; and
-8. the application renderer maps the validated codes to fixed text before the
-   transient result reaches the UI.
+7. an application validator checks every selected profile code, signal, gap and
+   evidence reference against the actual GREEN projection; and
+8. the application derives Low or Medium confidence from the validated profile
+   completeness, then maps the validated codes to fixed text before the transient
+   result reaches the UI.
 
 The provider output has no arbitrary summary, signal, gap or recommendation text.
 Its evidence references are limited to the same 12 GREEN projection fields and
@@ -205,7 +206,8 @@ all arrays are bounded. Profile assessment is one of
 business categories, recorded metadata, possible partnership-review fit,
 clarification or human review. There is no code for a CRM mutation, contact
 instruction, generated destination, customer, campaign, revenue, employee count,
-award, market share or external verification.
+award, market share or external verification. The provider schema contains no
+confidence, score, probability or certainty field.
 
 The per-field AI limits are: legal and display name 200 characters each,
 industry/city/state 120 each, description 2,000, country 2, website/source URL
@@ -238,20 +240,22 @@ configure provider project spend/rate controls and alerts, add a distributed
 limiter, retain privacy-safe application logs, and complete TEST-010's
 authenticated database-backed browser journey.
 
-`confidence` means how strongly the recommendation is supported by the Company
-metadata supplied for that request. It is not external verification, sales or
+Confidence is derived by the application from the completeness of the available
+Company metadata after structural validation: sparse profiles produce Low;
+partial and well-populated profiles produce Medium. Phase 1A cannot produce High.
+Completeness is not external verification, factual correctness, sales or
 conversion probability, a Lead score, Opportunity probability, financial
-confidence, or certainty that the Company will buy. Sparse or ambiguous metadata
-must lower confidence.
+confidence or certainty that the Company will buy. Free-form field contents do
+not alter this derivation.
 
 Deterministic CI uses provider stubs and a distinct A–J synthetic evaluation
 matrix for accepted and incompatible codes, evidence consistency, missing-field
-consistency, deterministic rendering and confidence calibration. The closed
+consistency, deterministic rendering and confidence derivation. The closed
 contract cannot represent unsupported customer, campaign, financial, staffing,
-award, market-share or external-verification claims. The long-but-valid fixture reaches
-92.57% of the serialized input ceiling without truncation. CI makes no live
-OpenAI calls and does not guarantee live-model quality. The controlled evaluation
-record and manual Terra procedure are in
+award, market-share or external-verification claims. The long-but-valid fixture
+reaches 92.57% of the serialized input ceiling without truncation. CI makes no
+live OpenAI calls and does not guarantee live-model quality. The controlled
+evaluation record and manual Terra procedure are in
 [`docs/ai-company-intelligence-quality-evaluation.md`](docs/ai-company-intelligence-quality-evaluation.md).
 
 ### Contacts database foundation

@@ -9,7 +9,7 @@ import {
 } from "./company-intelligence.render";
 import {
   companyIntelligenceEvaluationFixtures,
-  validCompanyIntelligenceOutput,
+  validValidatedCompanyIntelligenceOutput,
 } from "./company-intelligence.test-fixtures";
 import {
   businessSignalCodeValues,
@@ -51,7 +51,7 @@ describe("Company intelligence deterministic renderer", () => {
         "well_populated_public_profile",
       ),
     ).toBe(
-      "The available public metadata describes an F&B Company in George Town, Penang. The recorded industry is Food & Beverage. The profile contains an industry, a description, a location, a public website record and an estimated branch count.",
+      "The available public metadata describes an F&B Company. The profile contains an industry, a description, a location, a public website record and an estimated branch count.",
     );
     expect(
       renderCompanyIntelligenceSummary(
@@ -69,7 +69,7 @@ describe("Company intelligence deterministic renderer", () => {
   it("renders every result section without URLs, contacts, CRM commands or verification claims", () => {
     const rendered = renderCompanyIntelligence(
       companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
-      validCompanyIntelligenceOutput,
+      validValidatedCompanyIntelligenceOutput,
     );
     const text = JSON.stringify(rendered);
 
@@ -100,7 +100,7 @@ describe("Company intelligence deterministic renderer", () => {
           evidenceFields: ["displayName"],
         },
       ],
-      confidence: "low",
+      confidence: "medium",
     });
     const text = JSON.stringify(rendered);
 

@@ -8,6 +8,11 @@ import {
   type CompanyIntelligenceActionState,
 } from "@/app/(dashboard)/companies/intelligence-state";
 
+const confidenceLabel = {
+  low: "Low",
+  medium: "Medium",
+} as const;
+
 function GenerateButton() {
   const { pending } = useFormStatus();
   return (
@@ -97,12 +102,15 @@ function IntelligenceResult({
       </div>
       <div className="text-xs text-zinc-500">
         <p className="font-bold uppercase tracking-[0.08em]">
-          Confidence: {result.confidence}
+          Confidence: {confidenceLabel[result.confidence]}
         </p>
         <p className="mt-1 max-w-3xl leading-5">
-          Confidence reflects how well this recommendation is supported by the
-          available Company metadata. It is not a sales probability or external
-          verification.
+          Confidence is derived from the completeness of the available Company
+          metadata. It is not external verification, sales probability or
+          conversion probability.
+        </p>
+        <p className="mt-1 max-w-3xl leading-5">
+          Phase 1 recommendations use Low or Medium confidence only.
         </p>
       </div>
     </div>

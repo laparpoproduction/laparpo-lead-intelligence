@@ -101,7 +101,6 @@ export type RecommendationCode =
 export const companyIntelligenceConfidenceValues = [
   "low",
   "medium",
-  "high",
 ] as const;
 
 export type CompanyIntelligenceConfidence =
@@ -118,8 +117,13 @@ export type CompanyIntelligenceStructuredOutput = {
   businessSignals: EvidenceBoundCode<BusinessSignalCode>[];
   dataQualityGaps: CompanyGapField[];
   recommendedNextSteps: EvidenceBoundCode<RecommendationCode>[];
-  confidence: CompanyIntelligenceConfidence;
 };
+
+/** Trusted application output after structural evidence validation. */
+export type ValidatedCompanyIntelligenceOutput =
+  CompanyIntelligenceStructuredOutput & {
+    confidence: CompanyIntelligenceConfidence;
+  };
 
 /** Application-rendered, user-visible text. The model never supplies these strings. */
 export type CompanyIntelligence = {

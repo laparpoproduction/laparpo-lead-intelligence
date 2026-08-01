@@ -4,6 +4,7 @@ import type {
   CompanyIntelligence,
   CompanyIntelligenceProjection,
   CompanyIntelligenceStructuredOutput,
+  ValidatedCompanyIntelligenceOutput,
 } from "./company-intelligence.types";
 import { projectCompanyForIntelligence } from "./company-intelligence.projection";
 import { renderCompanyIntelligence } from "./company-intelligence.render";
@@ -169,11 +170,16 @@ export const validCompanyIntelligenceOutput: CompanyIntelligenceStructuredOutput
       evidenceFields: ["sourceType"],
     },
   ],
-  confidence: "medium",
 };
+
+export const validValidatedCompanyIntelligenceOutput: ValidatedCompanyIntelligenceOutput =
+  {
+    ...validCompanyIntelligenceOutput,
+    confidence: "medium",
+  };
 
 export const validCompanyIntelligence: CompanyIntelligence =
   renderCompanyIntelligence(
     companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
-    validCompanyIntelligenceOutput,
+    validValidatedCompanyIntelligenceOutput,
   );

@@ -76,6 +76,8 @@ describe("OpenAI Company intelligence provider", () => {
     expect(format).toContain("fnb_business_profile");
     expect(format).toContain("review_public_company_profile");
     expect(format).not.toContain('"summary"');
+    expect(format).not.toContain('"confidence"');
+    expect(format).not.toContain('"high"');
   });
 
   it("rejects a provider safety refusal without exposing its text", async () => {

@@ -9,6 +9,7 @@ import { renderCompanyIntelligence } from "./company-intelligence.render";
 import {
   companyIntelligenceEvaluationFixtures,
   validCompanyIntelligenceOutput,
+  validValidatedCompanyIntelligenceOutput,
 } from "./company-intelligence.test-fixtures";
 import type {
   CompanyIntelligenceProjection,
@@ -185,7 +186,7 @@ describe("Company intelligence input boundary", () => {
     await expect(service.generate(maximumInput)).resolves.toMatchObject({
       intelligence: renderCompanyIntelligence(
         maximumInput,
-        validCompanyIntelligenceOutput,
+        validValidatedCompanyIntelligenceOutput,
       ),
     });
     expect(generate).toHaveBeenCalledOnce();
@@ -247,7 +248,7 @@ describe("Company intelligence input boundary", () => {
     await expect(service.generate(fixture)).resolves.toMatchObject({
       intelligence: renderCompanyIntelligence(
         fixture,
-        validCompanyIntelligenceOutput,
+        validValidatedCompanyIntelligenceOutput,
       ),
     });
     expect(generate).toHaveBeenCalledOnce();

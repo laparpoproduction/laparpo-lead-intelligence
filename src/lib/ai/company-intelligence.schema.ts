@@ -3,7 +3,6 @@ import {
   businessSignalCodeValues,
   companyEvidenceFieldValues,
   companyGapFieldValues,
-  companyIntelligenceConfidenceValues,
   profileAssessmentCodeValues,
   recommendationCodeValues,
 } from "./company-intelligence.types";
@@ -56,6 +55,5 @@ export const companyIntelligenceSchema = z
         ),
       )
       .max(COMPANY_INTELLIGENCE_OUTPUT_BOUNDS.recommendedNextSteps),
-    confidence: z.enum(companyIntelligenceConfidenceValues),
   })
   .strict();

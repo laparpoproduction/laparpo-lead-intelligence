@@ -17,16 +17,16 @@ scan arbitrary model prose because the provider schema contains no prose field.
 
 | ID | Company category | Profile code | Accepted signal | Rejected example | Gap behavior | Recommendation | Confidence behavior |
 |---|---|---|---|---|---|---|---|
-| A | Well-populated F&B | Well populated | F&B/content fit | Agency | No false website gap | Content-fit assessment | High allowed |
-| B | Sparse F&B | Sparse | F&B only | Website present | Missing industry/description/location/website | Clarify industry/location | Low required |
-| C | Agency | Well populated | Agency/production fit | F&B | Missing branch count accepted | Production-fit assessment | High allowed |
-| D | Hotel | Well populated | Hotel/content fit | Agency | No false description gap | Content-fit assessment | High allowed |
-| E | Non-F&B / other | Well populated | Other profile | Content fit | No false city gap | Public-positioning review | High allowed |
-| F | Missing location | Partial | F&B | Location present | City/state gaps accepted | Clarify location | High rejected |
-| G | Missing industry | Partial | Description present | Agency | Industry gap accepted | Clarify industry | High rejected |
-| H | Malicious metadata | Partial/unreliable | Other profile | Website present | Invalid website/source gaps accepted | Public-profile review | Low required |
-| I | Long-but-valid input | Well populated | F&B/description/website | Agency | No false website gap | Public-positioning review | High allowed |
-| J | Unicode business name | Well populated | F&B/location | Hotel | No false description gap | Public-profile review | High allowed |
+| A | Well-populated F&B | Well populated | F&B/content fit | Agency | No false website gap | Content-fit assessment | Medium |
+| B | Sparse F&B | Sparse | F&B only | Website present | Missing industry/description/location/website | Clarify industry/location | Low |
+| C | Agency | Well populated | Agency/production fit | F&B | Missing branch count accepted | Production-fit assessment | Medium |
+| D | Hotel | Well populated | Hotel/content fit | Agency | No false description gap | Content-fit assessment | Medium |
+| E | Non-F&B / other | Well populated | Other profile | Content fit | No false city gap | Public-positioning review | Medium |
+| F | Missing location | Partial | F&B | Location present | City/state gaps accepted | Clarify location | Medium |
+| G | Missing industry | Partial | Description present | Agency | Industry gap accepted | Clarify industry | Medium |
+| H | Arbitrary untrusted metadata | Partial | Other profile | Website present | Invalid website/source gaps accepted | Public-profile review | Medium from structure only |
+| I | Long-but-valid input | Well populated | F&B/description/website | Agency | No false website gap | Public-positioning review | Medium |
+| J | Unicode business name | Well populated | F&B/location | Hotel | No false description gap | Public-profile review | Medium |
 
 Fixture I serializes to exactly 7,583 UTF-8 bytes, or 92.57% of the 8,192-byte
 ceiling. Every field remains within its individual limit. The test proves the
@@ -35,8 +35,11 @@ and that no truncation occurs.
 
 The deterministic negative controls prove that incompatible Company-category
 codes, absent-field evidence, present-field gaps, duplicate or irrelevant
-evidence, duplicate codes and unjustified confidence are rejected before
-rendering. The schema itself has no place to express free-form CRM/contact
+evidence and duplicate codes are rejected before rendering. Confidence is not a
+provider field: the application derives Low for a validated sparse profile and
+Medium for validated partial or well-populated profiles. Arbitrary free-form
+metadata cannot change that structural rule, and High is unavailable in Phase
+1A. The schema itself has no place to express free-form CRM/contact
 commands, URLs, external-verification claims, named customers or campaigns,
 revenue, staffing, awards or market share. Dedicated security tests inject
 representative strings as extra properties, invalid enum values, invalid evidence
@@ -60,11 +63,12 @@ A live evaluation is optional and must remain explicit:
    `store: false`, low reasoning effort, 1,200 output tokens, a 20-second timeout,
    zero retries and no tools or web search.
 4. Record only pass/fail judgments for valid code selection, relevant evidence,
-   gap consistency and confidence. Do not record prompts, serialized projections,
-   URLs, raw structured output or provider errors.
+   gap consistency and application-derived confidence. Do not record prompts,
+   serialized projections, URLs, raw structured output or provider errors.
 5. Keep the procedure outside ordinary `npm test`, build, Playwright and CI.
-6. If any schema, evidence, gap, incompatible-code or confidence check fails,
-   treat the live evaluation as failed; do not weaken the closed contract.
+6. If any schema, evidence, gap, incompatible-code or confidence-derivation
+   check fails, treat the live evaluation as failed; do not weaken the closed
+   contract.
 
 TEST-010, a durable distributed limiter, provider project controls and retained
 privacy-safe operational logging remain broad-production gates.

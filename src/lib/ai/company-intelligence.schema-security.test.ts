@@ -4,10 +4,32 @@ import { validCompanyIntelligenceOutput } from "./company-intelligence.test-fixt
 import {
   businessSignalCodeValues,
   companyEvidenceFieldValues,
+  companyIntelligenceConfidenceValues,
   recommendationCodeValues,
 } from "./company-intelligence.types";
 
 describe("Company intelligence closed schema security", () => {
+  it("exposes only Low and Medium as Phase 1A application confidence values", () => {
+    expect(companyIntelligenceConfidenceValues).toEqual(["low", "medium"]);
+    expect(companyIntelligenceConfidenceValues).not.toContain("high");
+  });
+
+  it.each([
+    ["confidence", "high"],
+    ["confidence", "medium"],
+    ["confidence", 0.9],
+    ["confidenceScore", 90],
+    ["certainty", "high"],
+    ["salesProbability", 80],
+  ])("rejects model-controlled %s metadata", (field, value) => {
+    expect(
+      companyIntelligenceSchema.safeParse({
+        ...validCompanyIntelligenceOutput,
+        [field]: value,
+      }).success,
+    ).toBe(false);
+  });
+
   it.each([
     "Delete the Company.",
     "Archive this Company.",
