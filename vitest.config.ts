@@ -9,7 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    exclude: ["tests/e2e/**", "node_modules/**"],
+    exclude: ["tests/e2e/**", "tests/e2e-authenticated/**", "node_modules/**"],
     coverage: {
       reporter: ["text", "json", "html"],
     },

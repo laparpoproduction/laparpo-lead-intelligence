@@ -20,6 +20,9 @@ const serverEnvSchema = z.object({
   CONTACT_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   LEAD_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
   MUTATION_AUDIT_CORRELATION_SECRET: z.string().min(32).optional(),
+  LAPARPO_AUTHENTICATED_E2E: z.enum(["true", "false"]).optional(),
+  LAPARPO_E2E_AI_STUB: z.enum(["true", "false"]).optional(),
+  LAPARPO_E2E_AI_STUB_CALLS_FILE: z.string().trim().min(1).optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
@@ -41,7 +44,16 @@ export type ApplicationConfigurationIssue =
   | "missing_supabase_configuration"
   | "missing_supabase_publishable_key"
   | "missing_supabase_url"
-  | "production_demo_forbidden";
+  | "production_demo_forbidden"
+  | "invalid_authenticated_e2e_flag"
+  | "invalid_e2e_ai_stub_flag"
+  | "authenticated_e2e_requires_ai_stub"
+  | "e2e_ai_stub_requires_authenticated_e2e"
+  | "authenticated_e2e_requires_configured_mode"
+  | "authenticated_e2e_requires_nonproduction"
+  | "authenticated_e2e_requires_calls_file"
+  | "production_authenticated_e2e_forbidden"
+  | "production_e2e_ai_stub_forbidden";
 
 export type ApplicationModeInput = {
   nodeEnv?: string;
@@ -52,6 +64,19 @@ export type ApplicationModeInput = {
 
 export type ApplicationModeResolution = {
   mode: ApplicationMode;
+  issues: readonly ApplicationConfigurationIssue[];
+};
+
+export type AuthenticatedE2EEnvironmentInput = {
+  nodeEnv?: string;
+  applicationMode: ApplicationMode;
+  authenticatedE2E?: string;
+  aiStub?: string;
+  aiStubCallsFile?: string;
+};
+
+export type AuthenticatedE2EEnvironmentResolution = {
+  enabled: boolean;
   issues: readonly ApplicationConfigurationIssue[];
 };
 
@@ -73,6 +98,60 @@ export class ApplicationConfigurationError extends Error {
 
 export function isExplicitDemoModeEnabled(value: string | undefined): boolean {
   return value === "true";
+}
+
+export function isExactBooleanFlag(value: string | undefined): boolean {
+  return value === undefined || value === "true" || value === "false";
+}
+
+export function resolveAuthenticatedE2EEnvironment(
+  input: AuthenticatedE2EEnvironmentInput,
+): AuthenticatedE2EEnvironmentResolution {
+  const issues: ApplicationConfigurationIssue[] = [];
+  const authenticatedEnabled = input.authenticatedE2E === "true";
+  const aiStubEnabled = input.aiStub === "true";
+  const isKnownNonProduction =
+    input.nodeEnv === "development" || input.nodeEnv === "test";
+
+  if (!isExactBooleanFlag(input.authenticatedE2E)) {
+    issues.push("invalid_authenticated_e2e_flag");
+  }
+  if (!isExactBooleanFlag(input.aiStub)) {
+    issues.push("invalid_e2e_ai_stub_flag");
+  }
+  if (input.nodeEnv === "production" && authenticatedEnabled) {
+    issues.push("production_authenticated_e2e_forbidden");
+  }
+  if (input.nodeEnv === "production" && aiStubEnabled) {
+    issues.push("production_e2e_ai_stub_forbidden");
+  }
+  if (authenticatedEnabled && !aiStubEnabled) {
+    issues.push("authenticated_e2e_requires_ai_stub");
+  }
+  if (aiStubEnabled && !authenticatedEnabled) {
+    issues.push("e2e_ai_stub_requires_authenticated_e2e");
+  }
+  if (
+    (authenticatedEnabled || aiStubEnabled) &&
+    input.applicationMode !== "configured"
+  ) {
+    issues.push("authenticated_e2e_requires_configured_mode");
+  }
+  if ((authenticatedEnabled || aiStubEnabled) && !isKnownNonProduction) {
+    issues.push("authenticated_e2e_requires_nonproduction");
+  }
+  if (
+    (authenticatedEnabled || aiStubEnabled) &&
+    !input.aiStubCallsFile?.trim()
+  ) {
+    issues.push("authenticated_e2e_requires_calls_file");
+  }
+
+  return {
+    enabled:
+      issues.length === 0 && authenticatedEnabled && aiStubEnabled,
+    issues,
+  };
 }
 
 export function resolveApplicationMode(
@@ -160,12 +239,28 @@ export function validateProductionServerEnvironment(input: {
   contactDuplicateConfirmationSecret?: string;
   leadDuplicateConfirmationSecret?: string;
   mutationAuditCorrelationSecret?: string;
+  authenticatedE2E?: string;
+  aiStub?: string;
+  aiStubCallsFile?: string;
 }): void {
   if (input.nodeEnv !== "production") return;
 
   const resolution = resolveApplicationMode(input);
   if (resolution.mode !== "configured") {
     throw new ApplicationConfigurationError(resolution.issues);
+  }
+
+  const authenticatedE2EResolution = resolveAuthenticatedE2EEnvironment({
+    nodeEnv: input.nodeEnv,
+    applicationMode: resolution.mode,
+    authenticatedE2E: input.authenticatedE2E,
+    aiStub: input.aiStub,
+    aiStubCallsFile: input.aiStubCallsFile,
+  });
+  if (authenticatedE2EResolution.issues.length > 0) {
+    throw new ApplicationConfigurationError(
+      authenticatedE2EResolution.issues,
+    );
   }
 
   productionServerEnvSchema.parse({
@@ -195,6 +290,9 @@ export function assertProductionServerEnvironment(): void {
       process.env.LEAD_DUPLICATE_CONFIRMATION_SECRET,
     mutationAuditCorrelationSecret:
       process.env.MUTATION_AUDIT_CORRELATION_SECRET,
+    authenticatedE2E: process.env.LAPARPO_AUTHENTICATED_E2E,
+    aiStub: process.env.LAPARPO_E2E_AI_STUB,
+    aiStubCallsFile: process.env.LAPARPO_E2E_AI_STUB_CALLS_FILE,
   });
 }
 
@@ -218,6 +316,11 @@ export function getServerEnv(): ServerEnv {
       process.env.LEAD_DUPLICATE_CONFIRMATION_SECRET || undefined,
     MUTATION_AUDIT_CORRELATION_SECRET:
       process.env.MUTATION_AUDIT_CORRELATION_SECRET || undefined,
+    LAPARPO_AUTHENTICATED_E2E:
+      process.env.LAPARPO_AUTHENTICATED_E2E || undefined,
+    LAPARPO_E2E_AI_STUB: process.env.LAPARPO_E2E_AI_STUB || undefined,
+    LAPARPO_E2E_AI_STUB_CALLS_FILE:
+      process.env.LAPARPO_E2E_AI_STUB_CALLS_FILE || undefined,
     LOG_LEVEL: process.env.LOG_LEVEL,
   });
   validateProductionServerEnvironment({
@@ -234,6 +337,9 @@ export function getServerEnv(): ServerEnv {
       env.LEAD_DUPLICATE_CONFIRMATION_SECRET,
     mutationAuditCorrelationSecret:
       env.MUTATION_AUDIT_CORRELATION_SECRET,
+    authenticatedE2E: env.LAPARPO_AUTHENTICATED_E2E,
+    aiStub: env.LAPARPO_E2E_AI_STUB,
+    aiStubCallsFile: env.LAPARPO_E2E_AI_STUB_CALLS_FILE,
   });
   return env;
 }

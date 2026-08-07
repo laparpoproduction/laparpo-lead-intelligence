@@ -1,5 +1,6 @@
 import { BrandMark } from "@/components/brand-mark";
 import { DashboardNav } from "@/components/dashboard-nav";
+import { logout } from "@/app/logout/actions";
 import { roleLabels, type AppRole } from "@/lib/auth/permissions";
 
 type DashboardShellProps = {
@@ -63,6 +64,16 @@ export function DashboardShell({
             >
               {userName.slice(0, 2).toUpperCase()}
             </div>
+            {!demoMode ? (
+              <form action={logout}>
+                <button
+                  className="min-h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+                  type="submit"
+                >
+                  Sign out
+                </button>
+              </form>
+            ) : null}
           </div>
         </header>
 

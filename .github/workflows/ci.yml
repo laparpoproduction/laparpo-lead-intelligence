@@ -48,6 +48,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://ci-test.supabase.co
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-test-publishable-key
           LAPARPO_DEMO_MODE: "false"
+      - name: Verify browser bundles exclude server-only E2E and provider secrets
+        run: node scripts/authenticated-e2e/check-browser-bundle.mjs
       - name: Validate migrations and RLS
         run: |
           psql -f supabase/tests/bootstrap.sql
@@ -110,3 +112,31 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  authenticated-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      LAPARPO_AUTHENTICATED_E2E: "true"
+      LAPARPO_E2E_AI_STUB: "true"
+      MUTATION_AUDIT_CORRELATION_SECRET: ci-only-authenticated-e2e-correlation-secret-2026
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Verify pinned Supabase CLI
+        run: npx --yes supabase@2.39.2 --version
+      - name: Start disposable Supabase and provision Auth fixtures
+        run: bash scripts/authenticated-e2e/start-local-supabase.sh
+      - name: Install authenticated Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Run authenticated database-backed browser journey
+        run: npm run test:e2e:authenticated
+      - name: Stop disposable Supabase
+        if: always()
+        run: npx --yes supabase@2.39.2 stop --no-backup --workdir .
