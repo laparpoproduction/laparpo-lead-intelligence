@@ -103,6 +103,43 @@ export async function readAIStubCallCount() {
   return contents.split(/\r?\n/u).filter(Boolean).length;
 }
 
+export async function readPipelineFixtureState(opportunityIds) {
+  if (!Array.isArray(opportunityIds) || opportunityIds.length === 0) {
+    throw new Error("Pipeline fixture IDs are required");
+  }
+  const ids = opportunityIds
+    .map((id) => `${sqlLiteral(id)}::uuid`)
+    .join(", ");
+  return queryJson(`
+    select json_build_object(
+      'opportunities', (
+        select coalesce(json_agg(row_to_json(record) order by record.id), '[]'::json)
+        from (
+          select
+            id,
+            lead_id,
+            pipeline_stage,
+            probability_percent,
+            probability_overridden,
+            expected_close_date,
+            owner_id,
+            estimated_value_myr,
+            updated_at
+          from public.opportunities
+          where id in (${ids})
+          order by id
+        ) as record
+      ),
+      'auditCount', (
+        select count(*)
+        from public.mutation_audit_events
+        where resource_type = 'opportunity'
+          and resource_id in (${ids})
+      )
+    )::text;
+  `);
+}
+
 export async function readAuditBoundaryPrivileges() {
   return queryJson(`
     select json_build_object(

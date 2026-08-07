@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { LeadPageHeader } from "@/components/leads/lead-page-header";
 import { OpportunityPipelineBoard } from "@/components/opportunities/opportunity-pipeline-board";
+import { OpportunityPipelineSummary } from "@/components/opportunities/opportunity-pipeline-summary";
 import { OpportunityPipelineToolbar } from "@/components/opportunities/opportunity-pipeline-toolbar";
 import { OpportunityWorkspaceNav } from "@/components/opportunities/opportunity-workspace-nav";
 import { requireDashboardUser } from "@/lib/auth/session";
@@ -59,6 +60,7 @@ export default async function OpportunityPipelinePage({
         title="Opportunity Pipeline"
       />
       <OpportunityWorkspaceNav current="pipeline" />
+      {!user.demoMode ? <OpportunityPipelineSummary /> : null}
       <OpportunityPipelineToolbar query={query} />
       <p className="mb-4 text-xs font-semibold leading-5 text-zinc-500">
         Each stage shows up to 25 Opportunities with an exact stage count.

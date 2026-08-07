@@ -34,12 +34,12 @@ verify all of the following:
   Verify matching configuration without printing either value. A missing,
   blank, short, duplicated or mismatched value is a deployment failure: signed
   application mutations deliberately fail closed rather than lose correlation.
-- If optional Company intelligence will be enabled, `OPENAI_API_KEY` is present
+- If either optional AI Phase 1A/1B action will be enabled, `OPENAI_API_KEY` is present
   only in the server runtime and `OPENAI_MODEL` is absent or one of
   `gpt-5.6-terra` and `gpt-5.6-luna`. Do not expose either through
   `NEXT_PUBLIC_`, build output, logs or screenshots. The rest of the CRM must
   remain deployable when AI is not configured.
-- Before enabling Company intelligence for production, approve the OpenAI API
+- Before enabling either controlled AI action for production, approve the OpenAI API
   data-processing terms and project abuse-monitoring/data-retention settings;
   configure project spend limits, usage alerts and provider rate controls; and
   configure a retained privacy-safe structured-log sink. `store: false`
@@ -57,6 +57,11 @@ verify all of the following:
 - Company intelligence rejects any AI-bound field above its documented
   per-field limit and rejects serialized Company metadata above 8,192 UTF-8
   bytes before provider invocation. It never silently truncates provenance.
+- Opportunity pipeline summarization reads at most 75 RLS-authorized active
+  candidates, excludes Company/Lead names and all Contact/notes data from the
+  provider projection, and rejects serialized input above 32,768 UTF-8 bytes.
+  Its exact stage counts are permission-filtered, its visible text is
+  application-owned, and the transient result creates no database or H7 event.
 - Confidence is derived by the application from validated profile completeness.
   Phase 1A uses Low for sparse profiles and Medium for partial or well-populated
   profiles; High is unavailable. It is not external verification, factual
@@ -265,6 +270,19 @@ If Company intelligence is enabled in this release, also confirm:
 - no database row, H7 audit event, AI history or other persistent artifact is
   created by generation.
 
+If Opportunity pipeline summarization is enabled, also confirm:
+
+- the actor must opt in from `/opportunities/pipeline` and the result disappears
+  after reload;
+- the browser request contains no Opportunity dataset or model/provider choice;
+- RLS-inaccessible and archived Lead/Company rows influence neither detailed
+  candidates nor aggregate counts;
+- provider input contains UUIDs and bounded pipeline facts but no Company/Lead
+  names, Contacts, Profile identities, notes, auth/session or audit data;
+- every returned UUID is checked against the accessible snapshot and its
+  application-derived focus predicate before application rendering; and
+- generation performs no Opportunity mutation and emits no H7 mutation event.
+
 The database audit trail is authoritative for successful committed mutations
 only. Its event is written in the business transaction and therefore rolls back
 when that transaction fails. Application logs use the same server-generated
@@ -281,9 +299,9 @@ After application deployment, perform non-destructive production checks:
 - the UI is not labelled as demo and no configuration-failure page appears;
 - authorized basic reads work for Companies, Contacts and Leads;
 - authorized Opportunity list, detail and pipeline reads work;
-- if enabled, authorized Company intelligence generation works without changing
-  CRM data, while an environment without `OPENAI_API_KEY` shows the safe
-  unavailable state; and
+- if enabled, authorized Company intelligence and Opportunity pipeline summary
+  generation work without changing CRM data, while an environment without
+  `OPENAI_API_KEY` shows the safe unavailable state; and
 - logs contain no migration, authentication, configuration or database errors
   and expose no secret values. Mutation logs may contain request IDs and
   resource IDs, while database audit evidence contains changed field names;

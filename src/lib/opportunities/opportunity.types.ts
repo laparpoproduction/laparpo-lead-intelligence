@@ -230,6 +230,34 @@ export type OpportunityPipelineFilters = Pick<
   "query" | "service" | "kind"
 >;
 
+export const OPPORTUNITY_PIPELINE_SUMMARY_ROW_LIMIT = 75;
+
+export type OpportunityPipelineSummaryReadRow = {
+  id: string;
+  service: OpportunityService;
+  estimated_value_myr: number | string | null;
+  quotation_number: string | null;
+  quotation_sent_at: string | null;
+  meeting_at: string | null;
+  deposit_amount_myr: number | string | null;
+  deposit_received_at: string | null;
+  pipeline_stage: OpportunityPipelineStage;
+  probability_percent: number;
+  probability_overridden: boolean;
+  expected_close_date: string | null;
+  owner_id: string | null;
+  updated_at: string;
+  conversion_opportunity: boolean;
+  lead_title: string;
+  company_name: string | null;
+};
+
+export type OpportunityPipelineSummaryReadModel = {
+  candidates: OpportunityPipelineSummaryReadRow[];
+  activeTotal: number;
+  stageCounts: Record<OpportunityPipelineStage, number>;
+};
+
 // Detail and list intentionally share the same SECURITY INVOKER projection.
 // Keeping this alias explicit documents the detail boundary without duplicating
 // a shape that could drift from the authoritative read model.

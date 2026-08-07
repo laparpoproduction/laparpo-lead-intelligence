@@ -81,6 +81,18 @@ function repository(
     }),
     listLeadAccessRows: vi.fn().mockResolvedValue([]),
     listOwnerProfiles: vi.fn().mockResolvedValue([]),
+    getPipelineSummaryReadModel: vi.fn().mockResolvedValue({
+      candidates: [],
+      activeTotal: 0,
+      stageCounts: {
+        new: 0,
+        discussion: 0,
+        quotation_sent: 0,
+        negotiation: 0,
+        won: 0,
+        lost: 0,
+      },
+    }),
     canModifyLead: vi.fn().mockResolvedValue(true),
     changePipelineStage: vi.fn().mockResolvedValue({
       ...opportunity,

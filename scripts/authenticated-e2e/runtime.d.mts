@@ -15,4 +15,8 @@ export function validateSupabaseStatus(status: Record<string, string>): {
 export function readAuthenticatedE2ERuntime(): Promise<{
   databaseUrl: string;
   managementUsers: Array<{ id: string; email: string; password: string }>;
+  pipelineFixtures: Record<
+    "overdue" | "unassigned" | "won" | "archived",
+    { leadId: string; opportunityId: string; title: string }
+  >;
 }>;

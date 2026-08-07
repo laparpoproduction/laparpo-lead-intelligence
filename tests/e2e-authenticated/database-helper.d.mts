@@ -40,6 +40,12 @@ export function readCompanyDescendantCounts(
   companyId: string,
 ): Promise<{ contacts: number; leads: number }>;
 export function readAIStubCallCount(): Promise<number>;
+export function readPipelineFixtureState(
+  opportunityIds: string[],
+): Promise<{
+  opportunities: Array<Record<string, unknown>>;
+  auditCount: number;
+}>;
 export function readAuditBoundaryPrivileges(): Promise<{
   anon: boolean;
   authenticated: boolean;

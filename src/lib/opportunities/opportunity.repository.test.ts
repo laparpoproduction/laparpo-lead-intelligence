@@ -6,7 +6,7 @@ import {
 } from "./opportunity.repository";
 import { validateLeadConversion } from "./opportunity.validation";
 
-type Response = { data: unknown; error: unknown };
+type Response = { data: unknown; error: unknown; count?: number | null };
 type Call = { method: string; args: unknown[] };
 
 class QueryBuilder implements PromiseLike<Response> {
@@ -208,6 +208,66 @@ describe("SupabaseOpportunityRepository", () => {
         args: ["can_modify_lead", { target_lead_id: leadId }],
       },
     ]);
+  });
+
+  it("loads a bounded, minimal pipeline summary from the RLS-authoritative read model", async () => {
+    const summaryRow = {
+      id: opportunityId,
+      service: "food_review",
+      estimated_value_myr: "3500.00",
+      quotation_number: null,
+      quotation_sent_at: null,
+      meeting_at: null,
+      deposit_amount_myr: null,
+      deposit_received_at: null,
+      pipeline_stage: "new",
+      probability_percent: 20,
+      probability_overridden: false,
+      expected_close_date: null,
+      owner_id: null,
+      updated_at: row.updated_at,
+      conversion_opportunity: false,
+      lead_title: "Authorized Lead",
+      company_name: "Authorized Company",
+    };
+    const { repository, calls } = setup([
+      { data: [summaryRow], error: null, count: 1 },
+      ...[1, 2, 3, 4, 5, 6].map((count) => ({
+        data: null,
+        error: null,
+        count,
+      })),
+    ]);
+    await expect(repository.getPipelineSummaryReadModel(75)).resolves.toEqual({
+      candidates: [summaryRow],
+      activeTotal: 1,
+      stageCounts: {
+        new: 1,
+        discussion: 2,
+        quotation_sent: 3,
+        negotiation: 4,
+        won: 5,
+        lost: 6,
+      },
+    });
+    expect(calls.filter((call) => call.method === "from")).toHaveLength(7);
+    expect(calls).toContainEqual({
+      method: "in",
+      args: [
+        "pipeline_stage",
+        ["new", "discussion", "quotation_sent", "negotiation"],
+      ],
+    });
+    expect(calls).toContainEqual({ method: "limit", args: [75] });
+    const selectedColumns = calls.find(
+      (call) =>
+        call.method === "select" &&
+        typeof call.args[0] === "string" &&
+        call.args[0].includes("lead_title"),
+    )?.args[0] as string;
+    expect(selectedColumns).not.toContain("lost_reason_notes");
+    expect(selectedColumns).not.toContain("created_by");
+    expect(selectedColumns).not.toContain("public_email");
   });
 
   it("uses narrow CAS payloads for every pipeline mutation intention", async () => {
