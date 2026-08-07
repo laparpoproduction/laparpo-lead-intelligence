@@ -45,10 +45,15 @@ verify all of the following:
   configure a retained privacy-safe structured-log sink. `store: false`
   prevents Responses application-state storage for this request but is not a
   universal zero-retention claim.
-- Broad AI production rollout additionally requires a durable distributed rate
-  limiter and TEST-010's authenticated database-backed browser journey. The
-  current in-runtime cooldown/window is defense-in-depth for a controlled first
-  slice, not a global quota.
+- TEST-010 is covered by an isolated CI lane using disposable local Supabase,
+  real Auth/session cookies, the actual migrations/RLS/server actions and a
+  production-forbidden deterministic outbound AI substitute. It does not prove
+  live Terra quality and never targets a remote project. Broad AI production
+  rollout still requires a durable distributed rate limiter, retained logs,
+  provider privacy approval, spend controls, `safety_identifier`, Contact PII
+  policy and future URL-ingestion/SSRF controls. The current in-runtime
+  cooldown/window is defense-in-depth for a controlled first slice, not a global
+  quota.
 - Company intelligence rejects any AI-bound field above its documented
   per-field limit and rejects serialized Company metadata above 8,192 UTF-8
   bytes before provider invocation. It never silently truncates provenance.

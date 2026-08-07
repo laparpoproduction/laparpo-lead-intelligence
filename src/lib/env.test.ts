@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ApplicationConfigurationError,
+  isExactBooleanFlag,
   isExplicitDemoModeEnabled,
   resolveApplicationMode,
+  resolveAuthenticatedE2EEnvironment,
   validateProductionServerEnvironment,
   type ApplicationModeInput,
 } from "./env";
@@ -250,6 +252,21 @@ describe("production server environment", () => {
     ).toThrow();
   });
 
+  it.each([
+    { authenticatedE2E: "true", aiStub: "true" },
+    { authenticatedE2E: "true", aiStub: "false" },
+    { authenticatedE2E: "false", aiStub: "true" },
+  ])("rejects authenticated E2E provider flags in production: %o", (flags) => {
+    expect(() =>
+      validateProductionServerEnvironment({
+        ...productionInput(),
+        ...validSecrets,
+        ...flags,
+        aiStubCallsFile: "/tmp/e2e-ai-calls",
+      }),
+    ).toThrow(ApplicationConfigurationError);
+  });
+
   it("does not require production secrets outside production", () => {
     expect(() =>
       validateProductionServerEnvironment({ nodeEnv: "development" }),
@@ -257,5 +274,79 @@ describe("production server environment", () => {
     expect(() =>
       validateProductionServerEnvironment({ nodeEnv: "test" }),
     ).not.toThrow();
+  });
+});
+
+describe("authenticated E2E environment", () => {
+  it.each([undefined, "true", "false"])(
+    "accepts only exact boolean syntax: %s",
+    (value) => {
+      expect(isExactBooleanFlag(value)).toBe(true);
+    },
+  );
+
+  it.each(["1", "yes", "TRUE", " true ", ""])(
+    "does not enable malformed flag %j",
+    (value) => {
+      expect(isExactBooleanFlag(value)).toBe(false);
+      expect(
+        resolveAuthenticatedE2EEnvironment({
+          nodeEnv: "test",
+          applicationMode: "configured",
+          authenticatedE2E: value,
+          aiStub: "true",
+          aiStubCallsFile: "/tmp/calls",
+        }),
+      ).toMatchObject({ enabled: false });
+    },
+  );
+
+  it("enables only the explicit configured non-production pair", () => {
+    expect(
+      resolveAuthenticatedE2EEnvironment({
+        nodeEnv: "development",
+        applicationMode: "configured",
+        authenticatedE2E: "true",
+        aiStub: "true",
+        aiStubCallsFile: "/workspace/.tmp/authenticated-e2e/calls",
+      }),
+    ).toEqual({ enabled: true, issues: [] });
+  });
+
+  it.each(["demo", "misconfigured"] as const)(
+    "rejects %s application mode before either provider can run",
+    (applicationMode) => {
+      expect(
+        resolveAuthenticatedE2EEnvironment({
+          nodeEnv: "test",
+          applicationMode,
+          authenticatedE2E: "true",
+          aiStub: "true",
+          aiStubCallsFile: "/tmp/calls",
+        }),
+      ).toMatchObject({
+        enabled: false,
+        issues: expect.arrayContaining([
+          "authenticated_e2e_requires_configured_mode",
+        ]),
+      });
+    },
+  );
+
+  it("requires both guards and a server-only call counter path", () => {
+    expect(
+      resolveAuthenticatedE2EEnvironment({
+        nodeEnv: "test",
+        applicationMode: "configured",
+        authenticatedE2E: "true",
+        aiStub: "false",
+      }),
+    ).toMatchObject({
+      enabled: false,
+      issues: expect.arrayContaining([
+        "authenticated_e2e_requires_ai_stub",
+        "authenticated_e2e_requires_calls_file",
+      ]),
+    });
   });
 });

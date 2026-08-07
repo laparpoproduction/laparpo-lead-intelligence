@@ -81,6 +81,9 @@ production, is visibly labelled and cannot create a real mutation context.
 | `NEXT_PUBLIC_SUPABASE_URL` | Browser and server | Yes for auth | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser and server | Yes for auth | Supabase publishable or legacy anon key |
 | `LAPARPO_DEMO_MODE` | Server only | No; defaults to disabled | Exact `true` enables the non-production preview only when both Supabase values are absent |
+| `LAPARPO_AUTHENTICATED_E2E` | Server only | TEST-010 only | Exact `true`, together with the AI-stub flag, enables only the disposable authenticated E2E lane outside production |
+| `LAPARPO_E2E_AI_STUB` | Server only | TEST-010 only | Exact `true` selects the deterministic outbound AI substitute only inside the authenticated E2E lane |
+| `LAPARPO_E2E_AI_STUB_CALLS_FILE` | Server only | TEST-010 only | Isolated `.tmp/authenticated-e2e` counter used to prove exactly one stub call |
 | `COMPANY_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for company mutations | Signs short-lived duplicate confirmation tokens; use at least 32 random characters |
 | `CONTACT_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for contact mutations | Signs namespaced, short-lived Contact confirmation tokens; use at least 32 random characters |
 | `LEAD_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for lead mutations | Signs namespaced, short-lived lead confirmation tokens; use at least 32 random characters |
@@ -98,6 +101,9 @@ Tests and local development may omit the server-only mutation secrets until
 those workflows are exercised. Supabase values may be omitted only for the
 explicit non-production demo described above; production-like local builds must
 provide URL/key and explicit test-only confirmation values.
+The authenticated E2E flags are exact booleans, are rejected in production and
+must never use a `NEXT_PUBLIC_` prefix. They do not create an actor, session,
+repository, RLS or mutation bypass; they substitute only the outbound AI provider.
 
 ## Database architecture
 
@@ -235,10 +241,11 @@ minute within one application runtime, caps input fields and structured output,
 and records only safe metadata such as request/resource IDs, model, duration and
 token counts. It never logs prompts, Company payloads, structured model output,
 rendered text, provider raw responses or provider errors. This local limiter is deliberately not
-presented as durable or distributed. Before broad AI production rollout,
-configure provider project spend/rate controls and alerts, add a distributed
-limiter, retain privacy-safe application logs, and complete TEST-010's
-authenticated database-backed browser journey.
+presented as durable or distributed. TEST-010 now provides the authenticated
+database-backed browser proof. Before broad AI production rollout, configure
+provider project spend/rate controls and alerts, add a distributed limiter,
+retain privacy-safe application logs, approve provider privacy controls, add a
+`safety_identifier`, and complete the Contact PII and future URL-ingestion policy.
 
 Confidence is derived by the application from the completeness of the available
 Company metadata after structural validation: sparse profiles produce Low;
@@ -385,14 +392,47 @@ npm run build
 npm run test:e2e
 ```
 
+The existing `playwright.config.ts` remains the 16-test, read-only demo-preview
+UX suite on port 3000. TEST-010 adds a separate serial browser lane on port 3001
+using `playwright.authenticated.config.ts`, one worker and a disposable local
+Supabase stack. It uses real Auth cookies, PostgREST, RLS, Company server actions
+and H7 audit triggers. Only the outbound AI provider is deterministic, and no
+`OPENAI_API_KEY` is permitted.
+
+To run the authenticated lane locally, install Docker, a PostgreSQL 17-compatible
+`psql` client, Node.js 20.9+ and Chromium. Use only a disposable checkout with no
+remote Supabase link:
+
+```bash
+export LAPARPO_AUTHENTICATED_E2E=true
+export LAPARPO_E2E_AI_STUB=true
+export MUTATION_AUDIT_CORRELATION_SECRET=local-test-only-correlation-secret-at-least-32-chars
+bash scripts/authenticated-e2e/start-local-supabase.sh
+npx playwright install chromium
+npm run test:e2e:authenticated
+npx --yes supabase@2.39.2 stop --no-backup --workdir .
+```
+
+The setup pins Supabase CLI `2.39.2`, starts Docker-backed local services, and
+applies the repository's actual 001–023 migrations. It creates a confirmed Auth
+user through the local Admin API, promotes its Profile through the local database
+owner, and keeps the service-role key, database URL and random password in an
+ignored chmod-600 fixture file. Those credentials are never passed to Next or
+browser storage by fixture setup. Do not run `supabase link`, `supabase db push`
+or substitute a remote project. These commands are local/CI test infrastructure;
+the H6 production migration runbook is unchanged.
+
 GitHub Actions performs a production-dependency audit, lint, type checking,
 Vitest and a production build. Its disposable PostgreSQL job covers migration
 ordering and legacy upgrade fixtures; general RLS and CRM database smoke tests;
 profile privilege, Company hard-delete/soft-delete and immutable creation
 metadata hardening; Companies, Contacts, Leads and Lead Activities; conversion,
 retry, concurrency, immutable ledger and restore behavior; and Opportunity
-list/detail/pipeline, CAS and Won/Lost concurrency. Playwright covers browser
-behavior. This summary is categorical: the workflow itself is authoritative for
+list/detail/pipeline, CAS and Won/Lost concurrency. The demo Playwright suite
+covers preview UX, while the isolated TEST-010 job covers real login/session
+persistence, Company create/read/archive, database persistence, H7 correlation,
+transient AI rendering, soft-delete authorization and logout. This summary is
+categorical: the workflow itself is authoritative for
 the exact current test steps. Company intelligence tests use fakes and captured
 request objects; CI never needs `OPENAI_API_KEY` and never calls OpenAI.
 
@@ -434,7 +474,9 @@ request objects; CI never needs `OPENAI_API_KEY` and never calls OpenAI.
   finance workflows and follow-up reminder automation are not implemented.
 - Account invitation, password reset and role-management screens are not implemented.
 - Company intelligence does not persist, bulk-process, discover, scrape, browse,
-  ingest websites, process Contact PII or mutate CRM data. Durable distributed
-  AI rate limiting and TEST-010 remain gates before broad AI production rollout.
+  ingest websites, process Contact PII or mutate CRM data. TEST-010 is covered;
+  durable distributed AI rate limiting, retained logs, provider approvals,
+  spend controls, `safety_identifier`, Contact PII and URL-ingestion policy remain
+  gates before broad AI production rollout.
 - External discovery, web ingestion and scheduled jobs are not implemented.
 - Dashboard metrics remain placeholders.

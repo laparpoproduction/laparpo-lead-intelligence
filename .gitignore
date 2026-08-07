@@ -4,6 +4,8 @@ out/
 coverage/
 playwright-report/
 test-results/
+.tmp/
+supabase/.temp/
 .env
 .env.local
 .env.*.local

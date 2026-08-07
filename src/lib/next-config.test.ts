@@ -12,6 +12,9 @@ const validEnvironment = {
     "ci-lead-confirmation-secret-value",
   MUTATION_AUDIT_CORRELATION_SECRET:
     "ci-mutation-audit-correlation-secret-value",
+  LAPARPO_AUTHENTICATED_E2E: "false",
+  LAPARPO_E2E_AI_STUB: "false",
+  LAPARPO_E2E_AI_STUB_CALLS_FILE: undefined,
 };
 
 async function importNextConfig(
@@ -66,6 +69,16 @@ describe("next.config production validation integration", () => {
     await expect(
       importNextConfig({ LAPARPO_DEMO_MODE: "true" }),
     ).rejects.toThrow("Invalid application configuration");
+  });
+
+  it("rejects production authenticated E2E flags", async () => {
+    await expect(
+      importNextConfig({
+        LAPARPO_AUTHENTICATED_E2E: "true",
+        LAPARPO_E2E_AI_STUB: "true",
+        LAPARPO_E2E_AI_STUB_CALLS_FILE: "/tmp/calls",
+      }),
+    ).rejects.toThrow("production_authenticated_e2e_forbidden");
   });
 
   it("rejects production without mutation audit correlation", async () => {
