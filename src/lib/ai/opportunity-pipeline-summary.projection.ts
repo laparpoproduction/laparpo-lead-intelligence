@@ -29,7 +29,9 @@ const readRowSchema = z
     probability_overridden: z.boolean(),
     expected_close_date: z.string().nullable(),
     owner_id: z.uuid().nullable(),
-    updated_at: z.iso.datetime(),
+    // PostgREST serializes PostgreSQL timestamptz values with an explicit
+    // UTC offset (for example +00:00), which is valid RFC 3339 input.
+    updated_at: z.iso.datetime({ offset: true }),
     conversion_opportunity: z.boolean(),
     lead_title: z.string().min(1).max(240),
     company_name: z.string().min(1).max(200).nullable(),

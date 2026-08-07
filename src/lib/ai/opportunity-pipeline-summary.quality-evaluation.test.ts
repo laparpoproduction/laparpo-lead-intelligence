@@ -173,4 +173,20 @@ describe("AI Phase 1B synthetic quality matrix", () => {
       ),
     ).toThrow("bounds");
   });
+
+  it("accepts the RFC 3339 UTC offset emitted by PostgREST for updated_at", () => {
+    const projection = projectOpportunityPipelineSummary(
+      makePipelineSummaryReadModel([
+        makePipelineSummaryRow(1, {
+          updated_at: "2026-08-01T08:00:00.000+00:00",
+        }),
+      ]),
+      pipelineActorId,
+      now,
+    );
+
+    expect(projection.providerSnapshot.opportunities[0]?.daysSinceUpdated).toBe(
+      6,
+    );
+  });
 });
