@@ -3,7 +3,10 @@ import {
   OpportunityRepositoryError,
   type OpportunityRepository,
 } from "./opportunity.repository";
-import { opportunityPipelineStageValues } from "./opportunity.types";
+import {
+  OPPORTUNITY_PIPELINE_SUMMARY_ROW_LIMIT,
+  opportunityPipelineStageValues,
+} from "./opportunity.types";
 import type {
   ConvertLeadInput,
   LeadConversionActor,
@@ -19,6 +22,7 @@ import type {
   OpportunityOwnerProfile,
   OpportunityPipelineBoard,
   OpportunityPipelineFilters,
+  OpportunityPipelineSummaryReadModel,
   OpportunityProbabilityMutationInput,
   OpportunityStageMutationInput,
   OpportunityVersionedMutationInput,
@@ -335,6 +339,27 @@ export class LeadConversionService {
     this.requireActive(actor);
     try {
       return await this.repository.listOwnerProfiles();
+    } catch (error) {
+      if (error instanceof OpportunityRepositoryError) {
+        throw new OpportunityListUnavailableError(error);
+      }
+      throw error;
+    }
+  }
+
+  async getPipelineSummaryReadModel(
+    actor: LeadConversionActor,
+    now: Date,
+  ): Promise<OpportunityPipelineSummaryReadModel> {
+    this.requireActive(actor);
+    if (Number.isNaN(now.getTime())) {
+      throw new OpportunityListUnavailableError();
+    }
+    try {
+      return await this.repository.getPipelineSummaryReadModel(
+        OPPORTUNITY_PIPELINE_SUMMARY_ROW_LIMIT,
+        now.toISOString().slice(0, 10),
+      );
     } catch (error) {
       if (error instanceof OpportunityRepositoryError) {
         throw new OpportunityListUnavailableError(error);

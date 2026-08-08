@@ -49,7 +49,7 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `MUTATION_AUDIT_CORRELATION_SECRET` with at least 32 random characters,
      matching the protected private database secret described in the deployment
      runbook
-   - optional `OPENAI_API_KEY` to enable Company intelligence and optional
+   - optional `OPENAI_API_KEY` to enable the read-only AI Phase 1A/1B actions and optional
      allow-listed `OPENAI_MODEL` (`gpt-5.6-terra` or `gpt-5.6-luna`)
 5. Apply **every** migration currently present in `supabase/migrations/` in
    filename order. The directory, not this README, is the migration source of
@@ -88,8 +88,8 @@ production, is visibly labelled and cannot create a real mutation context.
 | `CONTACT_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for contact mutations | Signs namespaced, short-lived Contact confirmation tokens; use at least 32 random characters |
 | `LEAD_DUPLICATE_CONFIRMATION_SECRET` | Server only | Yes for lead mutations | Signs namespaced, short-lived lead confirmation tokens; use at least 32 random characters |
 | `MUTATION_AUDIT_CORRELATION_SECRET` | Server only | Yes for production mutations | Signs short-lived request correlation sent only by the server Supabase client; must match the protected private database secret |
-| `OPENAI_API_KEY` | Server only | No | Enables the optional read-only Company intelligence action |
-| `OPENAI_MODEL` | Server only | No | Allow-listed Company intelligence model; defaults safely to `gpt-5.6-terra` |
+| `OPENAI_API_KEY` | Server only | No | Enables the optional read-only Company intelligence and Opportunity pipeline summary actions |
+| `OPENAI_MODEL` | Server only | No | Allow-listed AI model for both controlled slices; defaults safely to `gpt-5.6-terra` |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
@@ -265,6 +265,70 @@ live OpenAI calls and does not guarantee live-model quality. The controlled
 evaluation record and manual Terra procedure are in
 [`docs/ai-company-intelligence-quality-evaluation.md`](docs/ai-company-intelligence-quality-evaluation.md).
 
+### AI Phase 1B: permission-aware Opportunity pipeline summary
+
+The protected `/opportunities/pipeline` workspace provides an explicit
+`Summarize pipeline` action. The result is transient, advisory and read-only: it
+is generated only after the user acts, disappears on reload, is never stored in
+PostgreSQL, creates no H7 mutation event and contains no mutation controls.
+
+The server resolves the active actor and queries a dedicated bounded projection
+from the existing `opportunity_list_read_model`. That view is
+`security_invoker`, so the existing Lead/Company access rules and RLS determine
+both detailed candidates and exact stage counts. The browser submits no actor,
+role, Opportunity ID list, pipeline data, model or prompt. Candidate selection
+runs six database-bounded category queries in this fixed priority: passed
+expected-close date, unassigned, Quotation Sent, Negotiation, manual probability
+override and missing expected-close date. Each query contributes at most 10 new
+unique rows, excludes already-selected UUIDs and uses deterministic date/update
+ordering with a UUID tie-break. An oldest-`updated_at` fallback fills only the
+remaining capacity up to 75. Exact RLS-filtered aggregate counts separately
+represent all six stages, including Won and Lost. The provider input is rejected
+rather than truncated if its serialized UTF-8 size exceeds 32,768 bytes.
+
+For each bounded active Opportunity the provider sees only its UUID, stage,
+service, persisted probability metadata, expected close date,
+privacy-minimized owner status, deterministic update age,
+conversion/ordinary kind, quotation/meeting/deposit presence, overdue flag and
+application-derived attention codes. The provider does **not** receive Company
+names, Lead titles, Contacts, emails, phones/WhatsApp, notes, Profile identities,
+auth/session data, audit data or creator identity. Authorized Company/Lead labels
+stay in a server-side display map and are resolved only after semantic validation.
+
+Application code—not the model—determines overdue dates, unassigned rows,
+missing close dates, probability overrides and quotation/negotiation follow-up.
+Recorded MYR value does not create an AI focus and is not sent to the provider;
+it remains available only in the authorized server-side display map. The model
+may only choose up to three distinct focus codes and up to five supplied UUIDs
+per focus. A strict schema contains no prose, URL, command, confidence or new
+probability field. Independent semantic validation rejects invented,
+inaccessible, terminal, duplicate or wrong-predicate UUID selections as a whole;
+fixed application templates render every visible sentence. Raw provider text is
+independently JSON-parsed before application Zod validation; reserved keys
+`__proto__`, `constructor` and `prototype` are rejected recursively rather than
+normalized away.
+
+When more active rows are accessible than the 75 analyzed candidates, the closed
+overview is always `limited_pipeline_data`, even if the bounded set contains
+grounded focus items. The UI shows exact analyzed/accessible counts and explains
+that the category-aware sample may omit other attention-worthy Opportunities.
+A fully analyzed non-empty pipeline with none of the configured signals uses the
+separate `pipeline_no_grounded_attention` overview and makes no health or
+conversion claim.
+
+Phase 1B reuses the official SDK/Responses API foundation, allow-listed Terra or
+Luna model, `store: false`, low reasoning effort, 600 output-token ceiling,
+20-second timeout, zero retries, no tools and no web search. Phase 1A and 1B share
+the same actor-keyed five-second cooldown/five-per-minute in-runtime limiter.
+That limiter is bounded but not distributed or durable. CI covers the A–M
+synthetic matrix and real local Supabase/Auth browser journeys using the
+production-forbidden deterministic provider; no live OpenAI call is made. See
+[`docs/ai-opportunity-pipeline-summary-quality-evaluation.md`](docs/ai-opportunity-pipeline-summary-quality-evaluation.md).
+
+Phase 1B does not predict sales success, recompute CRM probability, infer missing
+money, convert currencies, reopen terminal Opportunities or grant mutation
+authority. `LIVE-TERRA-EVAL-NOT-RUN` remains the current live-quality status.
+
 ### Contacts database foundation
 
 `contacts.full_name` is the canonical display name. Optional `first_name` and
@@ -390,6 +454,7 @@ npm run typecheck
 npm run test
 npm run build
 npm run test:e2e
+npm run test:e2e:authenticated
 ```
 
 The existing `playwright.config.ts` remains the 16-test, read-only demo-preview
@@ -414,8 +479,8 @@ npx --yes supabase@2.39.2 stop --no-backup --workdir .
 ```
 
 The setup pins Supabase CLI `2.39.2`, starts Docker-backed local services, and
-applies the repository's actual 001–023 migrations. It creates a confirmed Auth
-user through the local Admin API, promotes its Profile through the local database
+applies the repository's actual 001–023 migrations. It creates retry-safe confirmed Auth
+users through the local Admin API, promotes their Profiles through the local database
 owner, and keeps the service-role key, database URL and random password in an
 ignored chmod-600 fixture file. Those credentials are never passed to Next or
 browser storage by fixture setup. Do not run `supabase link`, `supabase db push`
@@ -433,8 +498,11 @@ covers preview UX, while the isolated TEST-010 job covers real login/session
 persistence, Company create/read/archive, database persistence, H7 correlation,
 transient AI rendering, soft-delete authorization and logout. This summary is
 categorical: the workflow itself is authoritative for
-the exact current test steps. Company intelligence tests use fakes and captured
-request objects; CI never needs `OPENAI_API_KEY` and never calls OpenAI.
+the exact current test steps. The same authenticated lane now also covers the
+read-only Opportunity summary over seeded synthetic pipeline rows, authorization
+exclusions, unchanged database/H7 state and transient rendering. AI tests use
+fakes and captured request objects; CI never needs `OPENAI_API_KEY` and never
+calls OpenAI.
 
 ## Manual test checklist
 
@@ -460,6 +528,10 @@ request objects; CI never needs `OPENAI_API_KEY` and never calls OpenAI.
     intelligence for an accessible Company, verify the result is labelled
     non-binding and transient, and confirm an inaccessible Company cannot invoke
     the provider. Do not use Contact PII or private notes.
+15. From `/opportunities/pipeline`, explicitly generate the AI Pipeline Summary,
+    confirm only accessible active Opportunities appear, follow only ordinary
+    detail links, reload to clear the result, and verify no stage, owner,
+    probability, value or H7 history changed.
 
 ## Known limitations
 
@@ -473,8 +545,9 @@ request objects; CI never needs `OPENAI_API_KEY` and never calls OpenAI.
   Opportunity list/detail/pipeline workspace are implemented. Quotations,
   finance workflows and follow-up reminder automation are not implemented.
 - Account invitation, password reset and role-management screens are not implemented.
-- Company intelligence does not persist, bulk-process, discover, scrape, browse,
-  ingest websites, process Contact PII or mutate CRM data. TEST-010 is covered;
+- Company intelligence and Opportunity pipeline summarization do not persist,
+  bulk-process, discover, scrape, browse, ingest websites, process Contact PII
+  or mutate CRM data. TEST-010 is covered;
   durable distributed AI rate limiting, retained logs, provider approvals,
   spend controls, `safety_identifier`, Contact PII and URL-ingestion policy remain
   gates before broad AI production rollout.

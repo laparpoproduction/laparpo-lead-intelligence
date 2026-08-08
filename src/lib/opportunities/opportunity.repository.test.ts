@@ -6,7 +6,7 @@ import {
 } from "./opportunity.repository";
 import { validateLeadConversion } from "./opportunity.validation";
 
-type Response = { data: unknown; error: unknown };
+type Response = { data: unknown; error: unknown; count?: number | null };
 type Call = { method: string; args: unknown[] };
 
 class QueryBuilder implements PromiseLike<Response> {
@@ -26,6 +26,15 @@ class QueryBuilder implements PromiseLike<Response> {
   }
   eq(...args: unknown[]) {
     return this.record("eq", args);
+  }
+  is(...args: unknown[]) {
+    return this.record("is", args);
+  }
+  lt(...args: unknown[]) {
+    return this.record("lt", args);
+  }
+  not(...args: unknown[]) {
+    return this.record("not", args);
   }
   in(...args: unknown[]) {
     return this.record("in", args);
@@ -208,6 +217,113 @@ describe("SupabaseOpportunityRepository", () => {
         args: ["can_modify_lead", { target_lead_id: leadId }],
       },
     ]);
+  });
+
+  it("loads a category-aware bounded pipeline summary from the RLS-authoritative read model", async () => {
+    const summaryRow = {
+      id: opportunityId,
+      service: "food_review",
+      estimated_value_myr: "3500.00",
+      quotation_number: null,
+      quotation_sent_at: null,
+      meeting_at: null,
+      deposit_amount_myr: null,
+      deposit_received_at: null,
+      pipeline_stage: "new",
+      probability_percent: 20,
+      probability_overridden: false,
+      expected_close_date: null,
+      owner_id: null,
+      updated_at: row.updated_at,
+      conversion_opportunity: false,
+      lead_title: "Authorized Lead",
+      company_name: "Authorized Company",
+    };
+    const categoryRows = Array.from({ length: 7 }, (_, index) => ({
+      ...summaryRow,
+      id: `22222222-2222-4222-8222-${String(index + 1).padStart(12, "0")}`,
+    }));
+    const { repository, calls } = setup([
+      ...categoryRows.map((candidate) => ({
+        data: [candidate],
+        error: null,
+      })),
+      ...[116, 2, 1, 1, 1, 1].map((count) => ({
+        data: null,
+        error: null,
+        count,
+      })),
+    ]);
+    await expect(
+      repository.getPipelineSummaryReadModel(75, "2026-08-08"),
+    ).resolves.toEqual({
+      candidates: categoryRows,
+      activeTotal: 120,
+      stageCounts: {
+        new: 116,
+        discussion: 2,
+        quotation_sent: 1,
+        negotiation: 1,
+        won: 1,
+        lost: 1,
+      },
+    });
+    expect(calls.filter((call) => call.method === "from")).toHaveLength(13);
+    expect(calls).toContainEqual({
+      method: "in",
+      args: [
+        "pipeline_stage",
+        ["new", "discussion", "quotation_sent", "negotiation"],
+      ],
+    });
+    expect(calls).toContainEqual({
+      method: "lt",
+      args: ["expected_close_date", "2026-08-08"],
+    });
+    expect(calls).toContainEqual({ method: "is", args: ["owner_id", null] });
+    expect(calls).toContainEqual({
+      method: "eq",
+      args: ["pipeline_stage", "quotation_sent"],
+    });
+    expect(calls).toContainEqual({
+      method: "eq",
+      args: ["pipeline_stage", "negotiation"],
+    });
+    expect(calls).toContainEqual({
+      method: "eq",
+      args: ["probability_overridden", true],
+    });
+    expect(calls).toContainEqual({
+      method: "is",
+      args: ["expected_close_date", null],
+    });
+    expect(calls.filter((call) => call.method === "limit").map((call) => call.args[0])).toEqual([
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      69,
+    ]);
+    expect(calls.filter((call) => call.method === "not")).toHaveLength(6);
+    const selectedColumns = calls.find(
+      (call) =>
+        call.method === "select" &&
+        typeof call.args[0] === "string" &&
+        call.args[0].includes("lead_title"),
+    )?.args[0] as string;
+    expect(selectedColumns).not.toContain("lost_reason_notes");
+    expect(selectedColumns).not.toContain("created_by");
+    expect(selectedColumns).not.toContain("public_email");
+  });
+
+  it("rejects invalid server dates before querying the pipeline read model", async () => {
+    const { repository, calls } = setup([]);
+    await expect(
+      repository.getPipelineSummaryReadModel(75, "2026-02-30"),
+    ).rejects.toMatchObject({ failure: "invalid_value" });
+    expect(calls).toEqual([]);
   });
 
   it("uses narrow CAS payloads for every pipeline mutation intention", async () => {

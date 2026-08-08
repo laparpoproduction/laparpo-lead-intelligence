@@ -24,12 +24,20 @@ import type {
   OpportunityOwnerProfileRow,
   OpportunityOwnerMutationInput,
   OpportunityProbabilityMutationInput,
+  OpportunityPipelineStage,
+  OpportunityPipelineSummaryReadModel,
+  OpportunityPipelineSummaryReadRow,
   OpportunityRow,
   OpportunitySort,
   OpportunityStageMutationInput,
   OpportunityVersionedMutationInput,
   PaginatedOpportunities,
   ValidatedConvertLeadInput,
+} from "./opportunity.types";
+import {
+  OPPORTUNITY_PIPELINE_SUMMARY_CATEGORY_LIMIT,
+  opportunityActivePipelineStageValues,
+  opportunityPipelineStageValues,
 } from "./opportunity.types";
 import {
   validateLeadConversion,
@@ -82,6 +90,10 @@ export interface OpportunityRepository {
   list(options?: OpportunityListOptions): Promise<PaginatedOpportunities>;
   listLeadAccessRows(leadIds: string[]): Promise<OpportunityLeadAccessRow[]>;
   listOwnerProfiles(): Promise<OpportunityOwnerProfile[]>;
+  getPipelineSummaryReadModel(
+    limit: number,
+    asOfDate: string,
+  ): Promise<OpportunityPipelineSummaryReadModel>;
   canModifyLead(leadId: string): Promise<boolean>;
   changePipelineStage(
     input: OpportunityStageMutationInput,
@@ -204,6 +216,26 @@ const opportunityListColumns = [
   "company_name",
   "conversion_opportunity",
   "converted_at",
+].join(", ");
+
+const opportunityPipelineSummaryColumns = [
+  "id",
+  "service",
+  "estimated_value_myr",
+  "quotation_number",
+  "quotation_sent_at",
+  "meeting_at",
+  "deposit_amount_myr",
+  "deposit_received_at",
+  "pipeline_stage",
+  "probability_percent",
+  "probability_overridden",
+  "expected_close_date",
+  "owner_id",
+  "updated_at",
+  "conversion_opportunity",
+  "lead_title",
+  "company_name",
 ].join(", ");
 
 const opportunitySortColumns: Record<
@@ -468,6 +500,159 @@ export class SupabaseOpportunityRepository implements OpportunityRepository {
         "unknown",
       );
     }
+  }
+
+  async getPipelineSummaryReadModel(
+    limit: number,
+    asOfDate: string,
+  ): Promise<OpportunityPipelineSummaryReadModel> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new OpportunityRepositoryError(
+        "pipeline summary limit",
+        "invalid_value",
+      );
+    }
+    const parsedAsOfDate = new Date(`${asOfDate}T00:00:00.000Z`);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/u.test(asOfDate) ||
+      Number.isNaN(parsedAsOfDate.getTime()) ||
+      parsedAsOfDate.toISOString().slice(0, 10) !== asOfDate
+    ) {
+      throw new OpportunityRepositoryError(
+        "pipeline summary server date",
+        "invalid_value",
+      );
+    }
+
+    const baseCandidateQuery = () =>
+      this.client
+        .from("opportunity_list_read_model")
+        .select(opportunityPipelineSummaryColumns)
+        .in("pipeline_stage", [...opportunityActivePipelineStageValues]);
+    type CandidateQuery = ReturnType<typeof baseCandidateQuery>;
+    const candidates: OpportunityPipelineSummaryReadRow[] = [];
+    const selectedIds = new Set<string>();
+
+    const appendCandidates = async (
+      category: string,
+      allocation: number,
+      configure: (query: CandidateQuery) => CandidateQuery,
+    ) => {
+      if (allocation <= 0) return;
+      let query = baseCandidateQuery();
+      if (selectedIds.size > 0) {
+        query = query.not(
+          "id",
+          "in",
+          `(${[...selectedIds].sort().join(",")})`,
+        );
+      }
+      const result = await configure(query).limit(allocation);
+      if (result.error) {
+        throw new OpportunityRepositoryError(
+          `pipeline summary ${category} candidates`,
+          classifyFailure(result.error),
+          safeCause(result.error),
+        );
+      }
+      const rows = (result.data ?? []) as unknown as OpportunityPipelineSummaryReadRow[];
+      if (rows.length > allocation) {
+        throw new OpportunityRepositoryError(
+          `pipeline summary ${category} candidate bound`,
+        );
+      }
+      for (const row of rows) {
+        if (typeof row?.id !== "string" || selectedIds.has(row.id)) {
+          throw new OpportunityRepositoryError(
+            `pipeline summary ${category} candidate response`,
+          );
+        }
+        selectedIds.add(row.id);
+        candidates.push(row);
+      }
+    };
+
+    const categoryAllocation = () =>
+      Math.min(
+        OPPORTUNITY_PIPELINE_SUMMARY_CATEGORY_LIMIT,
+        limit - candidates.length,
+      );
+
+    await appendCandidates("overdue", categoryAllocation(), (query) =>
+      query
+        .lt("expected_close_date", asOfDate)
+        .order("expected_close_date", { ascending: true })
+        .order("updated_at", { ascending: true })
+        .order("id", { ascending: true }),
+    );
+    await appendCandidates("unassigned", categoryAllocation(), (query) =>
+      query
+        .is("owner_id", null)
+        .order("updated_at", { ascending: true })
+        .order("id", { ascending: true }),
+    );
+    await appendCandidates("quotation", categoryAllocation(), (query) =>
+      query
+        .eq("pipeline_stage", "quotation_sent")
+        .order("updated_at", { ascending: true })
+        .order("id", { ascending: true }),
+    );
+    await appendCandidates("negotiation", categoryAllocation(), (query) =>
+      query
+        .eq("pipeline_stage", "negotiation")
+        .order("updated_at", { ascending: true })
+        .order("id", { ascending: true }),
+    );
+    await appendCandidates("probability override", categoryAllocation(), (query) =>
+      query
+        .eq("probability_overridden", true)
+        .order("updated_at", { ascending: true })
+        .order("id", { ascending: true }),
+    );
+    await appendCandidates("missing expected close", categoryAllocation(), (query) =>
+      query
+        .is("expected_close_date", null)
+        .order("updated_at", { ascending: true })
+        .order("id", { ascending: true }),
+    );
+    await appendCandidates("fallback", limit - candidates.length, (query) =>
+      query
+        .order("updated_at", { ascending: true })
+        .order("id", { ascending: true }),
+    );
+
+    const stageCountQueries = opportunityPipelineStageValues.map(
+      (pipelineStage) =>
+        this.client
+          .from("opportunity_list_read_model")
+          .select("id", { count: "exact", head: true })
+          .eq("pipeline_stage", pipelineStage),
+    );
+    const stageResults = await Promise.all(stageCountQueries);
+    const failedStage = stageResults.find((result) => result.error);
+    if (failedStage?.error) {
+      throw new OpportunityRepositoryError(
+        "pipeline summary counts",
+        classifyFailure(failedStage.error),
+        safeCause(failedStage.error),
+      );
+    }
+
+    const stageCounts = Object.fromEntries(
+      opportunityPipelineStageValues.map((stage, index) => [
+        stage,
+        stageResults[index]?.count ?? 0,
+      ]),
+    ) as Record<OpportunityPipelineStage, number>;
+
+    return {
+      candidates,
+      activeTotal: opportunityActivePipelineStageValues.reduce(
+        (total, stage) => total + stageCounts[stage],
+        0,
+      ),
+      stageCounts,
+    };
   }
 
   async canModifyLead(leadId: string): Promise<boolean> {

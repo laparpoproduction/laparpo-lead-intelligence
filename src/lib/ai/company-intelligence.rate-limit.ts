@@ -7,7 +7,7 @@ type ActorWindow = {
   timestamps: number[];
 };
 
-export class CompanyIntelligenceRateLimiter {
+export class ControlledAiActorRateLimiter {
   private readonly actors = new Map<string, ActorWindow>();
 
   consume(actorId: string, now = Date.now()): boolean {
@@ -53,5 +53,9 @@ export class CompanyIntelligenceRateLimiter {
   }
 }
 
-export const companyIntelligenceRateLimiter =
-  new CompanyIntelligenceRateLimiter();
+export const controlledAiActorRateLimiter = new ControlledAiActorRateLimiter();
+
+// Backward-compatible names keep the Phase 1A surface stable while both
+// controlled AI slices share one actor-keyed abuse-protection budget.
+export const CompanyIntelligenceRateLimiter = ControlledAiActorRateLimiter;
+export const companyIntelligenceRateLimiter = controlledAiActorRateLimiter;

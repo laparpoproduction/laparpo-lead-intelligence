@@ -7,6 +7,7 @@ const forbidden = [
   "LAPARPO_E2E_AI_STUB",
   "LAPARPO_E2E_AI_STUB_CALLS_FILE",
   "DeterministicE2ECompanyIntelligenceProvider",
+  "DeterministicE2EPipelineSummaryProvider",
   "SERVICE_ROLE_KEY",
   "OPENAI_API_KEY",
 ];

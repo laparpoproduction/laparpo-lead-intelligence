@@ -15,4 +15,27 @@ export function validateSupabaseStatus(status: Record<string, string>): {
 export function readAuthenticatedE2ERuntime(): Promise<{
   databaseUrl: string;
   managementUsers: Array<{ id: string; email: string; password: string }>;
+  representativeUsers: Array<{ id: string; email: string; password: string }>;
+  pipelineFixtures: Record<
+    "overdue" | "unassigned" | "won" | "archived",
+    { leadId: string; opportunityId: string; title: string }
+  >;
+  representativePipelineFixtures: Array<{
+    categories: Record<
+      | "overdue"
+      | "unassigned"
+      | "quotation"
+      | "negotiation"
+      | "probabilityOverride"
+      | "missingClose",
+      { leadId: string; opportunityId: string; title: string }
+    >;
+    won: { leadId: string; opportunityId: string; title: string };
+    lost: { leadId: string; opportunityId: string; title: string };
+    inaccessible: { leadId: string; opportunityId: string; title: string };
+    expectedStageCounts: Record<
+      "new" | "discussion" | "quotation_sent" | "negotiation" | "won" | "lost",
+      number
+    >;
+  }>;
 }>;
