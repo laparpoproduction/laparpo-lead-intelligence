@@ -39,22 +39,27 @@ const focusCopy: Record<
     reason: "These Opportunities are currently in the Negotiation stage.",
     action: "Review the normal Opportunity workspace and choose any follow-up yourself.",
   },
-  high_recorded_value: {
-    heading: "Relatively high recorded values",
-    reason: "These are among the five highest persisted MYR values in the analyzed snapshot.",
-    action: "Review their recorded metadata; this is not a revenue or success prediction.",
-  },
 };
+
+const overviewCopy = {
+  no_active_opportunities:
+    "Your accessible pipeline contains no active Opportunities.",
+  limited_pipeline_data:
+    "This AI-assisted summary covers a bounded portion of your accessible active Opportunities. Review the grounded items below without treating this sample as complete pipeline coverage.",
+  pipeline_no_grounded_attention:
+    "No configured attention signals were found in the accessible active Opportunities.",
+  pipeline_has_actionable_items:
+    "AI-assisted prioritization found grounded review items in your accessible active Opportunities.",
+  pipeline_requires_attention:
+    "AI-assisted prioritization found grounded items that may need timely review in your accessible active Opportunities.",
+} as const;
 
 export function renderPipelineSummary(
   projection: PipelineSummaryProjection,
   output: PipelineSummaryStructuredOutput,
 ): RenderedPipelineSummary {
   const snapshot = projection.providerSnapshot;
-  const overview =
-    snapshot.activeOpportunityCount === 0
-      ? "Your accessible pipeline contains no active Opportunities."
-      : `Your accessible pipeline contains ${snapshot.activeOpportunityCount} active Opportunities. AI-assisted prioritization suggests reviewing the items below.`;
+  const overview = overviewCopy[output.overviewCode];
 
   return {
     overview,

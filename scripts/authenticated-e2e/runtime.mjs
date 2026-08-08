@@ -109,6 +109,19 @@ export async function readAuthenticatedE2ERuntime() {
   ) {
     throw new Error("Authenticated E2E management fixture is invalid");
   }
+  if (
+    !Array.isArray(parsed.representativeUsers) ||
+    parsed.representativeUsers.length < 2 ||
+    parsed.representativeUsers.some(
+      (user) =>
+        typeof user?.id !== "string" ||
+        typeof user?.email !== "string" ||
+        typeof user?.password !== "string" ||
+        user.password.length < 8,
+    )
+  ) {
+    throw new Error("Authenticated E2E representative fixture is invalid");
+  }
   const pipelineFixtures = parsed.pipelineFixtures;
   if (
     !pipelineFixtures ||
@@ -123,9 +136,46 @@ export async function readAuthenticatedE2ERuntime() {
   ) {
     throw new Error("Authenticated E2E pipeline fixture is invalid");
   }
+  const representativePipelineFixtures = parsed.representativePipelineFixtures;
+  if (
+    !Array.isArray(representativePipelineFixtures) ||
+    representativePipelineFixtures.length < 2 ||
+    representativePipelineFixtures.some((fixture) => {
+      const categoryFixtures = fixture?.categories;
+      return (
+        !categoryFixtures ||
+        [
+          "overdue",
+          "unassigned",
+          "quotation",
+          "negotiation",
+          "probabilityOverride",
+          "missingClose",
+        ].some((key) => {
+          const category = categoryFixtures[key];
+          return (
+            typeof category?.leadId !== "string" ||
+            typeof category?.opportunityId !== "string" ||
+            typeof category?.title !== "string"
+          );
+        }) ||
+        [fixture.won, fixture.lost, fixture.inaccessible].some(
+          (item) =>
+            typeof item?.leadId !== "string" ||
+            typeof item?.opportunityId !== "string" ||
+            typeof item?.title !== "string",
+        ) ||
+        typeof fixture.expectedStageCounts !== "object"
+      );
+    })
+  ) {
+    throw new Error("Authenticated E2E representative pipeline fixture is invalid");
+  }
   return {
     databaseUrl: status.databaseUrl,
     managementUsers: parsed.managementUsers,
+    representativeUsers: parsed.representativeUsers,
     pipelineFixtures,
+    representativePipelineFixtures,
   };
 }

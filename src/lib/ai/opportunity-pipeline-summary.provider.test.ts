@@ -10,6 +10,7 @@ import {
   PipelineSummaryProviderError,
   PipelineSummaryProviderRefusalError,
 } from "./opportunity-pipeline-summary.provider";
+import { InvalidPipelineSummaryOutputError } from "./opportunity-pipeline-summary.validation";
 import {
   makePipelineSummaryReadModel,
   makePipelineSummaryRow,
@@ -37,13 +38,26 @@ function fakeClient(response: unknown) {
   return { responses: { parse: vi.fn().mockResolvedValue(response) } };
 }
 
+function successfulResponse(
+  parsed: unknown,
+  raw = JSON.stringify(parsed),
+): Record<string, unknown> {
+  return {
+    output: [
+      {
+        type: "message",
+        content: [{ type: "output_text", text: raw, parsed }],
+      },
+    ],
+    output_text: raw,
+    output_parsed: parsed,
+    usage: { input_tokens: 70, output_tokens: 20, total_tokens: 90 },
+  };
+}
+
 describe("OpenAI Opportunity pipeline summary provider", () => {
   it("uses Responses Structured Outputs with no tools, storage or model choice from the browser", async () => {
-    const client = fakeClient({
-      output: [{ type: "message", content: [{ type: "output_text" }] }],
-      output_parsed: output,
-      usage: { input_tokens: 70, output_tokens: 20, total_tokens: 90 },
-    });
+    const client = fakeClient(successfulResponse(output));
     const provider = new OpenAIPipelineSummaryProvider(
       "unit-test-key",
       client as never,
@@ -72,6 +86,73 @@ describe("OpenAI Opportunity pipeline summary provider", () => {
     expect(schema).not.toContain("prose");
   });
 
+  it.each([
+    ["top-level __proto__", '__proto__', false],
+    ["top-level constructor", "constructor", false],
+    ["top-level prototype", "prototype", false],
+    ["nested __proto__", "__proto__", true],
+    ["nested constructor", "constructor", true],
+    ["nested prototype", "prototype", true],
+  ])("rejects parsed JSON with %s before normalized output is used", async (_label, key, nested) => {
+    const ordinary = JSON.stringify(output);
+    const malicious = nested
+      ? JSON.parse(ordinary, (name, value) =>
+          name === "opportunityIds" && Array.isArray(value)
+            ? value
+            : value,
+        )
+      : JSON.parse(ordinary);
+    if (nested) {
+      Object.defineProperty(malicious.focusAreas[0], key, {
+        configurable: true,
+        enumerable: true,
+        value: { polluted: true },
+      });
+    } else {
+      Object.defineProperty(malicious, key, {
+        configurable: true,
+        enumerable: true,
+        value: { polluted: true },
+      });
+    }
+    const raw = JSON.stringify(malicious);
+    const reparsed = JSON.parse(raw);
+    expect(
+      Object.getOwnPropertyNames(
+        nested ? reparsed.focusAreas[0] : reparsed,
+      ),
+    ).toContain(key);
+
+    const provider = new OpenAIPipelineSummaryProvider(
+      "unit-test-key",
+      fakeClient(successfulResponse(output, raw)) as never,
+    );
+    await expect(
+      provider.generate(
+        buildPipelineSummaryRequest(
+          projection.providerSnapshot,
+          "gpt-5.6-terra",
+        ),
+      ),
+    ).rejects.toBeInstanceOf(InvalidPipelineSummaryOutputError);
+  });
+
+  it("rejects malformed or absent raw structured output", async () => {
+    const request = buildPipelineSummaryRequest(
+      projection.providerSnapshot,
+      "gpt-5.6-terra",
+    );
+    for (const raw of ['{"overviewCode":', ""]) {
+      const provider = new OpenAIPipelineSummaryProvider(
+        "unit-test-key",
+        fakeClient(successfulResponse(output, raw)) as never,
+      );
+      await expect(provider.generate(request)).rejects.toBeInstanceOf(
+        InvalidPipelineSummaryOutputError,
+      );
+    }
+  });
+
   it("maps provider refusal, timeout and rate limits to safe errors", async () => {
     const request = buildPipelineSummaryRequest(
       projection.providerSnapshot,
@@ -81,6 +162,7 @@ describe("OpenAI Opportunity pipeline summary provider", () => {
       "unit-test-key",
       fakeClient({
         output: [{ type: "message", content: [{ type: "refusal" }] }],
+        output_text: "",
         output_parsed: null,
       }) as never,
     );

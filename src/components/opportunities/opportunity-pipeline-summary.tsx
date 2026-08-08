@@ -90,6 +90,18 @@ export function OpportunityPipelineSummary() {
             accessible active Opportunities; maximum {summary.candidateLimit} detailed
             candidates per summary.
           </p>
+          {summary.activeOpportunityCount > summary.analyzedCandidateCount ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
+              <p className="font-bold">
+                This is a bounded category-aware analysis and may not include every
+                Opportunity that needs attention.
+              </p>
+              <p className="mt-1">
+                For large pipelines, configured attention categories are prioritized
+                before older remaining items.
+              </p>
+            </div>
+          ) : null}
 
           {summary.focusAreas.length > 0 ? (
             <div className="mt-5 grid gap-4 lg:grid-cols-3">

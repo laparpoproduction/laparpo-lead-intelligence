@@ -13,6 +13,8 @@ export const PIPELINE_SUMMARY_INSTRUCTIONS = [
   "Return only the requested overview code, focus codes, and supplied Opportunity UUIDs.",
   "Select at most three distinct focus areas and at most five distinct Opportunity IDs per focus area.",
   "Every selected UUID must contain the selected focus code in its supplied attentionCodes.",
+  "Use limited_pipeline_data whenever activeOpportunityCount exceeds analyzedCandidateCount, even when focus items exist.",
+  "Use pipeline_no_grounded_attention only for a non-empty fully analyzed snapshot with no supplied attention code.",
   "Do not create facts, UUIDs, predicates, names, prose, URLs, commands, confidence, scores, or probability recommendations.",
   "Do not recommend reopening Won or Lost Opportunities; detailed rows contain active stages only.",
   "Probability is persisted CRM metadata, not an AI prediction.",

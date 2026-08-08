@@ -58,10 +58,14 @@ verify all of the following:
   per-field limit and rejects serialized Company metadata above 8,192 UTF-8
   bytes before provider invocation. It never silently truncates provenance.
 - Opportunity pipeline summarization reads at most 75 RLS-authorized active
-  candidates, excludes Company/Lead names and all Contact/notes data from the
-  provider projection, and rejects serialized input above 32,768 UTF-8 bytes.
-  Its exact stage counts are permission-filtered, its visible text is
-  application-owned, and the transient result creates no database or H7 event.
+  candidates through fixed database-side quotas: up to 10 new unique rows for
+  each of overdue, unassigned, Quotation Sent, Negotiation, probability override
+  and missing close, then only enough oldest-updated fallback rows to fill the
+  remaining capacity. It excludes recorded values, Company/Lead names and all
+  Contact/notes data from the provider projection, and rejects serialized input
+  above 32,768 UTF-8 bytes. Its exact stage counts are permission-filtered, its
+  visible text is application-owned, and the transient result creates no
+  database or H7 event.
 - Confidence is derived by the application from validated profile completeness.
   Phase 1A uses Low for sparse profiles and Medium for partial or well-populated
   profiles; High is unavailable. It is not external verification, factual

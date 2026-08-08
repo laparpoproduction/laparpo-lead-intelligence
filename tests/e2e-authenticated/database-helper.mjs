@@ -103,6 +103,58 @@ export async function readAIStubCallCount() {
   return contents.split(/\r?\n/u).filter(Boolean).length;
 }
 
+export async function readPipelineAIStubObservations() {
+  const contents = await readFile(AI_STUB_CALLS_FILE, "utf8");
+  return contents
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith('{"type":"pipeline-summary"'))
+    .map((line) => JSON.parse(line));
+}
+
+export async function readRepresentativePipelineState(actorId) {
+  return queryJson(`
+    with fixture_opportunities as (
+      select opportunity.*
+      from public.opportunities as opportunity
+      join public.leads as lead on lead.id = opportunity.lead_id
+      where lead.created_by = ${sqlLiteral(actorId)}::uuid
+    )
+    select json_build_object(
+      'totalCount', (select count(*) from fixture_opportunities),
+      'activeCount', (
+        select count(*) from fixture_opportunities
+        where pipeline_stage in ('new', 'discussion', 'quotation_sent', 'negotiation')
+      ),
+      'stageCounts', (
+        select json_build_object(
+          'new', count(*) filter (where pipeline_stage = 'new'),
+          'discussion', count(*) filter (where pipeline_stage = 'discussion'),
+          'quotation_sent', count(*) filter (where pipeline_stage = 'quotation_sent'),
+          'negotiation', count(*) filter (where pipeline_stage = 'negotiation'),
+          'won', count(*) filter (where pipeline_stage = 'won'),
+          'lost', count(*) filter (where pipeline_stage = 'lost')
+        )
+        from fixture_opportunities
+      ),
+      'stateHash', (
+        select md5(coalesce(string_agg(
+          concat_ws('|', id, pipeline_stage, probability_percent,
+            probability_overridden, expected_close_date, owner_id,
+            estimated_value_myr, updated_at),
+          ',' order by id
+        ), ''))
+        from fixture_opportunities
+      ),
+      'auditCount', (
+        select count(*)
+        from public.mutation_audit_events
+        where resource_type = 'opportunity'
+          and resource_id in (select id from fixture_opportunities)
+      )
+    )::text;
+  `);
+}
+
 export async function readPipelineFixtureState(opportunityIds) {
   if (!Array.isArray(opportunityIds) || opportunityIds.length === 0) {
     throw new Error("Pipeline fixture IDs are required");

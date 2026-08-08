@@ -231,6 +231,7 @@ export type OpportunityPipelineFilters = Pick<
 >;
 
 export const OPPORTUNITY_PIPELINE_SUMMARY_ROW_LIMIT = 75;
+export const OPPORTUNITY_PIPELINE_SUMMARY_CATEGORY_LIMIT = 10;
 
 export type OpportunityPipelineSummaryReadRow = {
   id: string;

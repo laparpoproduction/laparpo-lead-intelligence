@@ -18,7 +18,6 @@ const providerOpportunitySchema = z
     opportunityId: z.uuid(),
     pipelineStage: z.enum(opportunityActivePipelineStageValues),
     service: z.enum(opportunityServiceValues),
-    estimatedValueMyr: z.number().min(0).max(9_999_999_999.99).nullable(),
     probabilityPercent: z.number().int().min(0).max(100),
     probabilityOverridden: z.boolean(),
     expectedCloseDate: z
@@ -32,7 +31,7 @@ const providerOpportunitySchema = z
     meetingRecorded: z.boolean(),
     depositRecorded: z.boolean(),
     overdueExpectedClose: z.boolean(),
-    attentionCodes: z.array(z.enum(pipelineSummaryFocusCodeValues)).max(7),
+    attentionCodes: z.array(z.enum(pipelineSummaryFocusCodeValues)).max(6),
   })
   .strict();
 

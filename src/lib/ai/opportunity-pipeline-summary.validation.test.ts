@@ -80,4 +80,55 @@ describe("pipeline summary semantic validation", () => {
       focusAreas: [],
     });
   });
+
+  it("rejects contradictory overview codes for truncated and complete snapshots", () => {
+    const noAttentionRows = Array.from({ length: 10 }, (_, index) =>
+      makePipelineSummaryRow(index + 10),
+    );
+    const cases = [
+      {
+        projection: projectOpportunityPipelineSummary(
+          makePipelineSummaryReadModel(noAttentionRows.slice(0, 5), { new: 120 }),
+          pipelineActorId,
+          now,
+        ),
+        expected: "limited_pipeline_data" as const,
+        contradiction: "pipeline_no_grounded_attention" as const,
+      },
+      {
+        projection: projectOpportunityPipelineSummary(
+          makePipelineSummaryReadModel(noAttentionRows),
+          pipelineActorId,
+          now,
+        ),
+        expected: "pipeline_no_grounded_attention" as const,
+        contradiction: "limited_pipeline_data" as const,
+      },
+      {
+        projection: projectOpportunityPipelineSummary(
+          makePipelineSummaryReadModel([
+            makePipelineSummaryRow(20, {
+              pipeline_stage: "quotation_sent",
+              probability_percent: 60,
+            }),
+            ...noAttentionRows.slice(1),
+          ]),
+          pipelineActorId,
+          now,
+        ),
+        expected: "pipeline_has_actionable_items" as const,
+        contradiction: "pipeline_requires_attention" as const,
+      },
+    ];
+
+    for (const testCase of cases) {
+      expect(testCase.projection.expectedOverviewCode).toBe(testCase.expected);
+      expect(() =>
+        validatePipelineSummaryOutput(testCase.projection, {
+          overviewCode: testCase.contradiction,
+          focusAreas: [],
+        }),
+      ).toThrow(InvalidPipelineSummaryOutputError);
+    }
+  });
 });

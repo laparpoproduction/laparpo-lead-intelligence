@@ -86,7 +86,10 @@ describe("Opportunity pipeline summary server action", () => {
       formData,
     );
     expect(state.status).toBe("success");
-    expect(getPipelineSummaryReadModel).toHaveBeenCalledWith(actor);
+    expect(getPipelineSummaryReadModel).toHaveBeenCalledWith(
+      actor,
+      expect.any(Date),
+    );
     const projection = generate.mock.calls[0]?.[0];
     expect(JSON.stringify(projection.providerSnapshot)).not.toContain(
       "FORBIDDEN CLIENT PAYLOAD",

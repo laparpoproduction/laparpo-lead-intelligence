@@ -59,13 +59,15 @@ function parsePlanningDate(value: string | null): string | null {
   return value;
 }
 
-function overviewCode(
+export function derivePipelineSummaryOverviewCode(
   activeTotal: number,
+  analyzedCandidateCount: number,
   opportunities: PipelineSummaryProviderOpportunity[],
 ): PipelineSummaryOverviewCode {
   if (activeTotal === 0) return "no_active_opportunities";
+  if (activeTotal > analyzedCandidateCount) return "limited_pipeline_data";
   const codes = new Set(opportunities.flatMap((row) => row.attentionCodes));
-  if (codes.size === 0) return "limited_pipeline_data";
+  if (codes.size === 0) return "pipeline_no_grounded_attention";
   if (codes.has("overdue_expected_close") || codes.has("unassigned_active")) {
     return "pipeline_requires_attention";
   }
@@ -82,6 +84,7 @@ export function projectOpportunityPipelineSummary(
   if (
     !Number.isInteger(readModel.activeTotal) ||
     readModel.activeTotal < 0 ||
+    readModel.activeTotal < readModel.candidates.length ||
     readModel.candidates.length > OPPORTUNITY_PIPELINE_SUMMARY_ROW_LIMIT
   ) {
     throw new Error("Invalid Opportunity pipeline summary bounds");
@@ -95,15 +98,6 @@ export function projectOpportunityPipelineSummary(
 
   const asOfDate = now.toISOString().slice(0, 10);
   const rows = readModel.candidates.map((row) => readRowSchema.parse(row));
-  const rankedValueIds = new Set(
-    rows
-      .map((row) => ({ id: row.id, value: parseMoney(row.estimated_value_myr) }))
-      .filter((row): row is { id: string; value: number } => row.value !== null)
-      .sort((left, right) => right.value - left.value || left.id.localeCompare(right.id))
-      .slice(0, 5)
-      .map((row) => row.id),
-  );
-
   const displayById = new Map();
   const opportunities: PipelineSummaryProviderOpportunity[] = rows.map((row) => {
     const expectedCloseDate = parsePlanningDate(row.expected_close_date);
@@ -122,8 +116,6 @@ export function projectOpportunityPipelineSummary(
     if (row.pipeline_stage === "negotiation") {
       attentionCodes.push("negotiation_follow_up");
     }
-    if (rankedValueIds.has(row.id)) attentionCodes.push("high_recorded_value");
-
     const estimatedValueMyr = parseMoney(row.estimated_value_myr);
     displayById.set(row.id, {
       opportunityId: row.id,
@@ -140,7 +132,6 @@ export function projectOpportunityPipelineSummary(
       opportunityId: row.id,
       pipelineStage: row.pipeline_stage,
       service: row.service,
-      estimatedValueMyr,
       probabilityPercent: row.probability_percent,
       probabilityOverridden: row.probability_overridden,
       expectedCloseDate,
@@ -166,7 +157,11 @@ export function projectOpportunityPipelineSummary(
       ),
     };
   });
-  const expectedOverviewCode = overviewCode(readModel.activeTotal, opportunities);
+  const expectedOverviewCode = derivePipelineSummaryOverviewCode(
+    readModel.activeTotal,
+    opportunities.length,
+    opportunities,
+  );
 
   return {
     providerSnapshot: {

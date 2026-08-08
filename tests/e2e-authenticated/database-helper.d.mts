@@ -40,6 +40,22 @@ export function readCompanyDescendantCounts(
   companyId: string,
 ): Promise<{ contacts: number; leads: number }>;
 export function readAIStubCallCount(): Promise<number>;
+export function readPipelineAIStubObservations(): Promise<
+  Array<{
+    type: "pipeline-summary";
+    activeOpportunityCount: number;
+    analyzedCandidateCount: number;
+    stageCounts: Record<string, number>;
+    attentionCodes: string[];
+  }>
+>;
+export function readRepresentativePipelineState(actorId: string): Promise<{
+  totalCount: number;
+  activeCount: number;
+  stageCounts: Record<string, number>;
+  stateHash: string;
+  auditCount: number;
+}>;
 export function readPipelineFixtureState(
   opportunityIds: string[],
 ): Promise<{

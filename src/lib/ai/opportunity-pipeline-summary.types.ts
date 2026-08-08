@@ -8,6 +8,7 @@ import type { CompanyIntelligenceModel } from "./company-intelligence.types";
 export const pipelineSummaryOverviewCodeValues = [
   "no_active_opportunities",
   "limited_pipeline_data",
+  "pipeline_no_grounded_attention",
   "pipeline_has_actionable_items",
   "pipeline_requires_attention",
 ] as const;
@@ -22,7 +23,6 @@ export const pipelineSummaryFocusCodeValues = [
   "review_probability_override",
   "quotation_follow_up",
   "negotiation_follow_up",
-  "high_recorded_value",
 ] as const;
 
 export type PipelineSummaryFocusCode =
@@ -41,7 +41,6 @@ export type PipelineSummaryProviderOpportunity = {
   opportunityId: string;
   pipelineStage: OpportunityActivePipelineStage;
   service: OpportunityService;
-  estimatedValueMyr: number | null;
   probabilityPercent: number;
   probabilityOverridden: boolean;
   expectedCloseDate: string | null;

@@ -110,11 +110,12 @@ export async function generateOpportunityPipelineSummaryAction(
       return safeFailure("rate_limited");
     }
 
-    const readModel = await service.getPipelineSummaryReadModel(actor);
+    const now = new Date();
+    const readModel = await service.getPipelineSummaryReadModel(actor, now);
     const projection = projectOpportunityPipelineSummary(
       readModel,
       actor.userId,
-      new Date(),
+      now,
     );
     const generated = await summaryService.generate(projection);
     logOutcome("info", requestId, "succeeded", {

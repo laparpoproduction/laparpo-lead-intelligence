@@ -30,6 +30,7 @@ describe("pipeline summary bounded provider input", () => {
     expect(serialized).toContain(makePipelineSummaryRow(1).id);
     expect(serialized).not.toContain(secretCompany);
     expect(serialized).not.toContain(secretLead);
+    expect(serialized).not.toContain("estimatedValueMyr");
     expect(serialized).not.toMatch(/email|phone|whatsapp|notes|contact/iu);
   });
 

@@ -7,7 +7,11 @@ import OpenAI, {
   RateLimitError,
 } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import { pipelineSummarySchema } from "./opportunity-pipeline-summary.schema";
+import {
+  parseRawPipelineSummaryJson,
+  pipelineSummarySchema,
+} from "./opportunity-pipeline-summary.schema";
+import { InvalidPipelineSummaryOutputError } from "./opportunity-pipeline-summary.validation";
 import type {
   PipelineSummaryProvider,
   PipelineSummaryProviderRequest,
@@ -67,8 +71,22 @@ export class OpenAIPipelineSummaryProvider implements PipelineSummaryProvider {
           item.content.some((content) => content.type === "refusal"),
       );
       if (refused) throw new PipelineSummaryProviderRefusalError();
+      const rawOutput = response.output_text;
+      if (typeof rawOutput !== "string" || rawOutput.trim().length === 0) {
+        throw new InvalidPipelineSummaryOutputError();
+      }
+      let parsedOutput: unknown;
+      try {
+        parsedOutput = parseRawPipelineSummaryJson(rawOutput);
+      } catch {
+        throw new InvalidPipelineSummaryOutputError();
+      }
+      const validatedOutput = pipelineSummarySchema.safeParse(parsedOutput);
+      if (!validatedOutput.success) {
+        throw new InvalidPipelineSummaryOutputError();
+      }
       return {
-        output: response.output_parsed,
+        output: validatedOutput.data,
         usage: response.usage
           ? {
               inputTokens: response.usage.input_tokens,
@@ -78,7 +96,12 @@ export class OpenAIPipelineSummaryProvider implements PipelineSummaryProvider {
           : null,
       };
     } catch (error) {
-      if (error instanceof PipelineSummaryProviderRefusalError) throw error;
+      if (
+        error instanceof PipelineSummaryProviderRefusalError ||
+        error instanceof InvalidPipelineSummaryOutputError
+      ) {
+        throw error;
+      }
       if (error instanceof RateLimitError) {
         throw new PipelineSummaryProviderError("rate_limited");
       }

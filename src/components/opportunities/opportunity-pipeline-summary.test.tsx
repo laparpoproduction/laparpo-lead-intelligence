@@ -95,4 +95,34 @@ describe("Opportunity pipeline summary UI", () => {
       "Opportunity pipeline summarization is temporarily unavailable.",
     );
   });
+
+  it("discloses exact bounded category-aware coverage for a truncated pipeline", async () => {
+    action.mockResolvedValueOnce({
+      status: "success",
+      message:
+        "AI-assisted priority generated. No CRM data, stages, owners, probabilities or values were changed.",
+      summary: {
+        overview:
+          "This AI-assisted summary covers a bounded portion of your accessible active Opportunities.",
+        activeOpportunityCount: 120,
+        analyzedCandidateCount: 75,
+        candidateLimit: 75,
+        focusAreas: [],
+      },
+    });
+    render(<OpportunityPipelineSummary />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Summarize pipeline" }),
+    );
+    const result = await screen.findByRole("region", {
+      name: "AI pipeline summary result",
+    });
+    expect(within(result).getByText(/Analyzed 75 of 120/)).toBeDefined();
+    expect(
+      within(result).getByText(/bounded category-aware analysis/),
+    ).toBeDefined();
+    expect(
+      within(result).getByText(/prioritized before older remaining items/),
+    ).toBeDefined();
+  });
 });

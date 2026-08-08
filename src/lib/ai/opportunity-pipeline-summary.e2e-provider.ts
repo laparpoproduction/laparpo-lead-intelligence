@@ -3,9 +3,9 @@ import "server-only";
 import { appendFile } from "node:fs/promises";
 import path from "node:path";
 import { pipelineSummaryProviderInputSchema } from "./opportunity-pipeline-summary.input";
+import { derivePipelineSummaryOverviewCode } from "./opportunity-pipeline-summary.projection";
 import type {
   PipelineSummaryFocusCode,
-  PipelineSummaryOverviewCode,
   PipelineSummaryProvider,
   PipelineSummaryProviderRequest,
   PipelineSummaryProviderResult,
@@ -34,18 +34,6 @@ function snapshotFromRequest(request: PipelineSummaryProviderRequest) {
   );
 }
 
-function overviewCode(
-  activeCount: number,
-  codes: Set<PipelineSummaryFocusCode>,
-): PipelineSummaryOverviewCode {
-  if (activeCount === 0) return "no_active_opportunities";
-  if (codes.size === 0) return "limited_pipeline_data";
-  if (codes.has("overdue_expected_close") || codes.has("unassigned_active")) {
-    return "pipeline_requires_attention";
-  }
-  return "pipeline_has_actionable_items";
-}
-
 export class DeterministicE2EPipelineSummaryProvider
   implements PipelineSummaryProvider
 {
@@ -66,7 +54,6 @@ export class DeterministicE2EPipelineSummaryProvider
       "negotiation_follow_up",
       "missing_expected_close",
       "review_probability_override",
-      "high_recorded_value",
     ];
     const availableCodes = new Set(
       snapshot.opportunities.flatMap((row) => row.attentionCodes),
@@ -81,14 +68,23 @@ export class DeterministicE2EPipelineSummaryProvider
           .slice(0, 5)
           .map((row) => row.opportunityId),
       }));
-    await appendFile(this.callsFile, "pipeline-summary\n", {
-      encoding: "utf8",
-    });
+    await appendFile(
+      this.callsFile,
+      `${JSON.stringify({
+        type: "pipeline-summary",
+        activeOpportunityCount: snapshot.activeOpportunityCount,
+        analyzedCandidateCount: snapshot.analyzedCandidateCount,
+        stageCounts: snapshot.stageCounts,
+        attentionCodes: [...availableCodes].sort(),
+      })}\n`,
+      { encoding: "utf8" },
+    );
     return {
       output: {
-        overviewCode: overviewCode(
+        overviewCode: derivePipelineSummaryOverviewCode(
           snapshot.activeOpportunityCount,
-          availableCodes,
+          snapshot.analyzedCandidateCount,
+          snapshot.opportunities,
         ),
         focusAreas,
       },

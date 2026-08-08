@@ -27,6 +27,15 @@ class QueryBuilder implements PromiseLike<Response> {
   eq(...args: unknown[]) {
     return this.record("eq", args);
   }
+  is(...args: unknown[]) {
+    return this.record("is", args);
+  }
+  lt(...args: unknown[]) {
+    return this.record("lt", args);
+  }
+  not(...args: unknown[]) {
+    return this.record("not", args);
+  }
   in(...args: unknown[]) {
     return this.record("in", args);
   }
@@ -210,7 +219,7 @@ describe("SupabaseOpportunityRepository", () => {
     ]);
   });
 
-  it("loads a bounded, minimal pipeline summary from the RLS-authoritative read model", async () => {
+  it("loads a category-aware bounded pipeline summary from the RLS-authoritative read model", async () => {
     const summaryRow = {
       id: opportunityId,
       service: "food_review",
@@ -230,27 +239,36 @@ describe("SupabaseOpportunityRepository", () => {
       lead_title: "Authorized Lead",
       company_name: "Authorized Company",
     };
+    const categoryRows = Array.from({ length: 7 }, (_, index) => ({
+      ...summaryRow,
+      id: `22222222-2222-4222-8222-${String(index + 1).padStart(12, "0")}`,
+    }));
     const { repository, calls } = setup([
-      { data: [summaryRow], error: null, count: 1 },
-      ...[1, 2, 3, 4, 5, 6].map((count) => ({
+      ...categoryRows.map((candidate) => ({
+        data: [candidate],
+        error: null,
+      })),
+      ...[116, 2, 1, 1, 1, 1].map((count) => ({
         data: null,
         error: null,
         count,
       })),
     ]);
-    await expect(repository.getPipelineSummaryReadModel(75)).resolves.toEqual({
-      candidates: [summaryRow],
-      activeTotal: 1,
+    await expect(
+      repository.getPipelineSummaryReadModel(75, "2026-08-08"),
+    ).resolves.toEqual({
+      candidates: categoryRows,
+      activeTotal: 120,
       stageCounts: {
-        new: 1,
+        new: 116,
         discussion: 2,
-        quotation_sent: 3,
-        negotiation: 4,
-        won: 5,
-        lost: 6,
+        quotation_sent: 1,
+        negotiation: 1,
+        won: 1,
+        lost: 1,
       },
     });
-    expect(calls.filter((call) => call.method === "from")).toHaveLength(7);
+    expect(calls.filter((call) => call.method === "from")).toHaveLength(13);
     expect(calls).toContainEqual({
       method: "in",
       args: [
@@ -258,7 +276,37 @@ describe("SupabaseOpportunityRepository", () => {
         ["new", "discussion", "quotation_sent", "negotiation"],
       ],
     });
-    expect(calls).toContainEqual({ method: "limit", args: [75] });
+    expect(calls).toContainEqual({
+      method: "lt",
+      args: ["expected_close_date", "2026-08-08"],
+    });
+    expect(calls).toContainEqual({ method: "is", args: ["owner_id", null] });
+    expect(calls).toContainEqual({
+      method: "eq",
+      args: ["pipeline_stage", "quotation_sent"],
+    });
+    expect(calls).toContainEqual({
+      method: "eq",
+      args: ["pipeline_stage", "negotiation"],
+    });
+    expect(calls).toContainEqual({
+      method: "eq",
+      args: ["probability_overridden", true],
+    });
+    expect(calls).toContainEqual({
+      method: "is",
+      args: ["expected_close_date", null],
+    });
+    expect(calls.filter((call) => call.method === "limit").map((call) => call.args[0])).toEqual([
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      69,
+    ]);
+    expect(calls.filter((call) => call.method === "not")).toHaveLength(6);
     const selectedColumns = calls.find(
       (call) =>
         call.method === "select" &&
@@ -268,6 +316,14 @@ describe("SupabaseOpportunityRepository", () => {
     expect(selectedColumns).not.toContain("lost_reason_notes");
     expect(selectedColumns).not.toContain("created_by");
     expect(selectedColumns).not.toContain("public_email");
+  });
+
+  it("rejects invalid server dates before querying the pipeline read model", async () => {
+    const { repository, calls } = setup([]);
+    await expect(
+      repository.getPipelineSummaryReadModel(75, "2026-02-30"),
+    ).rejects.toMatchObject({ failure: "invalid_value" });
+    expect(calls).toEqual([]);
   });
 
   it("uses narrow CAS payloads for every pipeline mutation intention", async () => {

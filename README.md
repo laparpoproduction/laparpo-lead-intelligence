@@ -276,15 +276,19 @@ The server resolves the active actor and queries a dedicated bounded projection
 from the existing `opportunity_list_read_model`. That view is
 `security_invoker`, so the existing Lead/Company access rules and RLS determine
 both detailed candidates and exact stage counts. The browser submits no actor,
-role, Opportunity ID list, pipeline data, model or prompt. The query loads at
-most 75 active rows, ordered deterministically in PostgreSQL; exact aggregate
-counts separately represent all six stages, including Won and Lost. The provider
-input is rejected rather than truncated if its serialized UTF-8 size exceeds
-32,768 bytes.
+role, Opportunity ID list, pipeline data, model or prompt. Candidate selection
+runs six database-bounded category queries in this fixed priority: passed
+expected-close date, unassigned, Quotation Sent, Negotiation, manual probability
+override and missing expected-close date. Each query contributes at most 10 new
+unique rows, excludes already-selected UUIDs and uses deterministic date/update
+ordering with a UUID tie-break. An oldest-`updated_at` fallback fills only the
+remaining capacity up to 75. Exact RLS-filtered aggregate counts separately
+represent all six stages, including Won and Lost. The provider input is rejected
+rather than truncated if its serialized UTF-8 size exceeds 32,768 bytes.
 
 For each bounded active Opportunity the provider sees only its UUID, stage,
-service, persisted MYR value or null, persisted probability metadata, expected
-close date, privacy-minimized owner status, deterministic update age,
+service, persisted probability metadata, expected close date,
+privacy-minimized owner status, deterministic update age,
 conversion/ordinary kind, quotation/meeting/deposit presence, overdue flag and
 application-derived attention codes. The provider does **not** receive Company
 names, Lead titles, Contacts, emails, phones/WhatsApp, notes, Profile identities,
@@ -292,20 +296,32 @@ auth/session data, audit data or creator identity. Authorized Company/Lead label
 stay in a server-side display map and are resolved only after semantic validation.
 
 Application code—not the model—determines overdue dates, unassigned rows,
-missing close dates, probability overrides, quotation/negotiation follow-up and
-the five relatively highest recorded values in the analyzed snapshot. The model
+missing close dates, probability overrides and quotation/negotiation follow-up.
+Recorded MYR value does not create an AI focus and is not sent to the provider;
+it remains available only in the authorized server-side display map. The model
 may only choose up to three distinct focus codes and up to five supplied UUIDs
 per focus. A strict schema contains no prose, URL, command, confidence or new
 probability field. Independent semantic validation rejects invented,
 inaccessible, terminal, duplicate or wrong-predicate UUID selections as a whole;
-fixed application templates render every visible sentence.
+fixed application templates render every visible sentence. Raw provider text is
+independently JSON-parsed before application Zod validation; reserved keys
+`__proto__`, `constructor` and `prototype` are rejected recursively rather than
+normalized away.
+
+When more active rows are accessible than the 75 analyzed candidates, the closed
+overview is always `limited_pipeline_data`, even if the bounded set contains
+grounded focus items. The UI shows exact analyzed/accessible counts and explains
+that the category-aware sample may omit other attention-worthy Opportunities.
+A fully analyzed non-empty pipeline with none of the configured signals uses the
+separate `pipeline_no_grounded_attention` overview and makes no health or
+conversion claim.
 
 Phase 1B reuses the official SDK/Responses API foundation, allow-listed Terra or
 Luna model, `store: false`, low reasoning effort, 600 output-token ceiling,
 20-second timeout, zero retries, no tools and no web search. Phase 1A and 1B share
 the same actor-keyed five-second cooldown/five-per-minute in-runtime limiter.
 That limiter is bounded but not distributed or durable. CI covers the A–M
-synthetic matrix and a real local Supabase/Auth browser journey using the
+synthetic matrix and real local Supabase/Auth browser journeys using the
 production-forbidden deterministic provider; no live OpenAI call is made. See
 [`docs/ai-opportunity-pipeline-summary-quality-evaluation.md`](docs/ai-opportunity-pipeline-summary-quality-evaluation.md).
 

@@ -137,6 +137,30 @@ function repository(
 }
 
 describe("LeadConversionService", () => {
+  it("derives the candidate-query date from the authoritative server clock", async () => {
+    const getPipelineSummaryReadModel = vi.fn().mockResolvedValue({
+      candidates: [],
+      activeTotal: 0,
+      stageCounts: {
+        new: 0,
+        discussion: 0,
+        quotation_sent: 0,
+        negotiation: 0,
+        won: 0,
+        lost: 0,
+      },
+    });
+    const data = repository({ getPipelineSummaryReadModel });
+    const service = new LeadConversionService(data);
+    await expect(
+      service.getPipelineSummaryReadModel(
+        representative,
+        new Date("2026-08-08T23:59:59.999Z"),
+      ),
+    ).resolves.toMatchObject({ activeTotal: 0 });
+    expect(getPipelineSummaryReadModel).toHaveBeenCalledWith(75, "2026-08-08");
+  });
+
   it.each([manager, representative])(
     "delegates eligible actor conversion to the database boundary",
     async (actor) => {

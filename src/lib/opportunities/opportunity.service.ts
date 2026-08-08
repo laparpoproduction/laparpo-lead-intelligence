@@ -349,11 +349,16 @@ export class LeadConversionService {
 
   async getPipelineSummaryReadModel(
     actor: LeadConversionActor,
+    now: Date,
   ): Promise<OpportunityPipelineSummaryReadModel> {
     this.requireActive(actor);
+    if (Number.isNaN(now.getTime())) {
+      throw new OpportunityListUnavailableError();
+    }
     try {
       return await this.repository.getPipelineSummaryReadModel(
         OPPORTUNITY_PIPELINE_SUMMARY_ROW_LIMIT,
+        now.toISOString().slice(0, 10),
       );
     } catch (error) {
       if (error instanceof OpportunityRepositoryError) {

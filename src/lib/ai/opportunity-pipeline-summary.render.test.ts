@@ -30,4 +30,21 @@ describe("pipeline summary deterministic application renderer", () => {
     });
     expect(JSON.stringify(rendered)).not.toMatch(/confidence|AI decided/iu);
   });
+
+  it("renders the complete no-attention state without claiming pipeline health", () => {
+    const row = makePipelineSummaryRow(2);
+    const projection = projectOpportunityPipelineSummary(
+      makePipelineSummaryReadModel([row]),
+      pipelineActorId,
+      new Date("2026-08-07T12:00:00.000Z"),
+    );
+    const rendered = renderPipelineSummary(projection, {
+      overviewCode: "pipeline_no_grounded_attention",
+      focusAreas: [],
+    });
+    expect(rendered.overview).toBe(
+      "No configured attention signals were found in the accessible active Opportunities.",
+    );
+    expect(rendered.overview).not.toMatch(/healthy|guaranteed|conversion/iu);
+  });
 });
