@@ -15,8 +15,16 @@ test("uses real Auth/RLS anti-join for a bounded read-only transient Lead queue"
   if (!representative || !fixtures) {
     throw new Error("Missing retry-safe representative Lead queue fixture");
   }
+  const opportunityExcludedLeadIds = [
+    fixtures.excluded.activeOpportunity.leadId,
+    fixtures.excluded.terminalOpportunity.leadId,
+    fixtures.excluded.converted.leadId,
+  ];
 
-  const before = await readLeadQueueFixtureState(fixtures.marker);
+  const before = await readLeadQueueFixtureState(
+    fixtures.marker,
+    opportunityExcludedLeadIds,
+  );
   expect(before).toMatchObject({
     leadCount: 94,
     opportunityCount: 3,
@@ -122,7 +130,9 @@ test("uses real Auth/RLS anti-join for a bounded read-only transient Lead queue"
   await expect(result.getByRole("button")).toHaveCount(0);
   await expect(result.getByText(/all clear|complete pipeline/iu)).toHaveCount(0);
 
-  expect(await readLeadQueueFixtureState(fixtures.marker)).toEqual(before);
+  expect(
+    await readLeadQueueFixtureState(fixtures.marker, opportunityExcludedLeadIds),
+  ).toEqual(before);
   expect(unexpectedOpenAIRequests).toEqual([]);
 
   await page.reload();
@@ -130,5 +140,7 @@ test("uses real Auth/RLS anti-join for a bounded read-only transient Lead queue"
     page.getByRole("region", { name: "Lead follow-up queue result" }),
   ).toHaveCount(0);
   await expect(page.getByText("Follow-up review ready")).toHaveCount(0);
-  expect(await readLeadQueueFixtureState(fixtures.marker)).toEqual(before);
+  expect(
+    await readLeadQueueFixtureState(fixtures.marker, opportunityExcludedLeadIds),
+  ).toEqual(before);
 });

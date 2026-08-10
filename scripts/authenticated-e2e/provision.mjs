@@ -403,20 +403,18 @@ async function main() {
         "disqualified",
         "quotationSent",
         "negotiation",
-        "activeOpportunity",
-        "terminalOpportunity",
-        "converted",
       ].map((key) => [
         key,
         {
           leadId: randomUUID(),
           title: `LEAD QUEUE EXCLUDED ${key} ${fixtureIndex} ${runIdentity}`,
-          ...(key.includes("Opportunity") || key === "converted"
-            ? { opportunityId: randomUUID() }
-            : {}),
         },
       ]),
     );
+    const pipelineFixture = representativePipelineFixtures[fixtureIndex];
+    excluded.activeOpportunity = pipelineFixture.categories.overdue;
+    excluded.terminalOpportunity = pipelineFixture.won;
+    excluded.converted = pipelineFixture.lost;
 
     runOwnerSql(
       status.databaseUrl,
@@ -515,18 +513,6 @@ async function main() {
           (:'negotiation_id'::uuid, null, :'negotiation_title', 'negotiation',
            'active', 'qualified', 'normal', :'representative_id'::uuid, null,
            'manual', :'marker', now(), 'corporate_video', null, null, null,
-           null, null, now()),
-          (:'active_opportunity_lead_id'::uuid, null, :'active_opportunity_title',
-           'qualified', 'active', 'qualified', 'normal',
-           :'representative_id'::uuid, null, 'manual', :'marker', now(),
-           'corporate_video', null, null, null, null, null, now()),
-          (:'terminal_opportunity_lead_id'::uuid, null,
-           :'terminal_opportunity_title', 'qualified', 'active', 'qualified',
-           'normal', :'representative_id'::uuid, null, 'manual', :'marker',
-           now(), 'corporate_video', null, null, null, null, null, now()),
-          (:'converted_lead_id'::uuid, null, :'converted_title', 'qualified',
-           'active', 'qualified', 'normal', :'representative_id'::uuid, null,
-           'manual', :'marker', now(), 'corporate_video', null, null, null,
            null, null, now());
 
         update public.leads
@@ -565,20 +551,6 @@ async function main() {
           now() - interval '1 day',
           now() - interval '180 days'
         from filler;
-
-        insert into public.opportunities (
-          id, lead_id, service, pipeline_stage, probability_percent,
-          probability_overridden, expected_close_date, owner_id, won_at
-        ) values
-          (:'active_opportunity_id'::uuid, :'active_opportunity_lead_id'::uuid,
-           'corporate', 'new', 20, false, current_date + 30,
-           :'representative_id'::uuid, null),
-          (:'terminal_opportunity_id'::uuid,
-           :'terminal_opportunity_lead_id'::uuid, 'corporate', 'won', 100,
-           false, current_date, :'representative_id'::uuid, now()),
-          (:'converted_opportunity_id'::uuid, :'converted_lead_id'::uuid,
-           'corporate', 'new', 20, false, current_date + 30,
-           :'representative_id'::uuid, null);
 
         insert into public.lead_conversions (
           lead_id, opportunity_id, converted_at, created_by
@@ -645,15 +617,8 @@ async function main() {
         quotation_sent_title: excluded.quotationSent.title,
         negotiation_id: excluded.negotiation.leadId,
         negotiation_title: excluded.negotiation.title,
-        active_opportunity_lead_id: excluded.activeOpportunity.leadId,
-        active_opportunity_id: excluded.activeOpportunity.opportunityId,
-        active_opportunity_title: excluded.activeOpportunity.title,
-        terminal_opportunity_lead_id: excluded.terminalOpportunity.leadId,
-        terminal_opportunity_id: excluded.terminalOpportunity.opportunityId,
-        terminal_opportunity_title: excluded.terminalOpportunity.title,
         converted_lead_id: excluded.converted.leadId,
         converted_opportunity_id: excluded.converted.opportunityId,
-        converted_title: excluded.converted.title,
       },
     );
 

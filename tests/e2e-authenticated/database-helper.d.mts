@@ -62,7 +62,10 @@ export function readPipelineFixtureState(
   opportunities: Array<Record<string, unknown>>;
   auditCount: number;
 }>;
-export function readLeadQueueFixtureState(marker: string): Promise<{
+export function readLeadQueueFixtureState(
+  marker: string,
+  relatedLeadIds: string[],
+): Promise<{
   leadCount: number;
   opportunityCount: number;
   activityCount: number;

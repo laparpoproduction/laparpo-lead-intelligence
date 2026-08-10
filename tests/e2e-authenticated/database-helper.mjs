@@ -192,11 +192,18 @@ export async function readPipelineFixtureState(opportunityIds) {
   `);
 }
 
-export async function readLeadQueueFixtureState(marker) {
+export async function readLeadQueueFixtureState(marker, relatedLeadIds) {
+  if (!Array.isArray(relatedLeadIds) || relatedLeadIds.length !== 3) {
+    throw new Error("Lead queue Opportunity-exclusion fixture IDs are required");
+  }
+  const relatedIds = relatedLeadIds
+    .map((id) => `${sqlLiteral(id)}::uuid`)
+    .join(", ");
   return queryJson(`
     with fixture_leads as materialized (
       select * from public.leads
       where source_campaign = ${sqlLiteral(marker)}
+        or id in (${relatedIds})
     ), fixture_opportunities as materialized (
       select opportunity.*
       from public.opportunities as opportunity
