@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { LeadEmptyState } from "@/components/leads/lead-empty-state";
 import { LeadFilteredEmptyState } from "@/components/leads/lead-filtered-empty-state";
+import { LeadFollowUpPriorities } from "@/components/leads/lead-follow-up-priorities";
 import { LeadList } from "@/components/leads/lead-list";
 import { LeadListToolbar } from "@/components/leads/lead-list-toolbar";
 import { LeadPageHeader } from "@/components/leads/lead-page-header";
@@ -70,6 +71,7 @@ export default async function LeadsPage({
         }
         title="Leads"
       />
+      <LeadFollowUpPriorities />
       <LeadListToolbar query={query} />
       {result.items.length === 0 ? (
         hasLeadFilters(query) ? (

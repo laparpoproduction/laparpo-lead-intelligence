@@ -1,6 +1,7 @@
 import { ZodError } from "zod";
 import { isLikelyDuplicateLead } from "./lead-normalization";
 import { LeadRepositoryNotFoundError, type LeadRepository } from "./lead.repository";
+import type { LeadFollowUpPriorityReadModel } from "./lead-follow-up.types";
 import type {
   Lead,
   LeadActor,
@@ -44,6 +45,13 @@ export class LeadValidationError extends Error {
   constructor(readonly issues: ZodError["issues"], cause?: unknown) {
     super("Lead data is invalid", { cause });
     this.name = "LeadValidationError";
+  }
+}
+
+export class LeadFollowUpUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super("Lead follow-up queue is unavailable", { cause });
+    this.name = "LeadFollowUpUnavailableError";
   }
 }
 
@@ -243,6 +251,21 @@ export class LeadService {
       throw new LeadPermissionError("Representatives can only query their own assigned leads");
     }
     return this.repository.findByAssignee(this.leadId(userId), this.validate(() => validateLeadListOptions(options)));
+  }
+
+  async getFollowUpPriorityReadModel(
+    actor: LeadActor,
+    authoritativeNow: Date,
+  ): Promise<LeadFollowUpPriorityReadModel> {
+    this.requireActive(actor);
+    if (Number.isNaN(authoritativeNow.getTime())) {
+      throw new LeadFollowUpUnavailableError();
+    }
+    try {
+      return await this.repository.getFollowUpPriorityReadModel(authoritativeNow);
+    } catch (error) {
+      throw new LeadFollowUpUnavailableError(error);
+    }
   }
 
   private requireActive(actor: LeadActor): void {

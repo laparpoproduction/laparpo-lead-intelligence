@@ -62,6 +62,18 @@ export function readPipelineFixtureState(
   opportunities: Array<Record<string, unknown>>;
   auditCount: number;
 }>;
+export function readLeadQueueFixtureState(
+  marker: string,
+  relatedLeadIds: string[],
+): Promise<{
+  leadCount: number;
+  opportunityCount: number;
+  activityCount: number;
+  leadHash: string;
+  opportunityHash: string;
+  activityHash: string;
+  auditCount: number;
+}>;
 export function readAuditBoundaryPrivileges(): Promise<{
   anon: boolean;
   authenticated: boolean;
