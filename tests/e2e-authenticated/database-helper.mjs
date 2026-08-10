@@ -192,6 +192,48 @@ export async function readPipelineFixtureState(opportunityIds) {
   `);
 }
 
+export async function readLeadQueueFixtureState(marker) {
+  return queryJson(`
+    with fixture_leads as materialized (
+      select * from public.leads
+      where source_campaign = ${sqlLiteral(marker)}
+    ), fixture_opportunities as materialized (
+      select opportunity.*
+      from public.opportunities as opportunity
+      join fixture_leads as lead on lead.id = opportunity.lead_id
+    ), fixture_activities as materialized (
+      select activity.*
+      from public.lead_activities as activity
+      join fixture_leads as lead on lead.id = activity.lead_id
+    ), fixture_resources as (
+      select id from fixture_leads
+      union all select id from fixture_opportunities
+      union all select id from fixture_activities
+    )
+    select json_build_object(
+      'leadCount', (select count(*) from fixture_leads),
+      'opportunityCount', (select count(*) from fixture_opportunities),
+      'activityCount', (select count(*) from fixture_activities),
+      'leadHash', (
+        select md5(coalesce(string_agg(row_to_json(record)::text, ',' order by id), ''))
+        from fixture_leads as record
+      ),
+      'opportunityHash', (
+        select md5(coalesce(string_agg(row_to_json(record)::text, ',' order by id), ''))
+        from fixture_opportunities as record
+      ),
+      'activityHash', (
+        select md5(coalesce(string_agg(row_to_json(record)::text, ',' order by id), ''))
+        from fixture_activities as record
+      ),
+      'auditCount', (
+        select count(*) from public.mutation_audit_events
+        where resource_id in (select id from fixture_resources)
+      )
+    )::text;
+  `);
+}
+
 export async function readAuditBoundaryPrivileges() {
   return queryJson(`
     select json_build_object(

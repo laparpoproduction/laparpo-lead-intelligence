@@ -2,6 +2,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { mapLeadCreate, mapLeadRow, mapLeadUpdate } from "./lead.mapper";
 import { buildLeadFingerprint } from "./lead-normalization";
+import {
+  LEAD_FOLLOW_UP_CANDIDATE_LIMIT,
+  LEAD_FOLLOW_UP_CATEGORY_LIMIT,
+  leadFollowUpAttentionCodes,
+  leadFollowUpEligibleStages,
+  type LeadFollowUpAttentionCode,
+  type LeadFollowUpPriorityReadModel,
+  type LeadFollowUpReadRow,
+} from "./lead-follow-up.types";
 import type {
   Lead,
   LeadConfirmationContext,
@@ -12,6 +21,13 @@ import type {
   PaginatedLeads,
   UpdateLeadInput,
   ValidatedCreateLeadInput,
+} from "./lead.types";
+import {
+  leadPriorityValues,
+  leadQualificationValues,
+  leadServiceInterestValues,
+  leadStageValues,
+  leadStatusValues,
 } from "./lead.types";
 import { validateLeadId, validateLeadListOptions } from "./lead.validation";
 
@@ -53,6 +69,9 @@ export interface LeadRepository {
   listUpcomingFollowUps(options?: LeadListOptions): Promise<PaginatedLeads>;
   findByAssignee(userId: string, options?: LeadListOptions): Promise<PaginatedLeads>;
   findDuplicateCandidates(input: { title: string; companyId?: string | null; primaryContactId?: string | null; serviceInterest?: string | null; sourceUrl?: string | null; sourceCampaign?: string | null; sourceSignalId?: string | null }): Promise<LeadDuplicateCandidate[]>;
+  getFollowUpPriorityReadModel(
+    authoritativeNow: Date,
+  ): Promise<LeadFollowUpPriorityReadModel>;
   canAccess(id: string): Promise<boolean>;
   canModify(id: string): Promise<boolean>;
 }
@@ -72,6 +91,63 @@ const sortColumns: Record<LeadSortField, string> = {
 };
 
 const duplicateCandidatePageSize = 100;
+
+export const leadFollowUpSelectColumns = [
+  "id",
+  "title",
+  "stage",
+  "lead_status",
+  "qualification_status",
+  "priority",
+  "service_interest",
+  "assigned_to",
+  "next_follow_up_at",
+  "last_contacted_at",
+  "expected_close_date",
+  "updated_at",
+].join(",");
+
+const leadFollowUpEmbeddedSelect = `${leadFollowUpSelectColumns},opportunity_exclusion:opportunities!opportunities_lead_id_fk()`;
+
+const followUpRowSchema = z
+  .object({
+    id: z.uuid(),
+    title: z.string(),
+    stage: z.enum(leadStageValues),
+    lead_status: z.enum(leadStatusValues),
+    qualification_status: z.enum(leadQualificationValues),
+    priority: z.enum(leadPriorityValues),
+    service_interest: z.enum(leadServiceInterestValues).nullable(),
+    assigned_to: z.uuid().nullable(),
+    next_follow_up_at: z.string().datetime({ offset: true }).nullable(),
+    last_contacted_at: z.string().datetime({ offset: true }).nullable(),
+    expected_close_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/u)
+      .nullable(),
+    updated_at: z.string().datetime({ offset: true }),
+    opportunity_exclusion: z.array(z.never()).max(0).optional(),
+  })
+  .strict();
+
+function mapFollowUpRow(value: unknown): LeadFollowUpReadRow {
+  const { opportunity_exclusion: _excluded, ...row } =
+    followUpRowSchema.parse(value);
+  void _excluded;
+  return row;
+}
+
+function configuredAttentionFilter(now: string, utcDate: string): string {
+  return [
+    `next_follow_up_at.lt.${now}`,
+    `and(stage.in.(qualified,meeting_scheduled,quotation_requested),expected_close_date.lt.${utcDate})`,
+    `and(stage.eq.replied,or(next_follow_up_at.is.null,next_follow_up_at.lte.${now}))`,
+    `and(stage.eq.ready_to_contact,last_contacted_at.is.null,or(next_follow_up_at.is.null,next_follow_up_at.lte.${now}))`,
+    `and(stage.eq.qualified,or(next_follow_up_at.is.null,next_follow_up_at.lte.${now}))`,
+    "and(stage.in.(contacted,quotation_requested),next_follow_up_at.is.null)",
+    "assigned_to.is.null",
+  ].join(",");
+}
 
 const confirmedMutationResultSchema = z.object({
   lead_id: z.uuid(),
@@ -313,12 +389,209 @@ export class SupabaseLeadRepository implements LeadRepository {
     }
   }
 
+  async getFollowUpPriorityReadModel(
+    authoritativeNow: Date,
+  ): Promise<LeadFollowUpPriorityReadModel> {
+    if (Number.isNaN(authoritativeNow.getTime())) {
+      throw new LeadRepositoryError(
+        "follow-up queue",
+        new Error("Invalid authoritative time"),
+      );
+    }
+    const now = authoritativeNow.toISOString();
+    const utcDate = now.slice(0, 10);
+    const attentionFilter = configuredAttentionFilter(now, utcDate);
+
+    const [eligibleResult, attentionResult] = await Promise.all([
+      this.followUpBaseQuery({ count: "exact", head: true }),
+      this.followUpBaseQuery({ count: "exact", head: true }).or(attentionFilter),
+    ]);
+    if (eligibleResult.error || attentionResult.error) {
+      throw new LeadRepositoryError(
+        "follow-up queue counts",
+        causeFrom(eligibleResult.error ?? attentionResult.error),
+      );
+    }
+    const eligibleCount = eligibleResult.count;
+    const attentionCount = attentionResult.count;
+    if (
+      typeof eligibleCount !== "number" ||
+      typeof attentionCount !== "number" ||
+      !Number.isInteger(eligibleCount) ||
+      !Number.isInteger(attentionCount) ||
+      eligibleCount < 0 ||
+      attentionCount < 0 ||
+      attentionCount > eligibleCount
+    ) {
+      throw new LeadRepositoryError(
+        "follow-up queue counts",
+        new Error("Exact Lead follow-up counts are unavailable"),
+      );
+    }
+
+    const candidates: LeadFollowUpReadRow[] = [];
+    const selected = new Set<string>();
+    for (const code of leadFollowUpAttentionCodes) {
+      await this.appendFollowUpCandidates(
+        candidates,
+        selected,
+        code,
+        LEAD_FOLLOW_UP_CATEGORY_LIMIT,
+        now,
+        utcDate,
+        attentionFilter,
+      );
+    }
+    const remaining = LEAD_FOLLOW_UP_CANDIDATE_LIMIT - candidates.length;
+    if (remaining > 0) {
+      await this.appendFollowUpCandidates(
+        candidates,
+        selected,
+        "fallback",
+        remaining,
+        now,
+        utcDate,
+        attentionFilter,
+      );
+    }
+
+    return {
+      candidates,
+      eligibleAccessibleLeadCount: eligibleCount,
+      configuredAttentionLeadCount: attentionCount,
+      authoritativeNow: now,
+      authoritativeUtcDate: utcDate,
+    };
+  }
+
   async canAccess(id: string): Promise<boolean> {
     const { data, error } = await this.client.rpc("can_access_lead", {
       target_lead_id: validateLeadId(id),
     });
     if (error) throw new LeadRepositoryError("permission check", causeFrom(error));
     return data === true;
+  }
+
+  private followUpBaseQuery(
+    options?: { count: "exact"; head: true },
+  ) {
+    const query = this.client
+      .from("leads")
+      .select(leadFollowUpEmbeddedSelect, options)
+      .is("opportunity_exclusion", null)
+      .is("deleted_at", null)
+      .eq("lead_status", "active")
+      .neq("qualification_status", "unqualified")
+      .in("stage", [...leadFollowUpEligibleStages]);
+    return query;
+  }
+
+  private async appendFollowUpCandidates(
+    candidates: LeadFollowUpReadRow[],
+    selected: Set<string>,
+    code: LeadFollowUpAttentionCode | "fallback",
+    limit: number,
+    now: string,
+    utcDate: string,
+    attentionFilter: string,
+  ): Promise<void> {
+    if (limit <= 0) return;
+    let query = this.followUpBaseQuery();
+    if (selected.size > 0) {
+      query = query.not("id", "in", `(${[...selected].join(",")})`);
+    }
+
+    switch (code) {
+      case "overdue_follow_up":
+        query = query
+          .lt("next_follow_up_at", now)
+          .order("next_follow_up_at", { ascending: true })
+          .order("updated_at", { ascending: true })
+          .order("id", { ascending: true });
+        break;
+      case "expected_close_passed":
+        query = query
+          .in("stage", ["qualified", "meeting_scheduled", "quotation_requested"])
+          .lt("expected_close_date", utcDate)
+          .order("expected_close_date", { ascending: true })
+          .order("updated_at", { ascending: true })
+          .order("id", { ascending: true });
+        break;
+      case "replied_needs_review":
+        query = query
+          .eq("stage", "replied")
+          .or(`next_follow_up_at.is.null,next_follow_up_at.lte.${now}`)
+          .order("updated_at", { ascending: true })
+          .order("id", { ascending: true });
+        break;
+      case "ready_to_contact_without_contact_record":
+        query = query
+          .eq("stage", "ready_to_contact")
+          .is("last_contacted_at", null)
+          .or(`next_follow_up_at.is.null,next_follow_up_at.lte.${now}`)
+          .order("updated_at", { ascending: true })
+          .order("id", { ascending: true });
+        break;
+      case "qualified_needs_progress":
+        query = query
+          .eq("stage", "qualified")
+          .or(`next_follow_up_at.is.null,next_follow_up_at.lte.${now}`)
+          .order("updated_at", { ascending: true })
+          .order("id", { ascending: true });
+        break;
+      case "missing_follow_up":
+        query = query
+          .in("stage", ["contacted", "quotation_requested"])
+          .is("next_follow_up_at", null)
+          .order("updated_at", { ascending: true })
+          .order("id", { ascending: true });
+        break;
+      case "unassigned_active":
+        query = query
+          .is("assigned_to", null)
+          .order("updated_at", { ascending: true })
+          .order("id", { ascending: true });
+        break;
+      case "fallback":
+        query = query
+          .or(attentionFilter)
+          .order("updated_at", { ascending: true })
+          .order("id", { ascending: true });
+        break;
+    }
+
+    const { data, error } = await query.limit(limit);
+    if (error) {
+      throw new LeadRepositoryError(
+        `follow-up queue ${code}`,
+        causeFrom(error),
+      );
+    }
+    let rows: LeadFollowUpReadRow[];
+    try {
+      rows = (data ?? []).map(mapFollowUpRow);
+    } catch (error) {
+      throw new LeadRepositoryError(
+        `follow-up queue ${code} response`,
+        causeFrom(error),
+      );
+    }
+    if (rows.length > limit) {
+      throw new LeadRepositoryError(
+        `follow-up queue ${code} response`,
+        new Error("Database exceeded the requested Lead row limit"),
+      );
+    }
+    for (const row of rows) {
+      if (selected.has(row.id)) {
+        throw new LeadRepositoryError(
+          `follow-up queue ${code} duplicate`,
+          new Error("Database returned an already-selected Lead"),
+        );
+      }
+      selected.add(row.id);
+      candidates.push(row);
+    }
   }
 
   async canModify(id: string): Promise<boolean> {

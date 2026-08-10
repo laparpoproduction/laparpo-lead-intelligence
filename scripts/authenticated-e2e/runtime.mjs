@@ -171,11 +171,67 @@ export async function readAuthenticatedE2ERuntime() {
   ) {
     throw new Error("Authenticated E2E representative pipeline fixture is invalid");
   }
+  const representativeLeadQueueFixtures =
+    parsed.representativeLeadQueueFixtures;
+  if (
+    !Array.isArray(representativeLeadQueueFixtures) ||
+    representativeLeadQueueFixtures.length < 2 ||
+    representativeLeadQueueFixtures.some((fixture) => {
+      const categories = fixture?.categories;
+      const excluded = fixture?.excluded;
+      return (
+        typeof fixture?.marker !== "string" ||
+        typeof fixture?.expectedEligibleCount !== "number" ||
+        typeof fixture?.expectedAttentionCount !== "number" ||
+        !categories ||
+        [
+          "overdue",
+          "expectedClose",
+          "replied",
+          "readyToContact",
+          "qualified",
+          "missingFollowUp",
+          "unassigned",
+        ].some(
+          (key) =>
+            typeof categories[key]?.leadId !== "string" ||
+            typeof categories[key]?.title !== "string",
+        ) ||
+        typeof fixture?.noAttention?.leadId !== "string" ||
+        typeof fixture?.noAttention?.title !== "string" ||
+        !excluded ||
+        [
+          "inaccessible",
+          "paused",
+          "closed",
+          "archived",
+          "archivedCompany",
+          "unqualified",
+          "lost",
+          "disqualified",
+          "quotationSent",
+          "negotiation",
+          "activeOpportunity",
+          "terminalOpportunity",
+          "converted",
+        ].some(
+          (key) =>
+            typeof excluded[key]?.leadId !== "string" ||
+            typeof excluded[key]?.title !== "string",
+        )
+      );
+    })
+  ) {
+    throw new Error("Authenticated E2E Lead queue fixture is invalid");
+  }
   return {
+    apiUrl: status.apiUrl,
+    anonKey: status.anonKey,
     databaseUrl: status.databaseUrl,
     managementUsers: parsed.managementUsers,
     representativeUsers: parsed.representativeUsers,
     pipelineFixtures,
     representativePipelineFixtures,
+    representativeLeadQueueFixtures,
   };
 }

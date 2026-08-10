@@ -329,6 +329,47 @@ Phase 1B does not predict sales success, recompute CRM probability, infer missin
 money, convert currencies, reopen terminal Opportunities or grant mutation
 authority. `LIVE-TERRA-EVAL-NOT-RUN` remains the current live-quality status.
 
+### Deterministic Lead Follow-up Queue
+
+The protected `/leads` workspace provides an explicit **Review follow-up
+priorities** action. This is a deterministic, non-AI feature. Model-backed AI
+Phase 1C remains **NO-GO**. The queue makes no OpenAI or other model request,
+does not auto-run and stores no result. Its React action state disappears on
+reload and generation creates no CRM mutation or H7 mutation event.
+
+The server resolves the active actor and uses the ordinary authenticated
+Supabase client. Existing Lead RLS determines parent visibility. A PostgREST
+empty embedded anti-join over the named `opportunities_lead_id_fk` relationship
+excludes a Lead with any readable related Opportunity without returning related
+Opportunity fields. Active/non-archived, non-unqualified pre-Opportunity Leads
+are considered only in `new`, `researching`, `ready_to_contact`, `contacted`,
+`replied`, `qualified`, `meeting_scheduled` and `quotation_requested`. Paused,
+closed, terminal, `quotation_sent`, `negotiation`, archived and archived-Company
+Leads are excluded.
+
+Seven closed application predicates are evaluated in this order: overdue
+follow-up, passed expected-close date, replied needing review, ready-to-contact
+without a last-contacted timestamp, qualified needing progress, missing recorded
+follow-up scheduling and unassigned active Lead. One server `Date` supplies both
+instant comparisons and its UTC expected-close date. Human priority is display
+only; it does not affect selection or ordering. `leadScore` and money are not
+retrieved or used.
+
+The repository returns exact RLS-filtered full-dataset eligible and configured-
+attention counts separately from detailed candidates. Seven bounded queries add
+at most six new unique Leads per category, exclude previously selected UUIDs and
+use stable date/update/UUID ordering. A configured-attention-only fallback asks
+for remaining capacity up to 50 total candidates. The UI displays at most three
+categories and five Leads per category. When attention count exceeds analyzed
+count, exact X-of-Y coverage and a bounded-review disclosure remain visible.
+
+The explicit projection excludes Contact PII, Lead free-form notes and private
+prose, Activity rows/prose, lead score, recorded money, source details and
+assignee identity. Visible wording describes only structured recorded CRM
+metadata. See
+[`docs/lead-follow-up-priority-quality-evaluation.md`](docs/lead-follow-up-priority-quality-evaluation.md)
+for the predicate, privacy, authorization and authenticated-E2E evidence.
+
 ### Contacts database foundation
 
 `contacts.full_name` is the canonical display name. Optional `first_name` and
@@ -461,7 +502,10 @@ The existing `playwright.config.ts` remains the 16-test, read-only demo-preview
 UX suite on port 3000. TEST-010 adds a separate serial browser lane on port 3001
 using `playwright.authenticated.config.ts`, one worker and a disposable local
 Supabase stack. It uses real Auth cookies, PostgREST, RLS, Company server actions
-and H7 audit triggers. Only the outbound AI provider is deterministic, and no
+and H7 audit triggers. The same lane proves the Opportunity summary and
+deterministic Lead Follow-up Queue against database-backed management and
+representative fixtures. Only the outbound Phase 1A/1B AI provider is replaced
+by a deterministic test provider; the Lead queue has no provider and no
 `OPENAI_API_KEY` is permitted.
 
 To run the authenticated lane locally, install Docker, a PostgreSQL 17-compatible

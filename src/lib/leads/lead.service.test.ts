@@ -72,6 +72,13 @@ function repositoryMock(overrides: Record<string, unknown> = {}) {
     listOverdueFollowUps: vi.fn().mockResolvedValue({ items: [leadFixture], page: 1, pageSize: 25, total: 1, totalPages: 1 }),
     listUpcomingFollowUps: vi.fn().mockResolvedValue({ items: [leadFixture], page: 1, pageSize: 25, total: 1, totalPages: 1 }),
     findByAssignee: vi.fn().mockResolvedValue({ items: [leadFixture], page: 1, pageSize: 25, total: 1, totalPages: 1 }),
+    getFollowUpPriorityReadModel: vi.fn().mockResolvedValue({
+      candidates: [],
+      eligibleAccessibleLeadCount: 0,
+      configuredAttentionLeadCount: 0,
+      authoritativeNow: "2026-08-10T00:00:00.000Z",
+      authoritativeUtcDate: "2026-08-10",
+    }),
     findDuplicateCandidates: vi.fn().mockResolvedValue([]),
     canAccess: vi.fn().mockResolvedValue(true),
     canModify: vi.fn().mockResolvedValue(true),
@@ -80,6 +87,33 @@ function repositoryMock(overrides: Record<string, unknown> = {}) {
 }
 
 describe("LeadService", () => {
+  it("delegates the queue with the one authoritative Date after active authorization", async () => {
+    const repository = repositoryMock();
+    const service = new LeadService(repository as never);
+    const authoritativeNow = new Date("2026-08-10T00:00:00.000Z");
+    await expect(
+      service.getFollowUpPriorityReadModel(representative, authoritativeNow),
+    ).resolves.toMatchObject({ eligibleAccessibleLeadCount: 0 });
+    expect(repository.getFollowUpPriorityReadModel).toHaveBeenCalledWith(
+      authoritativeNow,
+    );
+  });
+
+  it("rejects inactive and invalid-time queue requests before the repository", async () => {
+    const repository = repositoryMock();
+    const service = new LeadService(repository as never);
+    await expect(
+      service.getFollowUpPriorityReadModel(
+        { ...representative, isActive: false },
+        new Date(),
+      ),
+    ).rejects.toBeInstanceOf(LeadPermissionError);
+    await expect(
+      service.getFollowUpPriorityReadModel(representative, new Date("invalid")),
+    ).rejects.toThrow("unavailable");
+    expect(repository.getFollowUpPriorityReadModel).not.toHaveBeenCalled();
+  });
+
   it("validates and creates a lead for an active user", async () => {
     const repository = repositoryMock();
     const service = new LeadService(repository as never);
