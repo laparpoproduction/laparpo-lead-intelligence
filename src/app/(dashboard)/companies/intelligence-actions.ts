@@ -2,7 +2,10 @@
 
 import { randomUUID } from "node:crypto";
 import { ZodError } from "zod";
-import { companyIntelligenceRateLimiter } from "@/lib/ai/company-intelligence.rate-limit";
+import {
+  AiActorRateLimitUnavailableError,
+  consumeAiActorRateLimit,
+} from "@/lib/ai/ai-actor-rate-limit";
 import { CompanyIntelligenceInputTooLargeError } from "@/lib/ai/company-intelligence.input";
 import {
   CompanyIntelligenceProviderError,
@@ -93,6 +96,25 @@ export async function generateCompanyIntelligenceAction(
   }
 
   const { actor, service: companyService } = context;
+  try {
+    const rateLimit = await consumeAiActorRateLimit();
+    if (!rateLimit.allowed) {
+      logOutcome("warn", requestId, "rate_limited", {
+        actorId: actor.userId,
+      });
+      return safeFailure("rate_limited");
+    }
+  } catch (error) {
+    logOutcome("error", requestId, "rate_limiter_unavailable", {
+      actorId: actor.userId,
+      errorName:
+        error instanceof AiActorRateLimitUnavailableError
+          ? error.name
+          : "UnknownError",
+    });
+    return safeFailure("provider_unavailable");
+  }
+
   let companyId: string;
   try {
     const rawCompanyId = formData.get("companyId");
@@ -117,14 +139,6 @@ export async function generateCompanyIntelligenceAction(
         companyId,
       });
       return safeFailure("ai_not_configured");
-    }
-
-    if (!companyIntelligenceRateLimiter.consume(actor.userId)) {
-      logOutcome("warn", requestId, "rate_limited", {
-        actorId: actor.userId,
-        companyId,
-      });
-      return safeFailure("rate_limited");
     }
 
     const generated = await intelligenceService.generate(projection);

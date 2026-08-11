@@ -14,7 +14,10 @@ import {
   LeadConversionAuthError,
 } from "@/lib/opportunities/opportunity.server";
 import { createOpportunityPipelineSummaryService } from "@/lib/ai/opportunity-pipeline-summary.server";
-import { controlledAiActorRateLimiter } from "@/lib/ai/company-intelligence.rate-limit";
+import {
+  AiActorRateLimitUnavailableError,
+  consumeAiActorRateLimit,
+} from "@/lib/ai/ai-actor-rate-limit";
 import { logger } from "@/lib/logger";
 import { generateOpportunityPipelineSummaryAction } from "./summary-action";
 import { initialOpportunityPipelineSummaryActionState } from "./summary-state";
@@ -30,8 +33,9 @@ vi.mock("@/lib/opportunities/opportunity.server", async (importOriginal) => ({
 vi.mock("@/lib/ai/opportunity-pipeline-summary.server", () => ({
   createOpportunityPipelineSummaryService: vi.fn(),
 }));
-vi.mock("@/lib/ai/company-intelligence.rate-limit", () => ({
-  controlledAiActorRateLimiter: { consume: vi.fn() },
+vi.mock("@/lib/ai/ai-actor-rate-limit", () => ({
+  AiActorRateLimitUnavailableError: class extends Error {},
+  consumeAiActorRateLimit: vi.fn(),
 }));
 vi.mock("@/lib/logger", () => ({
   logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
@@ -71,7 +75,10 @@ beforeEach(() => {
   vi.mocked(createOpportunityPipelineSummaryService).mockReturnValue({
     generate,
   } as unknown as OpportunityPipelineSummaryService);
-  vi.mocked(controlledAiActorRateLimiter.consume).mockReturnValue(true);
+  vi.mocked(consumeAiActorRateLimit).mockResolvedValue({
+    allowed: true,
+    retryAfterMs: 0,
+  });
 });
 
 describe("Opportunity pipeline summary server action", () => {
@@ -119,6 +126,34 @@ describe("Opportunity pipeline summary server action", () => {
         ),
       ).resolves.toMatchObject({ status: "permission_error" });
     }
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("shares the distributed denial and fails closed before any pipeline/provider work", async () => {
+    vi.mocked(consumeAiActorRateLimit).mockResolvedValueOnce({
+      allowed: false,
+      retryAfterMs: 5_000,
+    });
+    await expect(
+      generateOpportunityPipelineSummaryAction(
+        initialOpportunityPipelineSummaryActionState,
+        new FormData(),
+      ),
+    ).resolves.toMatchObject({ status: "rate_limited" });
+    expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
+    expect(createOpportunityPipelineSummaryService).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+
+    vi.mocked(consumeAiActorRateLimit).mockRejectedValueOnce(
+      new AiActorRateLimitUnavailableError(),
+    );
+    await expect(
+      generateOpportunityPipelineSummaryAction(
+        initialOpportunityPipelineSummaryActionState,
+        new FormData(),
+      ),
+    ).resolves.toMatchObject({ status: "provider_unavailable" });
+    expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
   });
 

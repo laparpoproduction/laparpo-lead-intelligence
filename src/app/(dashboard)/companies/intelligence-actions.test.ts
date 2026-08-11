@@ -18,7 +18,10 @@ import {
 import { getApplicationMode } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createCompanyIntelligenceService } from "@/lib/ai/company-intelligence.server";
-import { companyIntelligenceRateLimiter } from "@/lib/ai/company-intelligence.rate-limit";
+import {
+  AiActorRateLimitUnavailableError,
+  consumeAiActorRateLimit,
+} from "@/lib/ai/ai-actor-rate-limit";
 import {
   companyIntelligenceEvaluationFixtures,
   validCompanyIntelligence,
@@ -38,8 +41,9 @@ vi.mock("@/lib/companies/company.server", async (importOriginal) => {
 vi.mock("@/lib/ai/company-intelligence.server", () => ({
   createCompanyIntelligenceService: vi.fn(),
 }));
-vi.mock("@/lib/ai/company-intelligence.rate-limit", () => ({
-  companyIntelligenceRateLimiter: { consume: vi.fn() },
+vi.mock("@/lib/ai/ai-actor-rate-limit", () => ({
+  AiActorRateLimitUnavailableError: class extends Error {},
+  consumeAiActorRateLimit: vi.fn(),
 }));
 vi.mock("@/lib/logger", () => ({
   logger: {
@@ -80,7 +84,10 @@ beforeEach(() => {
   vi.mocked(createCompanyIntelligenceService).mockReturnValue({
     generate,
   } as unknown as CompanyIntelligenceService);
-  vi.mocked(companyIntelligenceRateLimiter.consume).mockReturnValue(true);
+  vi.mocked(consumeAiActorRateLimit).mockResolvedValue({
+    allowed: true,
+    retryAfterMs: 0,
+  });
 });
 
 describe("Generate Company intelligence action", () => {
@@ -167,7 +174,7 @@ describe("Generate Company intelligence action", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
-  it("fails safely when AI is not configured or the local limiter rejects the actor", async () => {
+  it("fails safely when AI is not configured or the distributed limiter rejects the actor", async () => {
     vi.mocked(createCompanyIntelligenceService).mockReturnValueOnce(null);
     await expect(
       generateCompanyIntelligenceAction(
@@ -176,13 +183,31 @@ describe("Generate Company intelligence action", () => {
       ),
     ).resolves.toMatchObject({ status: "ai_not_configured" });
 
-    vi.mocked(companyIntelligenceRateLimiter.consume).mockReturnValueOnce(false);
+    vi.mocked(consumeAiActorRateLimit).mockResolvedValueOnce({
+      allowed: false,
+      retryAfterMs: 5_000,
+    });
     await expect(
       generateCompanyIntelligenceAction(
         initialCompanyIntelligenceActionState,
         form(),
       ),
     ).resolves.toMatchObject({ status: "rate_limited" });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("fails closed before provider input or invocation when limiter storage is unavailable", async () => {
+    vi.mocked(consumeAiActorRateLimit).mockRejectedValueOnce(
+      new AiActorRateLimitUnavailableError(),
+    );
+    await expect(
+      generateCompanyIntelligenceAction(
+        initialCompanyIntelligenceActionState,
+        form(),
+      ),
+    ).resolves.toMatchObject({ status: "provider_unavailable" });
+    expect(getById).not.toHaveBeenCalled();
+    expect(createCompanyIntelligenceService).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
   });
 
@@ -208,6 +233,28 @@ describe("Generate Company intelligence action", () => {
     expect(serializedLogs).not.toContain("sk-sensitive");
     expect(serializedLogs).not.toContain("raw-provider-secret");
     expect(serializedLogs).not.toContain(JSON.stringify(companyFixture));
+  });
+
+  it("does not refund a consumed slot after provider failure", async () => {
+    generate.mockRejectedValueOnce(new Error("provider unavailable"));
+    await expect(
+      generateCompanyIntelligenceAction(
+        initialCompanyIntelligenceActionState,
+        form(),
+      ),
+    ).resolves.toMatchObject({ status: "unexpected" });
+
+    vi.mocked(consumeAiActorRateLimit).mockResolvedValueOnce({
+      allowed: false,
+      retryAfterMs: 5_000,
+    });
+    await expect(
+      generateCompanyIntelligenceAction(
+        initialCompanyIntelligenceActionState,
+        form(),
+      ),
+    ).resolves.toMatchObject({ status: "rate_limited" });
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 
   it("returns a safe oversized-input error and logs only size metadata", async () => {
