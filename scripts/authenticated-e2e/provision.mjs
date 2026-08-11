@@ -129,13 +129,20 @@ async function main() {
       `
         insert into public.companies (
           id, legal_name, display_name, company_type, industry,
-          source_url, source_type, discovered_at, created_by
+          estimated_branch_count, description, website_url, city, state,
+          country, source_url, source_type, discovered_at, created_by
         ) values (
           :'company_id'::uuid,
           :'display_name' || ' Sdn Bhd',
           :'display_name',
           'fnb',
           'Food & Beverage',
+          4,
+          'Synthetic public F&B profile for distributed limiter coverage.',
+          'https://ai-rate-limit.example.test',
+          'George Town',
+          'Penang',
+          'MY',
           'https://ai-rate-limit.example.test/about',
           'company_website',
           now(),
