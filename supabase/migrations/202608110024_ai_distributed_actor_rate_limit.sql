@@ -95,7 +95,7 @@ begin
     and authoritative_now - last_accepted_at < interval '5 seconds'
   then
     cooldown_remaining_ms := pg_catalog.ceil(
-      pg_catalog.extract(
+      extract(
         epoch from (last_accepted_at + interval '5 seconds' - authoritative_now)
       ) * 1000
     )::integer;
@@ -103,7 +103,7 @@ begin
 
   if pg_catalog.cardinality(accepted_timestamps) >= 5 then
     window_remaining_ms := pg_catalog.ceil(
-      pg_catalog.extract(
+      extract(
         epoch from (accepted_timestamps[1] + interval '60 seconds' - authoritative_now)
       ) * 1000
     )::integer;

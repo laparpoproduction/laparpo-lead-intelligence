@@ -30,6 +30,7 @@ describe("AI distributed actor rate-limit migration", () => {
     expect(sql).toContain(
       "authoritative_now - last_accepted_at < interval '5 seconds'",
     );
+    expect(sql).not.toContain("pg_catalog.extract(");
     expect(sql).toContain("for update");
     expect(sql).toContain("security definer");
     expect(sql).toContain("set search_path = ''");
