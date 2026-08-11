@@ -8,8 +8,8 @@ if [[ "${LAPARPO_AUTHENTICATED_E2E:-}" != "true" ]]; then
 fi
 
 mapfile -t migration_files < <(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -print | LC_ALL=C sort)
-if [[ "${#migration_files[@]}" -ne 23 ]] || printf '%s\n' "${migration_files[@]}" | grep -q '024'; then
-  echo "Authenticated E2E requires the frozen 001-023 migration inventory" >&2
+if [[ "${#migration_files[@]}" -ne 24 ]] || [[ "${migration_files[-1]}" != *"202608110024_ai_distributed_actor_rate_limit.sql" ]]; then
+  echo "Authenticated E2E requires the ordered 001-024 migration inventory" >&2
   exit 1
 fi
 

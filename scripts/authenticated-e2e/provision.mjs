@@ -44,7 +44,10 @@ async function main() {
     .filter((name) => name.endsWith(".sql"))
     .sort()
     .map((name) => name.split("_", 1)[0]);
-  if (migrationVersions.length !== 23) {
+  if (
+    migrationVersions.length !== 24 ||
+    migrationVersions.at(-1) !== "202608110024"
+  ) {
     throw new Error("Authenticated E2E migration inventory is invalid");
   }
   runOwnerSql(
@@ -79,9 +82,9 @@ async function main() {
   });
   const runIdentity = `${process.env.GITHUB_RUN_ID ?? "local"}-${randomUUID()}`;
   const managementUsers = [];
-  // Two retry-safe identities per authenticated browser journey avoid the
-  // shared actor limiter coupling otherwise-independent serial tests.
-  for (const retryIndex of [0, 1, 2, 3]) {
+  // Existing journeys use 0-3. The endpoint-alternation proof uses retry-safe
+  // pairs 4/5 and 6/7 so limiter state never couples independent tests.
+  for (const retryIndex of [0, 1, 2, 3, 4, 5, 6, 7]) {
     const email = `test010-management-${retryIndex}-${runIdentity}@example.test`;
     const password = `${randomBytes(24).toString("base64url")}aA1!`;
     const { data, error } = await admin.auth.admin.createUser({
@@ -113,6 +116,38 @@ async function main() {
       },
     );
     managementUsers.push({ id: data.user.id, email, password });
+  }
+
+  const rateLimitCompanies = managementUsers.slice(4).map((user, index) => ({
+    id: randomUUID(),
+    actorId: user.id,
+    displayName: `AI Rate Limit Company ${index} ${runIdentity}`,
+  }));
+  for (const company of rateLimitCompanies) {
+    runOwnerSql(
+      status.databaseUrl,
+      `
+        insert into public.companies (
+          id, legal_name, display_name, company_type, industry,
+          source_url, source_type, discovered_at, created_by
+        ) values (
+          :'company_id'::uuid,
+          :'display_name' || ' Sdn Bhd',
+          :'display_name',
+          'fnb_business',
+          'Food & Beverage',
+          'https://ai-rate-limit.example.test/about',
+          'company_website',
+          now(),
+          :'actor_id'::uuid
+        );
+      `,
+      {
+        company_id: company.id,
+        display_name: company.displayName,
+        actor_id: company.actorId,
+      },
+    );
   }
 
   const representativeUsers = [];
@@ -733,6 +768,7 @@ async function main() {
     JSON.stringify({
       ...status,
       managementUsers,
+      rateLimitCompanies,
       representativeUsers,
       representativePipelineFixtures,
       representativeLeadQueueFixtures,

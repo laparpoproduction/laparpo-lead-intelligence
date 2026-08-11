@@ -98,7 +98,7 @@ export async function readAuthenticatedE2ERuntime() {
   });
   if (
     !Array.isArray(parsed.managementUsers) ||
-    parsed.managementUsers.length < 4 ||
+    parsed.managementUsers.length < 8 ||
     parsed.managementUsers.some(
       (user) =>
         typeof user?.id !== "string" ||
@@ -108,6 +108,18 @@ export async function readAuthenticatedE2ERuntime() {
     )
   ) {
     throw new Error("Authenticated E2E management fixture is invalid");
+  }
+  if (
+    !Array.isArray(parsed.rateLimitCompanies) ||
+    parsed.rateLimitCompanies.length < 4 ||
+    parsed.rateLimitCompanies.some(
+      (company) =>
+        typeof company?.id !== "string" ||
+        typeof company?.actorId !== "string" ||
+        typeof company?.displayName !== "string",
+    )
+  ) {
+    throw new Error("Authenticated E2E AI rate-limit fixture is invalid");
   }
   if (
     !Array.isArray(parsed.representativeUsers) ||
@@ -229,6 +241,7 @@ export async function readAuthenticatedE2ERuntime() {
     anonKey: status.anonKey,
     databaseUrl: status.databaseUrl,
     managementUsers: parsed.managementUsers,
+    rateLimitCompanies: parsed.rateLimitCompanies,
     representativeUsers: parsed.representativeUsers,
     pipelineFixtures,
     representativePipelineFixtures,

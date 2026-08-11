@@ -49,7 +49,7 @@ verify all of the following:
   real Auth/session cookies, the actual migrations/RLS/server actions and a
   production-forbidden deterministic outbound AI substitute. It does not prove
   live Terra quality and never targets a remote project. Broad AI production
-  rollout still requires a durable distributed rate limiter, retained logs,
+  rollout still requires retained logs,
   provider privacy approval, spend controls, `safety_identifier`, Contact PII
   policy and future URL-ingestion/SSRF controls. The current in-runtime
   cooldown/window is defense-in-depth for a controlled first slice, not a global
@@ -184,6 +184,10 @@ Perform the release in this order:
    from `supabase/migrations/`, in filename order.
 8. Compare the facility's applied-version report with the complete migration
    directory at the release commit. Stop if any version is absent or failed.
+   Migration 024 must be present before deploying the application code that
+   calls `consume_ai_actor_rate_limit`. It is additive, does not alter existing
+   CRM tables/RLS, and is compatible with the previous application because that
+   application does not call the new RPC.
 9. After migration 023 exists, use a separately approved procedure running as
    the migration/database owner to provision exactly one value into
    `mutation_audit_private.mutation_correlation_secret`. Application roles,
@@ -199,6 +203,14 @@ Perform the release in this order:
     that its database audit event shares the server log request ID.
 12. Deploy or start the exact validated application artifact.
 13. Complete post-deploy health, authentication and read-path verification.
+
+For migration 024, verify before step 12 that normal roles cannot read or write
+`ai_rate_limit_private.actor_windows`, only `authenticated` can execute the
+zero-argument RPC, anonymous/inactive calls fail, and an active staging actor's
+second immediate Phase 1A/1B call is denied without a provider call. Limiter
+storage/RPC failure must disable only the attempted AI action; it must not block
+login, CRM reads/mutations, Opportunity pipeline access or the deterministic
+Lead Follow-up Queue. Limiter consumption creates no H7 event.
 
 Do not start the new application before its required migrations are complete
 and the private verifier secret has been provisioned and verified.
@@ -221,6 +233,10 @@ If any migration fails:
 - use only an explicitly reviewed recovery or forward-fix procedure.
 
 An application rollback does not automatically reverse a database change.
+Migration 024 may safely remain during an application rollback to the previous
+main because its private objects are additive and unused there. Do not drop the
+schema/table/function as an ad-hoc rollback; any removal requires a separately
+reviewed forward migration after compatibility and in-flight request analysis.
 Restore or point-in-time recovery is a separate, high-impact action and must
 follow the provider-approved recovery procedure with explicit review. Confirm
 schema/application compatibility before rolling back only the application.

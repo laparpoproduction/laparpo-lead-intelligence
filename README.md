@@ -236,15 +236,15 @@ application-state storage for this use; it does not by itself override provider
 abuse-monitoring retention or the organization's API data controls. Production
 use still requires approval of the provider terms and project data settings.
 
-The implementation applies a five-second per-user cooldown and five requests per
-minute within one application runtime, caps input fields and structured output,
-and records only safe metadata such as request/resource IDs, model, duration and
-token counts. It never logs prompts, Company payloads, structured model output,
-rendered text, provider raw responses or provider errors. This local limiter is deliberately not
-presented as durable or distributed. TEST-010 now provides the authenticated
-database-backed browser proof. Before broad AI production rollout, configure
-provider project spend/rate controls and alerts, add a distributed limiter,
-retain privacy-safe application logs, approve provider privacy controls, add a
+The implementation applies one shared database-authoritative five-second
+per-actor cooldown and five accepted attempts per rolling minute, caps input
+fields and structured output, and records only safe metadata such as
+request/resource IDs, model, duration and token counts. It never logs prompts,
+Company payloads, structured model output, rendered text, provider raw responses
+or provider errors. TEST-010 provides authenticated database-backed browser and
+endpoint-alternation proof. Before broad AI production rollout, configure
+provider project spend/rate controls and alerts, retain privacy-safe application
+logs, approve provider privacy controls, add a
 `safety_identifier`, and complete the Contact PII and future URL-ingestion policy.
 
 Confidence is derived by the application from the completeness of the available
@@ -319,8 +319,14 @@ conversion claim.
 Phase 1B reuses the official SDK/Responses API foundation, allow-listed Terra or
 Luna model, `store: false`, low reasoning effort, 600 output-token ceiling,
 20-second timeout, zero retries, no tools and no web search. Phase 1A and 1B share
-the same actor-keyed five-second cooldown/five-per-minute in-runtime limiter.
-That limiter is bounded but not distributed or durable. CI covers the A–M
+one database-authoritative actor budget: accepted attempts must be at least five
+seconds apart and no more than five may remain in the rolling 60-second window.
+Migration 024 stores at most five accepted timestamps in one private row per
+authenticated active actor. Its zero-argument RPC derives identity through
+`auth.uid()`, uses one database timestamp, serializes concurrent same-actor
+consumers and fails closed. Exactly five seconds is accepted and a timestamp
+exactly 60 seconds old is expired. A denied attempt never reaches the provider;
+provider failure after acceptance does not refund capacity. CI covers the A–M
 synthetic matrix and real local Supabase/Auth browser journeys using the
 production-forbidden deterministic provider; no live OpenAI call is made. See
 [`docs/ai-opportunity-pipeline-summary-quality-evaluation.md`](docs/ai-opportunity-pipeline-summary-quality-evaluation.md).
@@ -523,7 +529,7 @@ npx --yes supabase@2.39.2 stop --no-backup --workdir .
 ```
 
 The setup pins Supabase CLI `2.39.2`, starts Docker-backed local services, and
-applies the repository's actual 001–023 migrations. It creates retry-safe confirmed Auth
+applies the repository's actual 001–024 migrations. It creates retry-safe confirmed Auth
 users through the local Admin API, promotes their Profiles through the local database
 owner, and keeps the service-role key, database URL and random password in an
 ignored chmod-600 fixture file. Those credentials are never passed to Next or
@@ -547,6 +553,13 @@ read-only Opportunity summary over seeded synthetic pipeline rows, authorization
 exclusions, unchanged database/H7 state and transient rendering. AI tests use
 fakes and captured request objects; CI never needs `OPENAI_API_KEY` and never
 calls OpenAI.
+
+The database lane additionally proves migration 024 grants, active-profile and
+anonymous denial, five-second/60-second boundaries, bounded state and real
+same-actor concurrency. Authenticated browser coverage proves Phase 1A→1B and
+Phase 1B→1A endpoint alternation share the same budget and denied calls never
+reach the deterministic provider. Limiter rows are operational abuse-control
+state, not CRM data or H7 mutation events.
 
 ## Manual test checklist
 
