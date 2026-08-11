@@ -67,6 +67,12 @@ done
 
 # Independent sessions for different actors do not share or block each other's
 # budget; each receives its own first accepted slot.
+"${task_psql[@]}" \
+  -v actor_id="$task_actor_id" \
+  -v other_actor_id="$task_other_actor_id" <<'SQL'
+delete from ai_rate_limit_private.actor_windows
+where actor_id in (:'actor_id'::uuid, :'other_actor_id'::uuid);
+SQL
 for task_pair in a b; do
   if [[ "$task_pair" == "a" ]]; then
     task_pair_actor="$task_actor_id"
