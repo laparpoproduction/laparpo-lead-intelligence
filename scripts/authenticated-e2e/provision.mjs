@@ -134,7 +134,7 @@ async function main() {
           :'company_id'::uuid,
           :'display_name' || ' Sdn Bhd',
           :'display_name',
-          'fnb_business',
+          'fnb',
           'Food & Beverage',
           'https://ai-rate-limit.example.test/about',
           'company_website',
