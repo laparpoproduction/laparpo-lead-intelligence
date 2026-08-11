@@ -71,7 +71,7 @@ begin
     where namespace.nspname = 'public'
       and procedure.proname = 'consume_ai_actor_rate_limit'
       and procedure.prosecdef
-      and procedure.proconfig = array['search_path=']
+      and procedure.proconfig @> array['search_path=""']::text[]
       and procedure.pronargs = 0
   ) then
     raise exception 'AI limiter RPC is not a hardened zero-argument SECURITY DEFINER';
