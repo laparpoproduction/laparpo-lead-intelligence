@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
 import type { CompanyIntelligenceService } from "@/lib/ai/company-intelligence.service";
 import { CompanyIntelligenceInputTooLargeError } from "@/lib/ai/company-intelligence.input";
 import {
@@ -18,10 +21,7 @@ import {
 import { getApplicationMode } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createCompanyIntelligenceService } from "@/lib/ai/company-intelligence.server";
-import {
-  AiActorRateLimitUnavailableError,
-  consumeAiActorRateLimit,
-} from "@/lib/ai/ai-actor-rate-limit";
+import { createClient } from "@/lib/supabase/server";
 import {
   companyIntelligenceEvaluationFixtures,
   validCompanyIntelligence,
@@ -41,10 +41,7 @@ vi.mock("@/lib/companies/company.server", async (importOriginal) => {
 vi.mock("@/lib/ai/company-intelligence.server", () => ({
   createCompanyIntelligenceService: vi.fn(),
 }));
-vi.mock("@/lib/ai/ai-actor-rate-limit", () => ({
-  AiActorRateLimitUnavailableError: class extends Error {},
-  consumeAiActorRateLimit: vi.fn(),
-}));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
   logger: {
     debug: vi.fn(),
@@ -61,6 +58,10 @@ const actor = {
 };
 const getById = vi.fn();
 const generate = vi.fn();
+
+function limiterClient(data: unknown, error: unknown = null) {
+  return { rpc: vi.fn().mockResolvedValue({ data, error }) };
+}
 
 function form(id = companyId): FormData {
   const value = new FormData();
@@ -84,10 +85,9 @@ beforeEach(() => {
   vi.mocked(createCompanyIntelligenceService).mockReturnValue({
     generate,
   } as unknown as CompanyIntelligenceService);
-  vi.mocked(consumeAiActorRateLimit).mockResolvedValue({
-    allowed: true,
-    retryAfterMs: 0,
-  });
+  vi.mocked(createClient).mockResolvedValue(
+    limiterClient({ allowed: true, retry_after_ms: 0 }) as never,
+  );
 });
 
 describe("Generate Company intelligence action", () => {
@@ -183,10 +183,9 @@ describe("Generate Company intelligence action", () => {
       ),
     ).resolves.toMatchObject({ status: "ai_not_configured" });
 
-    vi.mocked(consumeAiActorRateLimit).mockResolvedValueOnce({
-      allowed: false,
-      retryAfterMs: 5_000,
-    });
+    vi.mocked(createClient).mockResolvedValueOnce(
+      limiterClient({ allowed: false, retry_after_ms: 5_000 }) as never,
+    );
     await expect(
       generateCompanyIntelligenceAction(
         initialCompanyIntelligenceActionState,
@@ -197,8 +196,8 @@ describe("Generate Company intelligence action", () => {
   });
 
   it("fails closed before provider input or invocation when limiter storage is unavailable", async () => {
-    vi.mocked(consumeAiActorRateLimit).mockRejectedValueOnce(
-      new AiActorRateLimitUnavailableError(),
+    vi.mocked(createClient).mockResolvedValueOnce(
+      limiterClient(null, { message: "private database detail" }) as never,
     );
     await expect(
       generateCompanyIntelligenceAction(
@@ -210,6 +209,28 @@ describe("Generate Company intelligence action", () => {
     expect(createCompanyIntelligenceService).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { allowed: true, retry_after_ms: 5_000 },
+    { allowed: false, retry_after_ms: 0 },
+  ])(
+    "fails closed before Phase 1A provider work for malformed limiter output %#",
+    async (data) => {
+      vi.mocked(createClient).mockResolvedValueOnce(
+        limiterClient(data) as never,
+      );
+
+      await expect(
+        generateCompanyIntelligenceAction(
+          initialCompanyIntelligenceActionState,
+          form(),
+        ),
+      ).resolves.toMatchObject({ status: "provider_unavailable" });
+      expect(getById).not.toHaveBeenCalled();
+      expect(createCompanyIntelligenceService).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+    },
+  );
 
   it("never exposes raw provider errors, prompts, or secrets in client state or logs", async () => {
     generate.mockRejectedValueOnce(
@@ -244,10 +265,9 @@ describe("Generate Company intelligence action", () => {
       ),
     ).resolves.toMatchObject({ status: "unexpected" });
 
-    vi.mocked(consumeAiActorRateLimit).mockResolvedValueOnce({
-      allowed: false,
-      retryAfterMs: 5_000,
-    });
+    vi.mocked(createClient).mockResolvedValueOnce(
+      limiterClient({ allowed: false, retry_after_ms: 5_000 }) as never,
+    );
     await expect(
       generateCompanyIntelligenceAction(
         initialCompanyIntelligenceActionState,

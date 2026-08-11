@@ -19,24 +19,40 @@ function clientResult(data: unknown, error: unknown = null) {
 describe("distributed AI actor rate limiter", () => {
   beforeEach(() => vi.mocked(createClient).mockReset());
 
-  it("calls the zero-business-argument RPC and accepts its strict safe result", async () => {
-    const client = clientResult({ allowed: false, retry_after_ms: 4_999 });
+  it.each([
+    [
+      { allowed: true, retry_after_ms: 0 },
+      { allowed: true, retryAfterMs: 0 },
+    ],
+    [
+      { allowed: false, retry_after_ms: 1 },
+      { allowed: false, retryAfterMs: 1 },
+    ],
+    [
+      { allowed: false, retry_after_ms: 60_000 },
+      { allowed: false, retryAfterMs: 60_000 },
+    ],
+  ])("accepts an exact semantic RPC result %#", async (data, expected) => {
+    const client = clientResult(data);
     vi.mocked(createClient).mockResolvedValue(client as never);
 
-    await expect(consumeAiActorRateLimit()).resolves.toEqual({
-      allowed: false,
-      retryAfterMs: 4_999,
-    });
+    await expect(consumeAiActorRateLimit()).resolves.toEqual(expected);
     expect(client.rpc).toHaveBeenCalledWith("consume_ai_actor_rate_limit");
   });
 
   it.each([
+    { allowed: true, retry_after_ms: 5_000 },
+    { allowed: false, retry_after_ms: 0 },
+    { allowed: true, retry_after_ms: 1 },
+    { allowed: false, retry_after_ms: -1 },
+    { allowed: false, retry_after_ms: 60_001 },
+    { allowed: false, retry_after_ms: 1.5 },
+    { allowed: "true", retry_after_ms: 0 },
+    { allowed: true },
+    { retry_after_ms: 0 },
     null,
     [],
-    { allowed: true },
-    { allowed: "true", retry_after_ms: 0 },
-    { allowed: true, retry_after_ms: -1 },
-    { allowed: true, retry_after_ms: 0, actor_id: "forbidden" },
+    { allowed: true, retry_after_ms: 0, unexpected: "field" },
   ])("fails closed for an unexpected RPC result %#", async (data) => {
     vi.mocked(createClient).mockResolvedValue(clientResult(data) as never);
     await expect(consumeAiActorRateLimit()).rejects.toBeInstanceOf(
