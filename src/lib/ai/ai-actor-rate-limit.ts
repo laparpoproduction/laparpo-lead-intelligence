@@ -18,6 +18,31 @@ const aiActorRateLimitResultSchema = z.discriminatedUnion("allowed", [
     .strict(),
 ]);
 
+function hasExactAiActorRateLimitShape(
+  value: unknown,
+): value is Record<"allowed" | "retry_after_ms", unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+
+  const ownKeys = Reflect.ownKeys(value);
+  if (
+    ownKeys.length !== 2 ||
+    !ownKeys.includes("allowed") ||
+    !ownKeys.includes("retry_after_ms")
+  ) {
+    return false;
+  }
+
+  return ["allowed", "retry_after_ms"].every((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor !== undefined && "value" in descriptor;
+  });
+}
+
 export type AiActorRateLimitResult =
   | { allowed: true; retryAfterMs: 0 }
   | { allowed: false; retryAfterMs: number };
@@ -39,6 +64,10 @@ export async function consumeAiActorRateLimit(): Promise<AiActorRateLimitResult>
     const client = await createClient();
     const { data, error } = await client.rpc("consume_ai_actor_rate_limit");
     if (error) throw error;
+
+    if (!hasExactAiActorRateLimitShape(data)) {
+      throw new TypeError("Unexpected AI actor rate-limit RPC result");
+    }
 
     const parsed = aiActorRateLimitResultSchema.parse(data);
     return parsed.allowed

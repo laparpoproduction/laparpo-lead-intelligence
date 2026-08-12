@@ -156,6 +156,11 @@ describe("Opportunity pipeline summary server action", () => {
   it.each([
     { allowed: true, retry_after_ms: 5_000 },
     { allowed: false, retry_after_ms: 0 },
+    { allowed: true, retry_after_ms: 0, constructor: "x" },
+    { allowed: true, retry_after_ms: 0, prototype: "x" },
+    JSON.parse(
+      '{"allowed":true,"retry_after_ms":0,"__proto__":{"polluted":true}}',
+    ),
   ])(
     "fails closed before Phase 1B provider work for malformed limiter output %#",
     async (data) => {
