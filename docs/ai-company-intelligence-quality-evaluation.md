@@ -71,8 +71,9 @@ A live evaluation is optional and must remain explicit:
    contract.
 
 TEST-010 is covered by the isolated authenticated, database-backed browser lane.
-A durable distributed limiter, retained privacy-safe operational logging,
-provider privacy/project approval, spend controls, `safety_identifier`, Contact
+Migration 024 provides the shared atomic distributed Phase 1A/1B actor limiter;
+retained privacy-safe operational logging, provider privacy/project approval,
+spend controls, `safety_identifier`, Contact
 PII policy and future URL-ingestion/SSRF policy remain broad-production gates.
 This browser proof uses a deterministic server-only provider and does not change
 `LIVE-TERRA-EVAL-NOT-RUN` or establish live Terra model quality.

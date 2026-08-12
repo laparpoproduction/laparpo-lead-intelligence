@@ -17,6 +17,11 @@ export function readAuthenticatedE2ERuntime(): Promise<{
   anonKey: string;
   databaseUrl: string;
   managementUsers: Array<{ id: string; email: string; password: string }>;
+  rateLimitCompanies: Array<{
+    id: string;
+    actorId: string;
+    displayName: string;
+  }>;
   representativeUsers: Array<{ id: string; email: string; password: string }>;
   pipelineFixtures: Record<
     "overdue" | "unassigned" | "won" | "archived",

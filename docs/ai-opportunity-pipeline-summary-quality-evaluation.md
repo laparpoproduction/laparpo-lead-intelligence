@@ -63,9 +63,11 @@ original Company journey is retained unchanged and no live OpenAI call occurs.
 
 ## Remaining production gates
 
-The five-second cooldown and five-request/minute actor window are local
-in-runtime controls, not durable distributed limiting. Broad production rollout
-still requires retained privacy-safe operational logging, provider privacy and
+The five-second cooldown and five-request/minute actor window are enforced by
+the shared migration-024 database RPC for Phase 1A and 1B. The zero-argument RPC
+derives the active actor from authenticated database context, uses database time
+and atomically locks bounded per-actor state. Broad production rollout still
+requires retained privacy-safe operational logging, provider privacy and
 project approval, provider spend controls/alerts, a `safety_identifier` policy,
 Contact PII policy and future URL-ingestion/SSRF policy. Phase 1B does not claim
 sales prediction, AI probability, revenue forecasting or full AI production

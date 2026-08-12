@@ -2,7 +2,10 @@
 
 import { randomUUID } from "node:crypto";
 import { ZodError } from "zod";
-import { controlledAiActorRateLimiter } from "@/lib/ai/company-intelligence.rate-limit";
+import {
+  AiActorRateLimitUnavailableError,
+  consumeAiActorRateLimit,
+} from "@/lib/ai/ai-actor-rate-limit";
 import { PipelineSummaryInputTooLargeError } from "@/lib/ai/opportunity-pipeline-summary.input";
 import { projectOpportunityPipelineSummary } from "@/lib/ai/opportunity-pipeline-summary.projection";
 import {
@@ -96,6 +99,25 @@ export async function generateOpportunityPipelineSummaryAction(
 
   const { actor, service } = context;
   try {
+    const rateLimit = await consumeAiActorRateLimit();
+    if (!rateLimit.allowed) {
+      logOutcome("warn", requestId, "rate_limited", {
+        actorId: actor.userId,
+      });
+      return safeFailure("rate_limited");
+    }
+  } catch (error) {
+    logOutcome("error", requestId, "rate_limiter_unavailable", {
+      actorId: actor.userId,
+      errorName:
+        error instanceof AiActorRateLimitUnavailableError
+          ? error.name
+          : "UnknownError",
+    });
+    return safeFailure("provider_unavailable");
+  }
+
+  try {
     const summaryService = createOpportunityPipelineSummaryService();
     if (!summaryService) {
       logOutcome("warn", requestId, "not_configured", {
@@ -103,13 +125,6 @@ export async function generateOpportunityPipelineSummaryAction(
       });
       return safeFailure("ai_not_configured");
     }
-    if (!controlledAiActorRateLimiter.consume(actor.userId)) {
-      logOutcome("warn", requestId, "rate_limited", {
-        actorId: actor.userId,
-      });
-      return safeFailure("rate_limited");
-    }
-
     const now = new Date();
     const readModel = await service.getPipelineSummaryReadModel(actor, now);
     const projection = projectOpportunityPipelineSummary(

@@ -79,6 +79,7 @@ jobs:
           psql -f supabase/migrations/202607280021_company_hard_delete_protection.sql
           psql -f supabase/migrations/202607280022_immutable_creation_audit_metadata.sql
           psql -f supabase/migrations/202607290023_mutation_audit_correlation.sql
+          psql -f supabase/migrations/202608110024_ai_distributed_actor_rate_limit.sql
           psql \
             --set=correlation_secret="$MUTATION_AUDIT_CORRELATION_SECRET" \
             <<'SQL'
@@ -108,7 +109,9 @@ jobs:
           psql -f supabase/tests/opportunity_pipeline_smoke.sql
           psql -f supabase/tests/company_hard_delete_smoke.sql
           psql -f supabase/tests/immutable_creation_audit_metadata_smoke.sql
+          psql -f supabase/tests/ai_actor_rate_limit_smoke.sql
           bash supabase/tests/opportunity_pipeline_concurrency.sh
+          bash supabase/tests/ai_actor_rate_limit_concurrency.sh
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

@@ -14,7 +14,7 @@ import {
   LeadConversionAuthError,
 } from "@/lib/opportunities/opportunity.server";
 import { createOpportunityPipelineSummaryService } from "@/lib/ai/opportunity-pipeline-summary.server";
-import { controlledAiActorRateLimiter } from "@/lib/ai/company-intelligence.rate-limit";
+import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 import { generateOpportunityPipelineSummaryAction } from "./summary-action";
 import { initialOpportunityPipelineSummaryActionState } from "./summary-state";
@@ -30,9 +30,7 @@ vi.mock("@/lib/opportunities/opportunity.server", async (importOriginal) => ({
 vi.mock("@/lib/ai/opportunity-pipeline-summary.server", () => ({
   createOpportunityPipelineSummaryService: vi.fn(),
 }));
-vi.mock("@/lib/ai/company-intelligence.rate-limit", () => ({
-  controlledAiActorRateLimiter: { consume: vi.fn() },
-}));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
   logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));
@@ -48,6 +46,10 @@ const row = makePipelineSummaryRow(1, {
 const readModel = makePipelineSummaryReadModel([row]);
 const getPipelineSummaryReadModel = vi.fn();
 const generate = vi.fn();
+
+function limiterClient(data: unknown, error: unknown = null) {
+  return { rpc: vi.fn().mockResolvedValue({ data, error }) };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -71,7 +73,9 @@ beforeEach(() => {
   vi.mocked(createOpportunityPipelineSummaryService).mockReturnValue({
     generate,
   } as unknown as OpportunityPipelineSummaryService);
-  vi.mocked(controlledAiActorRateLimiter.consume).mockReturnValue(true);
+  vi.mocked(createClient).mockResolvedValue(
+    limiterClient({ allowed: true, retry_after_ms: 0 }) as never,
+  );
 });
 
 describe("Opportunity pipeline summary server action", () => {
@@ -121,6 +125,60 @@ describe("Opportunity pipeline summary server action", () => {
     }
     expect(generate).not.toHaveBeenCalled();
   });
+
+  it("shares the distributed denial and fails closed before any pipeline/provider work", async () => {
+    vi.mocked(createClient).mockResolvedValueOnce(
+      limiterClient({ allowed: false, retry_after_ms: 5_000 }) as never,
+    );
+    await expect(
+      generateOpportunityPipelineSummaryAction(
+        initialOpportunityPipelineSummaryActionState,
+        new FormData(),
+      ),
+    ).resolves.toMatchObject({ status: "rate_limited" });
+    expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
+    expect(createOpportunityPipelineSummaryService).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+
+    vi.mocked(createClient).mockResolvedValueOnce(
+      limiterClient(null, { message: "private database detail" }) as never,
+    );
+    await expect(
+      generateOpportunityPipelineSummaryAction(
+        initialOpportunityPipelineSummaryActionState,
+        new FormData(),
+      ),
+    ).resolves.toMatchObject({ status: "provider_unavailable" });
+    expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { allowed: true, retry_after_ms: 5_000 },
+    { allowed: false, retry_after_ms: 0 },
+    { allowed: true, retry_after_ms: 0, constructor: "x" },
+    { allowed: true, retry_after_ms: 0, prototype: "x" },
+    JSON.parse(
+      '{"allowed":true,"retry_after_ms":0,"__proto__":{"polluted":true}}',
+    ),
+  ])(
+    "fails closed before Phase 1B provider work for malformed limiter output %#",
+    async (data) => {
+      vi.mocked(createClient).mockResolvedValueOnce(
+        limiterClient(data) as never,
+      );
+
+      await expect(
+        generateOpportunityPipelineSummaryAction(
+          initialOpportunityPipelineSummaryActionState,
+          new FormData(),
+        ),
+      ).resolves.toMatchObject({ status: "provider_unavailable" });
+      expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
+      expect(createOpportunityPipelineSummaryService).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not expose raw provider errors or pipeline values in logs", async () => {
     generate.mockRejectedValueOnce(
