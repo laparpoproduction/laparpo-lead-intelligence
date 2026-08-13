@@ -7,6 +7,7 @@ export type OpportunityPipelineSummaryActionState = {
     | "validation_error"
     | "permission_error"
     | "ai_not_configured"
+    | "ai_disabled"
     | "rate_limited"
     | "timeout"
     | "provider_unavailable"

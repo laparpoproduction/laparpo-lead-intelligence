@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { ZodError } from "zod";
 import { CompanyDetailsPlaceholder } from "@/components/companies/company-details-placeholder";
 import { requireDashboardUser } from "@/lib/auth/session";
+import { getAiControlConfiguration } from "@/lib/ai/ai-control";
 import {
   CompanyNotFoundError,
   CompanyPermissionError,
@@ -33,5 +34,10 @@ export default async function CompanyDetailsPage({
     throw error;
   }
 
-  return <CompanyDetailsPlaceholder company={company} />;
+  return (
+    <CompanyDetailsPlaceholder
+      company={company}
+      aiEnabled={getAiControlConfiguration().status === "enabled"}
+    />
+  );
 }

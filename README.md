@@ -49,8 +49,11 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
    - `MUTATION_AUDIT_CORRELATION_SECRET` with at least 32 random characters,
      matching the protected private database secret described in the deployment
      runbook
-   - optional `OPENAI_API_KEY` to enable the read-only AI Phase 1A/1B actions and optional
-     allow-listed `OPENAI_MODEL` (`gpt-5.6-terra` or `gpt-5.6-luna`)
+   - keep `AI_FEATURES_ENABLED=false` by default; controlled Phase 1A/1B
+     enablement also requires server-only `OPENAI_API_KEY` and
+     `AI_IDENTITY_HMAC_SECRET`
+   - optional allow-listed `OPENAI_MODEL` (`gpt-5.6-terra` or
+     `gpt-5.6-luna`); an explicitly unknown model fails closed
 5. Apply **every** migration currently present in `supabase/migrations/` in
    filename order. The directory, not this README, is the migration source of
    truth. Do not select only a historical subset. Follow the
@@ -90,6 +93,8 @@ production, is visibly labelled and cannot create a real mutation context.
 | `MUTATION_AUDIT_CORRELATION_SECRET` | Server only | Yes for production mutations | Signs short-lived request correlation sent only by the server Supabase client; must match the protected private database secret |
 | `OPENAI_API_KEY` | Server only | No | Enables the optional read-only Company intelligence and Opportunity pipeline summary actions |
 | `OPENAI_MODEL` | Server only | No | Allow-listed AI model for both controlled slices; defaults safely to `gpt-5.6-terra` |
+| `AI_FEATURES_ENABLED` | Server only | No | Exact `true` enables controlled AI only when every required provider/identity setting is valid; absent or `false` disables AI |
+| `AI_IDENTITY_HMAC_SECRET` | Server only | No | High-entropy secret of at least 32 UTF-8 bytes used to derive versioned provider safety identifiers |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
@@ -553,6 +558,19 @@ read-only Opportunity summary over seeded synthetic pipeline rows, authorization
 exclusions, unchanged database/H7 state and transient rendering. AI tests use
 fakes and captured request objects; CI never needs `OPENAI_API_KEY` and never
 calls OpenAI.
+
+OpenAI requests use `lai-ai-v1_<base64url HMAC-SHA256>` safety identifiers
+derived server-side from the authenticated actor UUID with the domain
+`openai-safety:v1:`. The secret and derived identifier are never browser input,
+CRM/limiter/H7 state, or log metadata. Provision the identity secret through the
+deployment secret manager; never commit it, expose it as `NEXT_PUBLIC_*`, store
+it in PostgreSQL, or log it. Intentional secret rotation changes all
+provider-facing safety identifiers.
+
+Production remains default-disabled. Keep `AI_FEATURES_ENABLED=false` until
+provider/account, owner/privacy, live-evaluation, deployment-secret, and Phase
+2A PR 3 observability gates are separately approved. This remains experimental
+AI and is not broad-production readiness.
 
 The database lane additionally proves migration 024 grants, active-profile and
 anonymous denial, five-second/60-second boundaries, bounded state and real

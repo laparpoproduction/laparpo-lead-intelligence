@@ -34,7 +34,11 @@ export class OpenAICompanyIntelligenceProvider
 {
   private readonly client: Pick<OpenAI, "responses">;
 
-  constructor(apiKey: string, client?: Pick<OpenAI, "responses">) {
+  constructor(
+    apiKey: string,
+    client?: Pick<OpenAI, "responses">,
+    private readonly safetyIdentifier = "",
+  ) {
     this.client =
       client ??
       new OpenAI({
@@ -54,6 +58,7 @@ export class OpenAICompanyIntelligenceProvider
         max_output_tokens: request.maxOutputTokens,
         reasoning: { effort: "low" },
         store: request.store,
+        safety_identifier: this.safetyIdentifier,
         text: {
           format: zodTextFormat(
             companyIntelligenceSchema,

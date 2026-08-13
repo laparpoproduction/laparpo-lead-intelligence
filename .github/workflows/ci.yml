@@ -35,6 +35,8 @@ jobs:
       PGDATABASE: postgres
     steps:
       - uses: actions/checkout@v4
+      - name: Assert live OpenAI credentials are absent
+        run: test -z "${OPENAI_API_KEY:-}"
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -120,11 +122,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
+      AI_FEATURES_ENABLED: "true"
+      AI_IDENTITY_HMAC_SECRET: ci-only-ai-identity-secret-32-bytes-minimum
       LAPARPO_AUTHENTICATED_E2E: "true"
       LAPARPO_E2E_AI_STUB: "true"
       MUTATION_AUDIT_CORRELATION_SECRET: ci-only-authenticated-e2e-correlation-secret-2026
     steps:
       - uses: actions/checkout@v4
+      - name: Assert live OpenAI credentials are absent
+        run: test -z "${OPENAI_API_KEY:-}"
       - uses: actions/setup-node@v4
         with:
           node-version: 24

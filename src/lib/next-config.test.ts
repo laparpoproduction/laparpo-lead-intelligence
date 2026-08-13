@@ -15,6 +15,10 @@ const validEnvironment = {
   LAPARPO_AUTHENTICATED_E2E: "false",
   LAPARPO_E2E_AI_STUB: "false",
   LAPARPO_E2E_AI_STUB_CALLS_FILE: undefined,
+  AI_FEATURES_ENABLED: "false",
+  AI_IDENTITY_HMAC_SECRET: undefined,
+  OPENAI_API_KEY: undefined,
+  OPENAI_MODEL: undefined,
 };
 
 async function importNextConfig(
@@ -87,5 +91,41 @@ describe("next.config production validation integration", () => {
         MUTATION_AUDIT_CORRELATION_SECRET: undefined,
       }),
     ).rejects.toThrow();
+  });
+
+  it("fails closed for malformed or incomplete enabled AI configuration", async () => {
+    await expect(importNextConfig({ AI_FEATURES_ENABLED: "TRUE" })).rejects.toThrow(
+      "invalid_ai_features_enabled",
+    );
+    await expect(importNextConfig({ AI_FEATURES_ENABLED: "true" })).rejects.toThrow(
+      "enabled_ai_requires_openai_key",
+    );
+    await expect(
+      importNextConfig({
+        AI_FEATURES_ENABLED: "true",
+        OPENAI_API_KEY: "unit-test-key",
+        AI_IDENTITY_HMAC_SECRET: "short",
+      }),
+    ).rejects.toThrow("enabled_ai_requires_identity_secret");
+    await expect(
+      importNextConfig({
+        AI_FEATURES_ENABLED: "true",
+        OPENAI_API_KEY: "unit-test-key",
+        AI_IDENTITY_HMAC_SECRET: "identity-secret-that-is-at-least-32-bytes",
+        OPENAI_MODEL: "unapproved-model",
+      }),
+    ).rejects.toThrow("invalid_openai_model");
+  });
+
+  it("accepts production disabled without AI credentials and enabled with strict configuration", async () => {
+    await expect(importNextConfig({ AI_FEATURES_ENABLED: "false" })).resolves.toHaveProperty("default");
+    await expect(
+      importNextConfig({
+        AI_FEATURES_ENABLED: "true",
+        OPENAI_API_KEY: "unit-test-key",
+        AI_IDENTITY_HMAC_SECRET: "identity-secret-that-is-at-least-32-bytes",
+        OPENAI_MODEL: "gpt-5.6-terra",
+      }),
+    ).resolves.toHaveProperty("default");
   });
 });

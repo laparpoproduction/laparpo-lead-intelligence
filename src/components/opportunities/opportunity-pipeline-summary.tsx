@@ -11,15 +11,15 @@ import {
   opportunityStageLabel,
 } from "@/lib/opportunities/opportunity-ui";
 
-function SummaryButton() {
+function SummaryButton({ enabled }: { enabled: boolean }) {
   const { pending } = useFormStatus();
   return (
     <button
       className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#e5222a] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#c91920] disabled:cursor-wait disabled:opacity-60"
-      disabled={pending}
+      disabled={pending || !enabled}
       type="submit"
     >
-      {pending ? "Summarizing…" : "Summarize pipeline"}
+      {pending ? "Summarizing…" : enabled ? "Summarize pipeline" : "AI summary unavailable"}
       {pending ? (
         <span className="sr-only" role="status">
           Opportunity pipeline summary is generating
@@ -29,7 +29,7 @@ function SummaryButton() {
   );
 }
 
-export function OpportunityPipelineSummary() {
+export function OpportunityPipelineSummary({ enabled = true }: { enabled?: boolean }) {
   const [state, formAction] = useActionState(
     generateOpportunityPipelineSummaryAction,
     initialOpportunityPipelineSummaryActionState,
@@ -55,7 +55,7 @@ export function OpportunityPipelineSummary() {
       </p>
 
       <form action={formAction} className="mt-5">
-        <SummaryButton />
+        <SummaryButton enabled={enabled} />
       </form>
 
       {state.status !== "idle" ? (

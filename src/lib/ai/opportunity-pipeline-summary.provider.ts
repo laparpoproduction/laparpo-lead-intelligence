@@ -38,7 +38,11 @@ export class PipelineSummaryProviderRefusalError extends Error {
 export class OpenAIPipelineSummaryProvider implements PipelineSummaryProvider {
   private readonly client: Pick<OpenAI, "responses">;
 
-  constructor(apiKey: string, client?: Pick<OpenAI, "responses">) {
+  constructor(
+    apiKey: string,
+    client?: Pick<OpenAI, "responses">,
+    private readonly safetyIdentifier = "",
+  ) {
     this.client =
       client ??
       new OpenAI({
@@ -58,6 +62,7 @@ export class OpenAIPipelineSummaryProvider implements PipelineSummaryProvider {
         max_output_tokens: request.maxOutputTokens,
         reasoning: { effort: "low" },
         store: request.store,
+        safety_identifier: this.safetyIdentifier,
         text: {
           format: zodTextFormat(
             pipelineSummarySchema,

@@ -30,13 +30,13 @@ function fakeClient(response: unknown) {
 }
 
 describe("OpenAI Company intelligence provider", () => {
-  it("allows only server-owned model choices and safely defaults unknown values", () => {
+  it("allows only server-owned model choices and rejects explicit unknown values", () => {
     expect(DEFAULT_COMPANY_INTELLIGENCE_MODEL).toBe("gpt-5.6-terra");
     expect(resolveCompanyIntelligenceModel("gpt-5.6-luna")).toBe(
       "gpt-5.6-luna",
     );
-    expect(resolveCompanyIntelligenceModel("client-selected-model")).toBe(
-      "gpt-5.6-terra",
+    expect(() => resolveCompanyIntelligenceModel("client-selected-model")).toThrow(
+      "Invalid OpenAI model configuration",
     );
     expect(resolveCompanyIntelligenceModel(undefined)).toBe("gpt-5.6-terra");
   });
@@ -55,6 +55,7 @@ describe("OpenAI Company intelligence provider", () => {
     const provider = new OpenAICompanyIntelligenceProvider(
       "unit-test-key",
       client as never,
+      "lai-ai-v1_company-test",
     );
     const request = buildCompanyIntelligenceRequest(
       companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
@@ -71,6 +72,7 @@ describe("OpenAI Company intelligence provider", () => {
       max_output_tokens: 1_200,
       reasoning: { effort: "low" },
       store: false,
+      safety_identifier: "lai-ai-v1_company-test",
     });
     expect(body).not.toHaveProperty("tools");
     expect(body.text.format.type).toBe("json_schema");

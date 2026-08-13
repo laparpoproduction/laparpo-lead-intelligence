@@ -13,15 +13,15 @@ const confidenceLabel = {
   medium: "Medium",
 } as const;
 
-function GenerateButton() {
+function GenerateButton({ enabled }: { enabled: boolean }) {
   const { pending } = useFormStatus();
   return (
     <button
       className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#e5222a] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#c91920] disabled:cursor-wait disabled:opacity-60"
-      disabled={pending}
+      disabled={pending || !enabled}
       type="submit"
     >
-      {pending ? "Generating…" : "Generate AI intelligence"}
+      {pending ? "Generating…" : enabled ? "Generate AI intelligence" : "AI intelligence unavailable"}
       {pending ? (
         <span className="sr-only" role="status">
           Company intelligence is generating
@@ -117,7 +117,13 @@ function IntelligenceResult({
   );
 }
 
-export function CompanyIntelligence({ companyId }: { companyId: string }) {
+export function CompanyIntelligence({
+  companyId,
+  enabled = true,
+}: {
+  companyId: string;
+  enabled?: boolean;
+}) {
   const [state, formAction] = useActionState(
     generateCompanyIntelligenceAction,
     initialCompanyIntelligenceActionState,
@@ -142,7 +148,7 @@ export function CompanyIntelligence({ companyId }: { companyId: string }) {
 
       <form action={formAction} className="mt-5">
         <input name="companyId" type="hidden" value={companyId} />
-        <GenerateButton />
+        <GenerateButton enabled={enabled} />
       </form>
 
       {state.status !== "idle" ? (

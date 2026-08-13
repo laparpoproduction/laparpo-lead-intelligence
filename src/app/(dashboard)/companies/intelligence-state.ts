@@ -7,6 +7,7 @@ export type CompanyIntelligenceActionStatus =
   | "permission_error"
   | "not_found"
   | "ai_not_configured"
+  | "ai_disabled"
   | "rate_limited"
   | "timeout"
   | "provider_unavailable"
