@@ -22,6 +22,15 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Company intelligence UI", () => {
+  it("does not present a working AI control when disabled", () => {
+    render(<CompanyIntelligence companyId={companyId} enabled={false} />);
+    expect(
+      (screen.getByRole("button", {
+        name: "AI intelligence unavailable",
+      }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
   it("requires an intentional request and clearly labels the non-binding read-only result", async () => {
     vi.mocked(generateCompanyIntelligenceAction).mockResolvedValueOnce({
       status: "success",

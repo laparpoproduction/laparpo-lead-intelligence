@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import type { CompanyIntelligenceService } from "@/lib/ai/company-intelligence.service";
+import {
+  deriveOpenAiSafetyIdentifier,
+  getAiControlConfiguration,
+} from "@/lib/ai/ai-control";
 import { CompanyIntelligenceInputTooLargeError } from "@/lib/ai/company-intelligence.input";
 import {
   CompanyNotFoundError,
@@ -41,6 +45,10 @@ vi.mock("@/lib/companies/company.server", async (importOriginal) => {
 vi.mock("@/lib/ai/company-intelligence.server", () => ({
   createCompanyIntelligenceService: vi.fn(),
 }));
+vi.mock("@/lib/ai/ai-control", () => ({
+  deriveOpenAiSafetyIdentifier: vi.fn(),
+  getAiControlConfiguration: vi.fn(),
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
   logger: {
@@ -72,6 +80,16 @@ function form(id = companyId): FormData {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getApplicationMode).mockReturnValue("configured");
+  vi.mocked(getAiControlConfiguration).mockReturnValue({
+    status: "enabled",
+    providerKind: "openai",
+    model: "gpt-5.6-terra",
+    identitySecret: "identity-secret-that-is-at-least-32-bytes",
+    openAiApiKey: "unit-test-key",
+  });
+  vi.mocked(deriveOpenAiSafetyIdentifier).mockReturnValue(
+    "lai-ai-v1_unit-test-safety-identifier",
+  );
   getById.mockResolvedValue(companyFixture);
   vi.mocked(createCompanyMutationContext).mockResolvedValue({
     actor,
@@ -91,6 +109,20 @@ beforeEach(() => {
 });
 
 describe("Generate Company intelligence action", () => {
+  it("blocks direct invocation server-side before limiter, projection or provider when disabled", async () => {
+    vi.mocked(getAiControlConfiguration).mockReturnValueOnce({ status: "disabled" });
+    await expect(
+      generateCompanyIntelligenceAction(
+        initialCompanyIntelligenceActionState,
+        form(),
+      ),
+    ).resolves.toMatchObject({ status: "ai_disabled" });
+    expect(createClient).not.toHaveBeenCalled();
+    expect(getById).not.toHaveBeenCalled();
+    expect(createCompanyIntelligenceService).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it("retrieves the target server-side under existing authorization and sends only the GREEN projection", async () => {
     const submitted = form();
     submitted.set("displayName", "client-controlled-company");
@@ -108,6 +140,14 @@ describe("Generate Company intelligence action", () => {
       intelligence: validCompanyIntelligence,
     });
     expect(getById).toHaveBeenCalledWith(companyId, actor);
+    expect(deriveOpenAiSafetyIdentifier).toHaveBeenCalledWith(
+      actor.userId,
+      "identity-secret-that-is-at-least-32-bytes",
+    );
+    expect(createCompanyIntelligenceService).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "enabled", providerKind: "openai" }),
+      "lai-ai-v1_unit-test-safety-identifier",
+    );
     expect(generate).toHaveBeenCalledWith(
       companyIntelligenceEvaluationFixtures.wellPopulatedFnb,
     );
@@ -175,13 +215,14 @@ describe("Generate Company intelligence action", () => {
   });
 
   it("fails safely when AI is not configured or the distributed limiter rejects the actor", async () => {
-    vi.mocked(createCompanyIntelligenceService).mockReturnValueOnce(null);
+    vi.mocked(getAiControlConfiguration).mockReturnValueOnce({ status: "invalid" });
     await expect(
       generateCompanyIntelligenceAction(
         initialCompanyIntelligenceActionState,
         form(),
       ),
     ).resolves.toMatchObject({ status: "ai_not_configured" });
+    expect(createClient).not.toHaveBeenCalled();
 
     vi.mocked(createClient).mockResolvedValueOnce(
       limiterClient({ allowed: false, retry_after_ms: 5_000 }) as never,
@@ -258,6 +299,8 @@ describe("Generate Company intelligence action", () => {
     ]);
     expect(serializedLogs).not.toContain("sk-sensitive");
     expect(serializedLogs).not.toContain("raw-provider-secret");
+    expect(serializedLogs).not.toContain("lai-ai-v1_unit-test-safety-identifier");
+    expect(serializedLogs).not.toContain("identity-secret-that-is-at-least-32-bytes");
     expect(serializedLogs).not.toContain(JSON.stringify(companyFixture));
   });
 

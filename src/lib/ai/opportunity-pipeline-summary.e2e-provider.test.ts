@@ -2,18 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   appendFile: vi.fn(),
-  getApplicationMode: vi.fn(),
-  getServerEnv: vi.fn(),
   openAIProvider: vi.fn(),
 }));
 
 vi.mock("node:fs/promises", () => ({ appendFile: mocks.appendFile }));
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/env", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/env")>()),
-  getApplicationMode: mocks.getApplicationMode,
-  getServerEnv: mocks.getServerEnv,
-}));
 vi.mock("./opportunity-pipeline-summary.provider", () => ({
   OpenAIPipelineSummaryProvider: mocks.openAIProvider,
 }));
@@ -31,7 +24,6 @@ import {
 describe("authenticated E2E Opportunity pipeline summary provider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getApplicationMode.mockReturnValue("configured");
   });
 
   it("returns only the same closed structured contract as the real provider", async () => {
@@ -57,12 +49,13 @@ describe("authenticated E2E Opportunity pipeline summary provider", () => {
   });
 
   it("selects the stub only from exact server environment flags", () => {
-    mocks.getServerEnv.mockReturnValue({
-      LAPARPO_AUTHENTICATED_E2E: "true",
-      LAPARPO_E2E_AI_STUB: "true",
-      LAPARPO_E2E_AI_STUB_CALLS_FILE: `${process.cwd()}/.tmp/authenticated-e2e/ai-calls.log`,
-    });
-    expect(createOpportunityPipelineSummaryService()).toBeInstanceOf(
+    expect(createOpportunityPipelineSummaryService({
+      status: "enabled",
+      providerKind: "deterministic-e2e",
+      model: "gpt-5.6-terra",
+      identitySecret: "identity-secret-that-is-at-least-32-bytes",
+      deterministicCallsFile: `${process.cwd()}/.tmp/authenticated-e2e/ai-calls.log`,
+    }, "lai-ai-v1_test")).toBeInstanceOf(
       OpportunityPipelineSummaryService,
     );
     expect(mocks.openAIProvider).not.toHaveBeenCalled();
@@ -70,40 +63,24 @@ describe("authenticated E2E Opportunity pipeline summary provider", () => {
 
   it("uses the real provider outside E2E and remains optional without a key", () => {
     mocks.openAIProvider.mockImplementation(function Provider() {});
-    mocks.getServerEnv.mockReturnValueOnce({
-      OPENAI_API_KEY: "configured-key",
-      OPENAI_MODEL: "gpt-5.6-luna",
-      LAPARPO_AUTHENTICATED_E2E: "false",
-      LAPARPO_E2E_AI_STUB: "false",
-    });
-    expect(createOpportunityPipelineSummaryService()).toBeInstanceOf(
+    expect(createOpportunityPipelineSummaryService({
+      status: "enabled",
+      providerKind: "openai",
+      model: "gpt-5.6-luna",
+      identitySecret: "identity-secret-that-is-at-least-32-bytes",
+      openAiApiKey: "configured-key",
+    }, "lai-ai-v1_test")).toBeInstanceOf(
       OpportunityPipelineSummaryService,
     );
-    expect(mocks.openAIProvider).toHaveBeenCalledWith("configured-key");
-
-    mocks.getServerEnv.mockReturnValueOnce({
-      LAPARPO_AUTHENTICATED_E2E: "false",
-      LAPARPO_E2E_AI_STUB: "false",
-    });
-    expect(createOpportunityPipelineSummaryService()).toBeNull();
+    expect(mocks.openAIProvider).toHaveBeenCalledWith(
+      "configured-key",
+      undefined,
+      "lai-ai-v1_test",
+    );
   });
 
-  it.each(["demo", "misconfigured"])(
-    "cannot enable either provider in %s mode",
-    (mode) => {
-      mocks.getApplicationMode.mockReturnValue(mode);
-      mocks.getServerEnv.mockReturnValue({
-        OPENAI_API_KEY: "configured-key",
-        LAPARPO_AUTHENTICATED_E2E: "false",
-        LAPARPO_E2E_AI_STUB: "false",
-      });
-      expect(createOpportunityPipelineSummaryService()).toBeNull();
-      expect(mocks.openAIProvider).not.toHaveBeenCalled();
-    },
-  );
-
   it("has no request argument and rejects counters outside the disposable directory", () => {
-    expect(createOpportunityPipelineSummaryService).toHaveLength(0);
+    expect(createOpportunityPipelineSummaryService).toHaveLength(2);
     expect(
       () => new DeterministicE2EPipelineSummaryProvider("/tmp/calls.log"),
     ).toThrow("call counter path is invalid");

@@ -10,6 +10,8 @@ const forbidden = [
   "DeterministicE2EPipelineSummaryProvider",
   "SERVICE_ROLE_KEY",
   "OPENAI_API_KEY",
+  "AI_IDENTITY_HMAC_SECRET",
+  "AI_FEATURES_ENABLED",
 ];
 
 async function filesUnder(directory) {

@@ -6,6 +6,10 @@ import {
   AiActorRateLimitUnavailableError,
   consumeAiActorRateLimit,
 } from "@/lib/ai/ai-actor-rate-limit";
+import {
+  deriveOpenAiSafetyIdentifier,
+  getAiControlConfiguration,
+} from "@/lib/ai/ai-control";
 import { PipelineSummaryInputTooLargeError } from "@/lib/ai/opportunity-pipeline-summary.input";
 import { projectOpportunityPipelineSummary } from "@/lib/ai/opportunity-pipeline-summary.projection";
 import {
@@ -41,6 +45,7 @@ function safeFailure(
       "Sign in with an active account to summarize the Opportunity pipeline.",
     ai_not_configured:
       "Opportunity pipeline summarization is not configured for this environment.",
+    ai_disabled: "Opportunity pipeline summarization is currently disabled.",
     rate_limited: "Please wait before generating another AI summary.",
     timeout: "The AI provider took too long to respond. Try again later.",
     provider_unavailable:
@@ -98,6 +103,17 @@ export async function generateOpportunityPipelineSummaryAction(
   }
 
   const { actor, service } = context;
+  const aiConfiguration = getAiControlConfiguration();
+  if (aiConfiguration.status !== "enabled") {
+    const status =
+      aiConfiguration.status === "disabled" ? "ai_disabled" : "ai_not_configured";
+    logOutcome("warn", requestId, status, { actorId: actor.userId });
+    return safeFailure(status);
+  }
+  const safetyIdentifier = deriveOpenAiSafetyIdentifier(
+    actor.userId,
+    aiConfiguration.identitySecret,
+  );
   try {
     const rateLimit = await consumeAiActorRateLimit();
     if (!rateLimit.allowed) {
@@ -118,13 +134,10 @@ export async function generateOpportunityPipelineSummaryAction(
   }
 
   try {
-    const summaryService = createOpportunityPipelineSummaryService();
-    if (!summaryService) {
-      logOutcome("warn", requestId, "not_configured", {
-        actorId: actor.userId,
-      });
-      return safeFailure("ai_not_configured");
-    }
+    const summaryService = createOpportunityPipelineSummaryService(
+      aiConfiguration,
+      safetyIdentifier,
+    );
     const now = new Date();
     const readModel = await service.getPipelineSummaryReadModel(actor, now);
     const projection = projectOpportunityPipelineSummary(

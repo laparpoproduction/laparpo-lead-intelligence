@@ -61,6 +61,7 @@ describe("OpenAI Opportunity pipeline summary provider", () => {
     const provider = new OpenAIPipelineSummaryProvider(
       "unit-test-key",
       client as never,
+      "lai-ai-v1_pipeline-test",
     );
     const request = buildPipelineSummaryRequest(
       projection.providerSnapshot,
@@ -76,6 +77,7 @@ describe("OpenAI Opportunity pipeline summary provider", () => {
       max_output_tokens: 600,
       reasoning: { effort: "low" },
       store: false,
+      safety_identifier: "lai-ai-v1_pipeline-test",
     });
     expect(body).not.toHaveProperty("tools");
     expect(body.text.format.type).toBe("json_schema");

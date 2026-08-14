@@ -8,21 +8,11 @@ import {
 
 const mocks = vi.hoisted(() => ({
   appendFile: vi.fn(),
-  getApplicationMode: vi.fn(),
-  getServerEnv: vi.fn(),
   openAIProvider: vi.fn(),
 }));
 
 vi.mock("node:fs/promises", () => ({ appendFile: mocks.appendFile }));
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/env", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/env")>();
-  return {
-    ...actual,
-    getApplicationMode: mocks.getApplicationMode,
-    getServerEnv: mocks.getServerEnv,
-  };
-});
 vi.mock("./company-intelligence.provider", () => ({
   OpenAICompanyIntelligenceProvider: mocks.openAIProvider,
 }));
@@ -36,7 +26,6 @@ import { createCompanyIntelligenceService } from "./company-intelligence.server"
 describe("authenticated E2E Company intelligence provider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getApplicationMode.mockReturnValue("configured");
   });
 
   it("returns a valid closed provider result with application-derived confidence", async () => {
@@ -65,47 +54,38 @@ describe("authenticated E2E Company intelligence provider", () => {
   });
 
   it("selects the stub only from server environment and never requires an OpenAI key", () => {
-    mocks.getServerEnv.mockReturnValue({
-      LAPARPO_AUTHENTICATED_E2E: "true",
-      LAPARPO_E2E_AI_STUB: "true",
-      LAPARPO_E2E_AI_STUB_CALLS_FILE: `${process.cwd()}/.tmp/authenticated-e2e/ai-calls.log`,
-    });
-    expect(createCompanyIntelligenceService()).toBeInstanceOf(
+    expect(createCompanyIntelligenceService({
+      status: "enabled",
+      providerKind: "deterministic-e2e",
+      model: "gpt-5.6-terra",
+      identitySecret: "identity-secret-that-is-at-least-32-bytes",
+      deterministicCallsFile: `${process.cwd()}/.tmp/authenticated-e2e/ai-calls.log`,
+    }, "lai-ai-v1_test")).toBeInstanceOf(
       CompanyIntelligenceService,
     );
     expect(mocks.openAIProvider).not.toHaveBeenCalled();
   });
 
   it("keeps the real provider for ordinary configured production", () => {
-    mocks.getServerEnv.mockReturnValue({
-      OPENAI_API_KEY: "configured-key",
-      OPENAI_MODEL: "gpt-5.6-luna",
-      LAPARPO_AUTHENTICATED_E2E: "false",
-      LAPARPO_E2E_AI_STUB: "false",
-    });
     mocks.openAIProvider.mockImplementation(function Provider() {});
-    expect(createCompanyIntelligenceService()).toBeInstanceOf(
+    expect(createCompanyIntelligenceService({
+      status: "enabled",
+      providerKind: "openai",
+      model: "gpt-5.6-luna",
+      identitySecret: "identity-secret-that-is-at-least-32-bytes",
+      openAiApiKey: "configured-key",
+    }, "lai-ai-v1_test")).toBeInstanceOf(
       CompanyIntelligenceService,
     );
-    expect(mocks.openAIProvider).toHaveBeenCalledWith("configured-key");
+    expect(mocks.openAIProvider).toHaveBeenCalledWith(
+      "configured-key",
+      undefined,
+      "lai-ai-v1_test",
+    );
   });
 
-  it.each(["demo", "misconfigured"])(
-    "does not create either provider in %s mode",
-    (mode) => {
-      mocks.getApplicationMode.mockReturnValue(mode);
-      mocks.getServerEnv.mockReturnValue({
-        OPENAI_API_KEY: "configured-key",
-        LAPARPO_AUTHENTICATED_E2E: "false",
-        LAPARPO_E2E_AI_STUB: "false",
-      });
-      expect(createCompanyIntelligenceService()).toBeNull();
-      expect(mocks.openAIProvider).not.toHaveBeenCalled();
-    },
-  );
-
   it("cannot select provider mode from request content", () => {
-    expect(createCompanyIntelligenceService).toHaveLength(0);
+    expect(createCompanyIntelligenceService).toHaveLength(2);
     expect(validCompanyIntelligenceOutput).not.toHaveProperty("providerMode");
   });
 

@@ -52,6 +52,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("Opportunity pipeline summary UI", () => {
+  it("does not present a working AI control when disabled", () => {
+    render(<OpportunityPipelineSummary enabled={false} />);
+    expect(
+      (screen.getByRole("button", {
+        name: "AI summary unavailable",
+      }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
   it("is opt-in, submits no browser pipeline payload, and renders application-owned accessible output", async () => {
     render(<OpportunityPipelineSummary />);
     expect(

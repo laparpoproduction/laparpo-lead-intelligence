@@ -187,6 +187,13 @@ describe("application mode", () => {
 });
 
 describe("production server environment", () => {
+  it("allows default-disabled AI and rejects malformed or incomplete enablement", () => {
+    expect(() => validateProductionServerEnvironment({ ...productionInput(), ...validSecrets })).not.toThrow();
+    expect(() => validateProductionServerEnvironment({ ...productionInput(), ...validSecrets, aiFeaturesEnabled: "yes" })).toThrow("invalid_ai_features_enabled");
+    expect(() => validateProductionServerEnvironment({ ...productionInput(), ...validSecrets, aiFeaturesEnabled: "true" })).toThrow("enabled_ai_requires_openai_key");
+    expect(() => validateProductionServerEnvironment({ ...productionInput(), ...validSecrets, aiFeaturesEnabled: "true", openAiApiKey: "unit-test-key", aiIdentityHmacSecret: "short" })).toThrow("enabled_ai_requires_identity_secret");
+    expect(() => validateProductionServerEnvironment({ ...productionInput(), ...validSecrets, aiFeaturesEnabled: "true", openAiApiKey: "unit-test-key", aiIdentityHmacSecret: "identity-secret-that-is-at-least-32-bytes", openAiModel: "unknown" })).toThrow("invalid_openai_model");
+  });
   it("accepts valid Supabase configuration and all server-only secrets", () => {
     expect(() =>
       validateProductionServerEnvironment({

@@ -34,9 +34,15 @@ verify all of the following:
   Verify matching configuration without printing either value. A missing,
   blank, short, duplicated or mismatched value is a deployment failure: signed
   application mutations deliberately fail closed rather than lose correlation.
+- Keep `AI_FEATURES_ENABLED=false` until the controlled rollout is separately
+  approved. Enabling requires `OPENAI_API_KEY` and a high-entropy server-only
+  `AI_IDENTITY_HMAC_SECRET` of at least 32 UTF-8 bytes. Never commit, log,
+  browser-expose, or store that identity secret in PostgreSQL. Rotating it
+  intentionally changes provider-facing safety identifiers.
 - If either optional AI Phase 1A/1B action will be enabled, `OPENAI_API_KEY` is present
   only in the server runtime and `OPENAI_MODEL` is absent or one of
-  `gpt-5.6-terra` and `gpt-5.6-luna`. Do not expose either through
+  `gpt-5.6-terra` and `gpt-5.6-luna`; an explicitly invalid model fails closed.
+  Do not expose any AI credential through
   `NEXT_PUBLIC_`, build output, logs or screenshots. The rest of the CRM must
   remain deployable when AI is not configured.
 - Before enabling either controlled AI action for production, approve the OpenAI API

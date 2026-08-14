@@ -1,56 +1,49 @@
+import "server-only";
+
 import {
-  ApplicationConfigurationError,
-  getApplicationMode,
-  getServerEnv,
-  resolveAuthenticatedE2EEnvironment,
-} from "@/lib/env";
-import { DeterministicE2ECompanyIntelligenceProvider } from "./company-intelligence.e2e-provider";
-import { OpenAICompanyIntelligenceProvider } from "./company-intelligence.provider";
-import { CompanyIntelligenceService } from "./company-intelligence.service";
+  DEFAULT_AI_MODEL,
+  type AiControlConfiguration,
+} from "./ai-control";
 import {
   companyIntelligenceModelValues,
   type CompanyIntelligenceModel,
 } from "./company-intelligence.types";
+import { DeterministicE2ECompanyIntelligenceProvider } from "./company-intelligence.e2e-provider";
+import { OpenAICompanyIntelligenceProvider } from "./company-intelligence.provider";
+import { CompanyIntelligenceService } from "./company-intelligence.service";
 
-export const DEFAULT_COMPANY_INTELLIGENCE_MODEL: CompanyIntelligenceModel =
-  "gpt-5.6-terra";
+export const DEFAULT_COMPANY_INTELLIGENCE_MODEL = DEFAULT_AI_MODEL;
 
 export function resolveCompanyIntelligenceModel(
   value: string | undefined,
 ): CompanyIntelligenceModel {
-  return companyIntelligenceModelValues.includes(
-    value as CompanyIntelligenceModel,
-  )
-    ? (value as CompanyIntelligenceModel)
-    : DEFAULT_COMPANY_INTELLIGENCE_MODEL;
+  if (value === undefined) return DEFAULT_AI_MODEL;
+  if (
+    companyIntelligenceModelValues.includes(value as CompanyIntelligenceModel)
+  ) {
+    return value as CompanyIntelligenceModel;
+  }
+  throw new TypeError("Invalid OpenAI model configuration");
 }
 
-export function createCompanyIntelligenceService(): CompanyIntelligenceService | null {
-  const env = getServerEnv();
-  const applicationMode = getApplicationMode();
-  const e2eResolution = resolveAuthenticatedE2EEnvironment({
-    nodeEnv: process.env.NODE_ENV,
-    applicationMode,
-    authenticatedE2E: env.LAPARPO_AUTHENTICATED_E2E,
-    aiStub: env.LAPARPO_E2E_AI_STUB,
-    aiStubCallsFile: env.LAPARPO_E2E_AI_STUB_CALLS_FILE,
-  });
-  if (e2eResolution.issues.length > 0) {
-    throw new ApplicationConfigurationError(e2eResolution.issues);
-  }
-  if (applicationMode !== "configured") return null;
-  if (e2eResolution.enabled) {
+export function createCompanyIntelligenceService(
+  configuration: Extract<AiControlConfiguration, { status: "enabled" }>,
+  safetyIdentifier: string,
+): CompanyIntelligenceService {
+  if (configuration.providerKind === "deterministic-e2e") {
     return new CompanyIntelligenceService(
       new DeterministicE2ECompanyIntelligenceProvider(
-        env.LAPARPO_E2E_AI_STUB_CALLS_FILE!,
+        configuration.deterministicCallsFile!,
       ),
-      DEFAULT_COMPANY_INTELLIGENCE_MODEL,
+      configuration.model,
     );
   }
-  if (!env.OPENAI_API_KEY) return null;
-
   return new CompanyIntelligenceService(
-    new OpenAICompanyIntelligenceProvider(env.OPENAI_API_KEY),
-    resolveCompanyIntelligenceModel(env.OPENAI_MODEL),
+    new OpenAICompanyIntelligenceProvider(
+      configuration.openAiApiKey!,
+      undefined,
+      safetyIdentifier,
+    ),
+    configuration.model,
   );
 }

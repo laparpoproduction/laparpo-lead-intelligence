@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import type { OpportunityPipelineSummaryService } from "@/lib/ai/opportunity-pipeline-summary.service";
 import {
+  deriveOpenAiSafetyIdentifier,
+  getAiControlConfiguration,
+} from "@/lib/ai/ai-control";
+import {
   makePipelineSummaryReadModel,
   makePipelineSummaryRow,
   pipelineActorId,
@@ -30,6 +34,10 @@ vi.mock("@/lib/opportunities/opportunity.server", async (importOriginal) => ({
 vi.mock("@/lib/ai/opportunity-pipeline-summary.server", () => ({
   createOpportunityPipelineSummaryService: vi.fn(),
 }));
+vi.mock("@/lib/ai/ai-control", () => ({
+  deriveOpenAiSafetyIdentifier: vi.fn(),
+  getAiControlConfiguration: vi.fn(),
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
   logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
@@ -54,6 +62,16 @@ function limiterClient(data: unknown, error: unknown = null) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getApplicationMode).mockReturnValue("configured");
+  vi.mocked(getAiControlConfiguration).mockReturnValue({
+    status: "enabled",
+    providerKind: "openai",
+    model: "gpt-5.6-terra",
+    identitySecret: "identity-secret-that-is-at-least-32-bytes",
+    openAiApiKey: "unit-test-key",
+  });
+  vi.mocked(deriveOpenAiSafetyIdentifier).mockReturnValue(
+    "lai-ai-v1_unit-test-safety-identifier",
+  );
   getPipelineSummaryReadModel.mockResolvedValue(readModel);
   vi.mocked(createOpportunityContext).mockResolvedValue({
     actor,
@@ -79,6 +97,20 @@ beforeEach(() => {
 });
 
 describe("Opportunity pipeline summary server action", () => {
+  it("blocks direct invocation server-side before limiter, projection or provider when disabled", async () => {
+    vi.mocked(getAiControlConfiguration).mockReturnValueOnce({ status: "disabled" });
+    await expect(
+      generateOpportunityPipelineSummaryAction(
+        initialOpportunityPipelineSummaryActionState,
+        new FormData(),
+      ),
+    ).resolves.toMatchObject({ status: "ai_disabled" });
+    expect(createClient).not.toHaveBeenCalled();
+    expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
+    expect(createOpportunityPipelineSummaryService).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it("ignores browser pipeline/provider payload and builds the authorized snapshot server-side", async () => {
     const formData = new FormData();
     formData.set("actorId", "99999999-9999-4999-8999-999999999999");
@@ -90,6 +122,14 @@ describe("Opportunity pipeline summary server action", () => {
       formData,
     );
     expect(state.status).toBe("success");
+    expect(deriveOpenAiSafetyIdentifier).toHaveBeenCalledWith(
+      actor.userId,
+      "identity-secret-that-is-at-least-32-bytes",
+    );
+    expect(createOpportunityPipelineSummaryService).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "enabled", providerKind: "openai" }),
+      "lai-ai-v1_unit-test-safety-identifier",
+    );
     expect(getPipelineSummaryReadModel).toHaveBeenCalledWith(
       actor,
       expect.any(Date),
@@ -198,6 +238,8 @@ describe("Opportunity pipeline summary server action", () => {
       ...vi.mocked(logger.error).mock.calls,
     ]);
     expect(logs).not.toContain("sk-sensitive");
+    expect(logs).not.toContain("lai-ai-v1_unit-test-safety-identifier");
+    expect(logs).not.toContain("identity-secret-that-is-at-least-32-bytes");
     expect(logs).not.toContain("RM999999");
     expect(logs).not.toContain(row.id);
   });

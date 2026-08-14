@@ -9,7 +9,13 @@ const companyTypeLabels: Record<CompanyType, string> = {
   other: "Other",
 };
 
-export function CompanyDetailsPlaceholder({ company }: { company: Company }) {
+export function CompanyDetailsPlaceholder({
+  company,
+  aiEnabled = true,
+}: {
+  company: Company;
+  aiEnabled?: boolean;
+}) {
   const location = [company.city, company.state, company.country]
     .filter(Boolean)
     .join(", ");
@@ -54,7 +60,10 @@ export function CompanyDetailsPlaceholder({ company }: { company: Company }) {
           </p>
         </aside>
       </div>
-      <CompanyIntelligence companyId={company.id} />
+      <CompanyIntelligence
+        companyId={company.id}
+        enabled={aiEnabled}
+      />
     </section>
   );
 }

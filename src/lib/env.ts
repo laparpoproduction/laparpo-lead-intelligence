@@ -14,6 +14,8 @@ const publicEnvSchema = z.object({
 });
 
 const serverEnvSchema = z.object({
+  AI_FEATURES_ENABLED: z.enum(["true", "false"]).optional(),
+  AI_IDENTITY_HMAC_SECRET: z.string().optional(),
   OPENAI_API_KEY: z.string().trim().min(1).optional(),
   OPENAI_MODEL: z.string().trim().min(1).optional(),
   COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
@@ -53,7 +55,11 @@ export type ApplicationConfigurationIssue =
   | "authenticated_e2e_requires_nonproduction"
   | "authenticated_e2e_requires_calls_file"
   | "production_authenticated_e2e_forbidden"
-  | "production_e2e_ai_stub_forbidden";
+  | "production_e2e_ai_stub_forbidden"
+  | "invalid_ai_features_enabled"
+  | "enabled_ai_requires_openai_key"
+  | "enabled_ai_requires_identity_secret"
+  | "invalid_openai_model";
 
 export type ApplicationModeInput = {
   nodeEnv?: string;
@@ -242,6 +248,10 @@ export function validateProductionServerEnvironment(input: {
   authenticatedE2E?: string;
   aiStub?: string;
   aiStubCallsFile?: string;
+  aiFeaturesEnabled?: string;
+  aiIdentityHmacSecret?: string;
+  openAiApiKey?: string;
+  openAiModel?: string;
 }): void {
   if (input.nodeEnv !== "production") return;
 
@@ -261,6 +271,30 @@ export function validateProductionServerEnvironment(input: {
     throw new ApplicationConfigurationError(
       authenticatedE2EResolution.issues,
     );
+  }
+
+  if (!isExactBooleanFlag(input.aiFeaturesEnabled)) {
+    throw new ApplicationConfigurationError(["invalid_ai_features_enabled"]);
+  }
+  if (input.aiFeaturesEnabled === "true") {
+    const issues: ApplicationConfigurationIssue[] = [];
+    if (!input.openAiApiKey?.trim() && input.aiStub !== "true") {
+      issues.push("enabled_ai_requires_openai_key");
+    }
+    if (
+      !input.aiIdentityHmacSecret?.trim() ||
+      Buffer.byteLength(input.aiIdentityHmacSecret, "utf8") < 32
+    ) {
+      issues.push("enabled_ai_requires_identity_secret");
+    }
+    if (
+      input.openAiModel !== undefined &&
+      input.openAiModel !== "gpt-5.6-terra" &&
+      input.openAiModel !== "gpt-5.6-luna"
+    ) {
+      issues.push("invalid_openai_model");
+    }
+    if (issues.length > 0) throw new ApplicationConfigurationError(issues);
   }
 
   productionServerEnvSchema.parse({
@@ -293,6 +327,10 @@ export function assertProductionServerEnvironment(): void {
     authenticatedE2E: process.env.LAPARPO_AUTHENTICATED_E2E,
     aiStub: process.env.LAPARPO_E2E_AI_STUB,
     aiStubCallsFile: process.env.LAPARPO_E2E_AI_STUB_CALLS_FILE,
+    aiFeaturesEnabled: process.env.AI_FEATURES_ENABLED,
+    aiIdentityHmacSecret: process.env.AI_IDENTITY_HMAC_SECRET,
+    openAiApiKey: process.env.OPENAI_API_KEY,
+    openAiModel: process.env.OPENAI_MODEL,
   });
 }
 
@@ -306,6 +344,9 @@ export function getPublicEnv(): PublicEnv {
 
 export function getServerEnv(): ServerEnv {
   const env = serverEnvSchema.parse({
+    AI_FEATURES_ENABLED: process.env.AI_FEATURES_ENABLED || undefined,
+    AI_IDENTITY_HMAC_SECRET:
+      process.env.AI_IDENTITY_HMAC_SECRET || undefined,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY?.trim() || undefined,
     OPENAI_MODEL: process.env.OPENAI_MODEL?.trim() || undefined,
     COMPANY_DUPLICATE_CONFIRMATION_SECRET:
@@ -340,6 +381,10 @@ export function getServerEnv(): ServerEnv {
     authenticatedE2E: env.LAPARPO_AUTHENTICATED_E2E,
     aiStub: env.LAPARPO_E2E_AI_STUB,
     aiStubCallsFile: env.LAPARPO_E2E_AI_STUB_CALLS_FILE,
+    aiFeaturesEnabled: env.AI_FEATURES_ENABLED,
+    aiIdentityHmacSecret: env.AI_IDENTITY_HMAC_SECRET,
+    openAiApiKey: env.OPENAI_API_KEY,
+    openAiModel: env.OPENAI_MODEL,
   });
   return env;
 }

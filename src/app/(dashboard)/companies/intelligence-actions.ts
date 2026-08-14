@@ -6,6 +6,10 @@ import {
   AiActorRateLimitUnavailableError,
   consumeAiActorRateLimit,
 } from "@/lib/ai/ai-actor-rate-limit";
+import {
+  deriveOpenAiSafetyIdentifier,
+  getAiControlConfiguration,
+} from "@/lib/ai/ai-control";
 import { CompanyIntelligenceInputTooLargeError } from "@/lib/ai/company-intelligence.input";
 import {
   CompanyIntelligenceProviderError,
@@ -42,6 +46,7 @@ function safeFailure(
     permission_error: "Sign in with an active account to use Company intelligence.",
     not_found: "Company intelligence is unavailable for this record.",
     ai_not_configured: "Company intelligence is not configured for this environment.",
+    ai_disabled: "Company intelligence is currently disabled.",
     rate_limited: "Please wait before generating another recommendation.",
     timeout: "The AI provider took too long to respond. Try again later.",
     provider_unavailable: "Company intelligence is temporarily unavailable.",
@@ -96,6 +101,17 @@ export async function generateCompanyIntelligenceAction(
   }
 
   const { actor, service: companyService } = context;
+  const aiConfiguration = getAiControlConfiguration();
+  if (aiConfiguration.status !== "enabled") {
+    const status =
+      aiConfiguration.status === "disabled" ? "ai_disabled" : "ai_not_configured";
+    logOutcome("warn", requestId, status, { actorId: actor.userId });
+    return safeFailure(status);
+  }
+  const safetyIdentifier = deriveOpenAiSafetyIdentifier(
+    actor.userId,
+    aiConfiguration.identitySecret,
+  );
   try {
     const rateLimit = await consumeAiActorRateLimit();
     if (!rateLimit.allowed) {
@@ -131,15 +147,10 @@ export async function generateCompanyIntelligenceAction(
   try {
     const company = await companyService.getById(companyId, actor);
     const projection = projectCompanyForIntelligence(company);
-    const intelligenceService = createCompanyIntelligenceService();
-
-    if (!intelligenceService) {
-      logOutcome("warn", requestId, "not_configured", {
-        actorId: actor.userId,
-        companyId,
-      });
-      return safeFailure("ai_not_configured");
-    }
+    const intelligenceService = createCompanyIntelligenceService(
+      aiConfiguration,
+      safetyIdentifier,
+    );
 
     const generated = await intelligenceService.generate(projection);
     logOutcome("info", requestId, "succeeded", {
