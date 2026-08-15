@@ -54,6 +54,7 @@ describe("authenticated E2E Opportunity pipeline summary provider", () => {
       providerKind: "deterministic-e2e",
       model: "gpt-5.6-terra",
       identitySecret: "identity-secret-that-is-at-least-32-bytes",
+      observabilitySecret: "observability-secret-that-is-at-least-32-bytes",
       deterministicCallsFile: `${process.cwd()}/.tmp/authenticated-e2e/ai-calls.log`,
     }, "lai-ai-v1_test")).toBeInstanceOf(
       OpportunityPipelineSummaryService,
@@ -68,6 +69,7 @@ describe("authenticated E2E Opportunity pipeline summary provider", () => {
       providerKind: "openai",
       model: "gpt-5.6-luna",
       identitySecret: "identity-secret-that-is-at-least-32-bytes",
+      observabilitySecret: "observability-secret-that-is-at-least-32-bytes",
       openAiApiKey: "configured-key",
     }, "lai-ai-v1_test")).toBeInstanceOf(
       OpportunityPipelineSummaryService,

@@ -85,6 +85,7 @@ beforeEach(() => {
     providerKind: "openai",
     model: "gpt-5.6-terra",
     identitySecret: "identity-secret-that-is-at-least-32-bytes",
+    observabilitySecret: "observability-secret-that-is-at-least-32-bytes",
     openAiApiKey: "unit-test-key",
   });
   vi.mocked(deriveOpenAiSafetyIdentifier).mockReturnValue(
@@ -121,6 +122,15 @@ describe("Generate Company intelligence action", () => {
     expect(getById).not.toHaveBeenCalled();
     expect(createCompanyIntelligenceService).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        operation: "company_intelligence",
+        outcome: "disabled",
+        providerStatus: "not_called",
+        rateLimitOutcome: "not_checked",
+      }),
+    );
   });
 
   it("retrieves the target server-side under existing authorization and sends only the GREEN projection", async () => {
@@ -159,6 +169,22 @@ describe("Generate Company intelligence action", () => {
     expect(serializedProjection).not.toContain("forbidden-key-sentinel");
     expect(JSON.stringify(state)).not.toContain("fnb_business_profile");
     expect(JSON.stringify(state)).not.toContain("websiteUrl");
+    expect(logger.info).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        actorOperationalId: expect.stringMatching(
+          /^lai-ops-v1_[A-Za-z0-9_-]{43}$/,
+        ),
+        operation: "company_intelligence",
+        outcome: "success",
+        providerKind: "openai",
+        providerStatus: "succeeded",
+        rateLimitOutcome: "allowed",
+        inputTokens: 100,
+        outputTokens: 40,
+        totalTokens: 140,
+      }),
+    );
   });
 
   it("does not call the provider for demo or misconfigured modes", async () => {
@@ -223,6 +249,14 @@ describe("Generate Company intelligence action", () => {
       ),
     ).resolves.toMatchObject({ status: "ai_not_configured" });
     expect(createClient).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        outcome: "invalid_configuration",
+        providerStatus: "not_called",
+        rateLimitOutcome: "not_checked",
+      }),
+    );
 
     vi.mocked(createClient).mockResolvedValueOnce(
       limiterClient({ allowed: false, retry_after_ms: 5_000 }) as never,
@@ -234,6 +268,14 @@ describe("Generate Company intelligence action", () => {
       ),
     ).resolves.toMatchObject({ status: "rate_limited" });
     expect(generate).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        outcome: "rate_limited",
+        providerStatus: "not_called",
+        rateLimitOutcome: "denied",
+      }),
+    );
   });
 
   it("fails closed before provider input or invocation when limiter storage is unavailable", async () => {
@@ -249,6 +291,14 @@ describe("Generate Company intelligence action", () => {
     expect(getById).not.toHaveBeenCalled();
     expect(createCompanyIntelligenceService).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        outcome: "provider_unavailable",
+        providerStatus: "not_called",
+        rateLimitOutcome: "unavailable",
+      }),
+    );
   });
 
   it.each([
@@ -301,6 +351,14 @@ describe("Generate Company intelligence action", () => {
     expect(serializedLogs).not.toContain("raw-provider-secret");
     expect(serializedLogs).not.toContain("lai-ai-v1_unit-test-safety-identifier");
     expect(serializedLogs).not.toContain("identity-secret-that-is-at-least-32-bytes");
+    expect(serializedLogs).not.toContain("observability-secret-that-is-at-least-32-bytes");
+    expect(serializedLogs).not.toContain(actor.userId);
+    expect(serializedLogs).not.toContain(companyId);
+    expect(serializedLogs).not.toContain(companyFixture.displayName);
+    expect(serializedLogs).not.toContain(companyFixture.description ?? "");
+    expect(serializedLogs).not.toContain(companyFixture.publicEmail ?? "");
+    expect(serializedLogs).not.toContain(companyFixture.publicPhone ?? "");
+    expect(serializedLogs).not.toContain(companyFixture.sourceUrl);
     expect(serializedLogs).not.toContain(JSON.stringify(companyFixture));
   });
 
@@ -325,7 +383,7 @@ describe("Generate Company intelligence action", () => {
     expect(generate).toHaveBeenCalledTimes(1);
   });
 
-  it("returns a safe oversized-input error and logs only size metadata", async () => {
+  it("returns a safe oversized-input error without logging customer content", async () => {
     const oversizedSentinel = "oversized-sensitive-company-description";
     getById.mockResolvedValueOnce({
       ...companyFixture,
@@ -350,8 +408,7 @@ describe("Generate Company intelligence action", () => {
       ...vi.mocked(logger.warn).mock.calls,
       ...vi.mocked(logger.error).mock.calls,
     ]);
-    expect(serializedLogs).toContain('"limitCategory":"description"');
-    expect(serializedLogs).toContain('"actualSize":2100');
+    expect(serializedLogs).toContain('"outcome":"invalid_input"');
     expect(serializedLogs).not.toContain(oversizedSentinel);
     expect(serializedLogs).not.toContain("oversized-sensitive");
   });

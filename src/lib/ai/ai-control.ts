@@ -26,6 +26,7 @@ export type AiControlConfiguration =
       providerKind: AiProviderKind;
       model: CompanyIntelligenceModel;
       identitySecret: string;
+      observabilitySecret: string;
       openAiApiKey?: string;
       deterministicCallsFile?: string;
     };
@@ -35,6 +36,7 @@ export type AiControlInput = {
   applicationMode: ReturnType<typeof getApplicationMode>;
   enabled?: string;
   identitySecret?: string;
+  observabilitySecret?: string;
   openAiApiKey?: string;
   openAiModel?: string;
   authenticatedE2E?: string;
@@ -58,6 +60,9 @@ export function resolveAiControlConfiguration(
   if (!hasMinimumUtf8Bytes(input.identitySecret)) {
     return { status: "invalid" };
   }
+  if (!hasMinimumUtf8Bytes(input.observabilitySecret)) {
+    return { status: "invalid" };
+  }
 
   const e2e = resolveAuthenticatedE2EEnvironment({
     nodeEnv: input.nodeEnv,
@@ -75,6 +80,7 @@ export function resolveAiControlConfiguration(
       providerKind: "deterministic-e2e",
       model: DEFAULT_AI_MODEL,
       identitySecret: input.identitySecret,
+      observabilitySecret: input.observabilitySecret,
       deterministicCallsFile: input.aiStubCallsFile,
     };
   }
@@ -93,6 +99,7 @@ export function resolveAiControlConfiguration(
     providerKind: "openai",
     model: model as CompanyIntelligenceModel,
     identitySecret: input.identitySecret,
+    observabilitySecret: input.observabilitySecret,
     openAiApiKey: input.openAiApiKey,
   };
 }
@@ -103,6 +110,7 @@ export function getAiControlConfiguration(): AiControlConfiguration {
     applicationMode: getApplicationMode(),
     enabled: process.env.AI_FEATURES_ENABLED,
     identitySecret: process.env.AI_IDENTITY_HMAC_SECRET,
+    observabilitySecret: process.env.AI_OBSERVABILITY_HMAC_SECRET,
     openAiApiKey: process.env.OPENAI_API_KEY,
     openAiModel: process.env.OPENAI_MODEL,
     authenticatedE2E: process.env.LAPARPO_AUTHENTICATED_E2E,
