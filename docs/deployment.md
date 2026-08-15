@@ -36,9 +36,12 @@ verify all of the following:
   application mutations deliberately fail closed rather than lose correlation.
 - Keep `AI_FEATURES_ENABLED=false` until the controlled rollout is separately
   approved. Enabling requires `OPENAI_API_KEY` and a high-entropy server-only
-  `AI_IDENTITY_HMAC_SECRET` of at least 32 UTF-8 bytes. Never commit, log,
-  browser-expose, or store that identity secret in PostgreSQL. Rotating it
-  intentionally changes provider-facing safety identifiers.
+  `AI_IDENTITY_HMAC_SECRET` of at least 32 UTF-8 bytes, plus an independent
+  high-entropy server-only `AI_OBSERVABILITY_HMAC_SECRET` of at least 32 UTF-8
+  bytes. Never commit, log, browser-expose, or store either secret in
+  PostgreSQL. Rotating the identity secret changes provider-facing safety
+  identifiers; rotating the observability secret changes operational actor IDs
+  and their correlation continuity.
 - If either optional AI Phase 1A/1B action will be enabled, `OPENAI_API_KEY` is present
   only in the server runtime and `OPENAI_MODEL` is absent or one of
   `gpt-5.6-terra` and `gpt-5.6-luna`; an explicitly invalid model fails closed.
@@ -51,6 +54,18 @@ verify all of the following:
   configure a retained privacy-safe structured-log sink. `store: false`
   prevents Responses application-state storage for this request but is not a
   universal zero-retention claim.
+- The application emits allow-listed AI events through the existing structured
+  server logger. The repository does not establish a centralized sink or active
+  alerting service. Deployment must provide access-controlled retention with an
+  explicit policy, centralized search and request correlation, filtering by
+  operation/outcome/model, numeric token and error-rate aggregation, and basic
+  alerting. Privacy-safe conditions include increases in provider errors,
+  timeouts or limiter denials, abnormal token usage, unexpected model/provider
+  classifications, invalid production configuration attempts and repeated
+  input-bound violations. Select thresholds from an approved baseline; never
+  alert on customer content. Provider project budgets, prices, quotas and usage
+  alerts remain external account controls; application telemetry does not
+  calculate spend.
 - TEST-010 is covered by an isolated CI lane using disposable local Supabase,
   real Auth/session cookies, the actual migrations/RLS/server actions and a
   production-forbidden deterministic outbound AI substitute. It does not prove

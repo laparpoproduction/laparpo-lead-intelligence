@@ -51,7 +51,8 @@ New Supabase Auth users receive the `sales_representative` role. Promote the fir
      runbook
    - keep `AI_FEATURES_ENABLED=false` by default; controlled Phase 1A/1B
      enablement also requires server-only `OPENAI_API_KEY` and
-     `AI_IDENTITY_HMAC_SECRET`
+     independent `AI_IDENTITY_HMAC_SECRET` and
+     `AI_OBSERVABILITY_HMAC_SECRET` values
    - optional allow-listed `OPENAI_MODEL` (`gpt-5.6-terra` or
      `gpt-5.6-luna`); an explicitly unknown model fails closed
 5. Apply **every** migration currently present in `supabase/migrations/` in
@@ -95,6 +96,7 @@ production, is visibly labelled and cannot create a real mutation context.
 | `OPENAI_MODEL` | Server only | No | Allow-listed AI model for both controlled slices; defaults safely to `gpt-5.6-terra` |
 | `AI_FEATURES_ENABLED` | Server only | No | Exact `true` enables controlled AI only when every required provider/identity setting is valid; absent or `false` disables AI |
 | `AI_IDENTITY_HMAC_SECRET` | Server only | No | High-entropy secret of at least 32 UTF-8 bytes used to derive versioned provider safety identifiers |
+| `AI_OBSERVABILITY_HMAC_SECRET` | Server only | No | Independent high-entropy secret of at least 32 UTF-8 bytes used to derive versioned operational actor pseudonyms |
 | `LOG_LEVEL` | Server only | No | Logging threshold; defaults to `info` |
 
 Never expose the OpenAI API key or a Supabase service-role key through a `NEXT_PUBLIC_` variable.
@@ -243,14 +245,18 @@ use still requires approval of the provider terms and project data settings.
 
 The implementation applies one shared database-authoritative five-second
 per-actor cooldown and five accepted attempts per rolling minute, caps input
-fields and structured output, and records only safe metadata such as
-request/resource IDs, model, duration and token counts. It never logs prompts,
-Company payloads, structured model output, rendered text, provider raw responses
-or provider errors. TEST-010 provides authenticated database-backed browser and
+fields and structured output, and emits allow-listed AI operational events with
+request ID, pseudonymous operational actor ID, operation, model/provider
+classification, bounded outcome/rate-limit/provider status, server duration,
+bounded candidate count and authoritative numeric provider token usage when
+available. Missing usage is omitted rather than estimated or fabricated. It
+never logs safety identifiers, raw actor UUIDs, prompts, Company or Opportunity
+content/IDs, structured model output, rendered text, provider raw responses or
+raw errors. TEST-010 provides authenticated database-backed browser and
 endpoint-alternation proof. Before broad AI production rollout, configure
 provider project spend/rate controls and alerts, retain privacy-safe application
-logs, approve provider privacy controls, add a
-`safety_identifier`, and complete the Contact PII and future URL-ingestion policy.
+logs, approve provider privacy controls, and complete the Contact PII and future
+URL-ingestion policy.
 
 Confidence is derived by the application from the completeness of the available
 Company metadata after structural validation: sparse profiles produce Low;
@@ -567,10 +573,32 @@ deployment secret manager; never commit it, expose it as `NEXT_PUBLIC_*`, store
 it in PostgreSQL, or log it. Intentional secret rotation changes all
 provider-facing safety identifiers.
 
+Operational logs use a separate `lai-ops-v1_<base64url HMAC-SHA256>` actor ID,
+derived from the authenticated actor UUID with the exact domain `ai-ops:v1:` and
+the independent `AI_OBSERVABILITY_HMAC_SECRET`. It is not the provider-facing
+`safety_identifier`. Provision it through server-side deployment secret
+management, never commit/log/browser-expose/store it, and validate at least 32
+UTF-8 bytes. Intentional rotation changes operational IDs and therefore the
+continuity of actor-level log correlation.
+
+The application emits stable structured events through its existing server
+logger; this repository does not configure or claim a retained centralized log
+sink or active alerts. A production deployment must route those events to an
+approved content-safe facility with access control, an explicit retention
+policy, centralized search/request correlation, filtering by operation,
+outcome and model, token/error-rate aggregation, and basic alerting. Alerts may
+cover increases in provider errors, timeouts or limiter denials, abnormal token
+usage, unexpected model/provider classifications, invalid production
+configuration attempts, and repeated input-bound violations. Thresholds depend
+on an approved operational baseline and must not inspect customer content.
+Provider/project budgets, prices, quotas and usage alerts remain external
+account/deployment controls; application telemetry does not calculate cost.
+
 Production remains default-disabled. Keep `AI_FEATURES_ENABLED=false` until
 provider/account, owner/privacy, live-evaluation, deployment-secret, and Phase
-2A PR 3 observability gates are separately approved. This remains experimental
-AI and is not broad-production readiness.
+observability deployment, retained-log, alerting and access-control gates are
+separately approved. This remains experimental AI and is not broad-production
+readiness.
 
 The database lane additionally proves migration 024 grants, active-profile and
 anonymous denial, five-second/60-second boundaries, bounded state and real

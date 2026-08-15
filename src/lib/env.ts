@@ -16,6 +16,7 @@ const publicEnvSchema = z.object({
 const serverEnvSchema = z.object({
   AI_FEATURES_ENABLED: z.enum(["true", "false"]).optional(),
   AI_IDENTITY_HMAC_SECRET: z.string().optional(),
+  AI_OBSERVABILITY_HMAC_SECRET: z.string().optional(),
   OPENAI_API_KEY: z.string().trim().min(1).optional(),
   OPENAI_MODEL: z.string().trim().min(1).optional(),
   COMPANY_DUPLICATE_CONFIRMATION_SECRET: z.string().min(32).optional(),
@@ -59,6 +60,7 @@ export type ApplicationConfigurationIssue =
   | "invalid_ai_features_enabled"
   | "enabled_ai_requires_openai_key"
   | "enabled_ai_requires_identity_secret"
+  | "enabled_ai_requires_observability_secret"
   | "invalid_openai_model";
 
 export type ApplicationModeInput = {
@@ -250,6 +252,7 @@ export function validateProductionServerEnvironment(input: {
   aiStubCallsFile?: string;
   aiFeaturesEnabled?: string;
   aiIdentityHmacSecret?: string;
+  aiObservabilityHmacSecret?: string;
   openAiApiKey?: string;
   openAiModel?: string;
 }): void {
@@ -286,6 +289,12 @@ export function validateProductionServerEnvironment(input: {
       Buffer.byteLength(input.aiIdentityHmacSecret, "utf8") < 32
     ) {
       issues.push("enabled_ai_requires_identity_secret");
+    }
+    if (
+      !input.aiObservabilityHmacSecret?.trim() ||
+      Buffer.byteLength(input.aiObservabilityHmacSecret, "utf8") < 32
+    ) {
+      issues.push("enabled_ai_requires_observability_secret");
     }
     if (
       input.openAiModel !== undefined &&
@@ -329,6 +338,7 @@ export function assertProductionServerEnvironment(): void {
     aiStubCallsFile: process.env.LAPARPO_E2E_AI_STUB_CALLS_FILE,
     aiFeaturesEnabled: process.env.AI_FEATURES_ENABLED,
     aiIdentityHmacSecret: process.env.AI_IDENTITY_HMAC_SECRET,
+    aiObservabilityHmacSecret: process.env.AI_OBSERVABILITY_HMAC_SECRET,
     openAiApiKey: process.env.OPENAI_API_KEY,
     openAiModel: process.env.OPENAI_MODEL,
   });
@@ -347,6 +357,8 @@ export function getServerEnv(): ServerEnv {
     AI_FEATURES_ENABLED: process.env.AI_FEATURES_ENABLED || undefined,
     AI_IDENTITY_HMAC_SECRET:
       process.env.AI_IDENTITY_HMAC_SECRET || undefined,
+    AI_OBSERVABILITY_HMAC_SECRET:
+      process.env.AI_OBSERVABILITY_HMAC_SECRET || undefined,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY?.trim() || undefined,
     OPENAI_MODEL: process.env.OPENAI_MODEL?.trim() || undefined,
     COMPANY_DUPLICATE_CONFIRMATION_SECRET:
@@ -383,6 +395,7 @@ export function getServerEnv(): ServerEnv {
     aiStubCallsFile: env.LAPARPO_E2E_AI_STUB_CALLS_FILE,
     aiFeaturesEnabled: env.AI_FEATURES_ENABLED,
     aiIdentityHmacSecret: env.AI_IDENTITY_HMAC_SECRET,
+    aiObservabilityHmacSecret: env.AI_OBSERVABILITY_HMAC_SECRET,
     openAiApiKey: env.OPENAI_API_KEY,
     openAiModel: env.OPENAI_MODEL,
   });

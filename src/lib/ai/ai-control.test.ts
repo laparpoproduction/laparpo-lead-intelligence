@@ -12,6 +12,7 @@ const actorA = "11111111-1111-4111-8111-111111111111";
 const actorB = "22222222-2222-4222-8222-222222222222";
 const secretA = "0123456789abcdef0123456789abcdef";
 const secretB = "fedcba9876543210fedcba9876543210";
+const observabilitySecret = "observability-secret-that-is-32-bytes";
 
 function configured(overrides: Record<string, string | undefined> = {}) {
   return resolveAiControlConfiguration({
@@ -19,6 +20,7 @@ function configured(overrides: Record<string, string | undefined> = {}) {
     applicationMode: "configured",
     enabled: "true",
     identitySecret: secretA,
+    observabilitySecret,
     openAiApiKey: "unit-test-key",
     ...overrides,
   });
@@ -39,6 +41,10 @@ describe("AI provider identity and control configuration", () => {
     expect(configured({ identitySecret: undefined })).toEqual({ status: "invalid" });
     expect(configured({ identitySecret: "short" })).toEqual({ status: "invalid" });
     expect(configured({ identitySecret: "                                " })).toEqual({ status: "invalid" });
+    expect(configured({ observabilitySecret: undefined })).toEqual({ status: "invalid" });
+    expect(configured({ observabilitySecret: "short" })).toEqual({ status: "invalid" });
+    expect(configured({ observabilitySecret: "                                " })).toEqual({ status: "invalid" });
+    expect(configured({ observabilitySecret: "界".repeat(11) })).toMatchObject({ status: "enabled" });
     expect(configured({ openAiModel: "gpt-unapproved" })).toEqual({ status: "invalid" });
   });
 
@@ -50,7 +56,7 @@ describe("AI provider identity and control configuration", () => {
   it("rejects deterministic provider selection in production and retains guarded test selection", () => {
     const flags = { authenticatedE2E: "true", aiStub: "true", aiStubCallsFile: `${process.cwd()}/.tmp/authenticated-e2e/ai-calls.log` };
     expect(configured(flags)).toEqual({ status: "invalid" });
-    expect(resolveAiControlConfiguration({ nodeEnv: "test", applicationMode: "configured", enabled: "true", identitySecret: secretA, ...flags })).toMatchObject({ status: "enabled", providerKind: "deterministic-e2e" });
+    expect(resolveAiControlConfiguration({ nodeEnv: "test", applicationMode: "configured", enabled: "true", identitySecret: secretA, observabilitySecret, ...flags })).toMatchObject({ status: "enabled", providerKind: "deterministic-e2e" });
   });
 });
 

@@ -67,6 +67,7 @@ beforeEach(() => {
     providerKind: "openai",
     model: "gpt-5.6-terra",
     identitySecret: "identity-secret-that-is-at-least-32-bytes",
+    observabilitySecret: "observability-secret-that-is-at-least-32-bytes",
     openAiApiKey: "unit-test-key",
   });
   vi.mocked(deriveOpenAiSafetyIdentifier).mockReturnValue(
@@ -86,7 +87,7 @@ beforeEach(() => {
       focusAreas: [],
     },
     model: "gpt-5.6-terra",
-    usage: null,
+    usage: { inputTokens: 70, outputTokens: 20, totalTokens: 90 },
   });
   vi.mocked(createOpportunityPipelineSummaryService).mockReturnValue({
     generate,
@@ -109,6 +110,36 @@ describe("Opportunity pipeline summary server action", () => {
     expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
     expect(createOpportunityPipelineSummaryService).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        operation: "opportunity_pipeline_summary",
+        outcome: "disabled",
+        providerStatus: "not_called",
+        rateLimitOutcome: "not_checked",
+      }),
+    );
+  });
+
+  it("fails closed for invalid AI configuration before limiter or provider work", async () => {
+    vi.mocked(getAiControlConfiguration).mockReturnValueOnce({ status: "invalid" });
+    await expect(
+      generateOpportunityPipelineSummaryAction(
+        initialOpportunityPipelineSummaryActionState,
+        new FormData(),
+      ),
+    ).resolves.toMatchObject({ status: "ai_not_configured" });
+    expect(createClient).not.toHaveBeenCalled();
+    expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        outcome: "invalid_configuration",
+        providerStatus: "not_called",
+        rateLimitOutcome: "not_checked",
+      }),
+    );
   });
 
   it("ignores browser pipeline/provider payload and builds the authorized snapshot server-side", async () => {
@@ -140,6 +171,23 @@ describe("Opportunity pipeline summary server action", () => {
     );
     expect(JSON.stringify(projection.providerSnapshot)).not.toContain(
       "client-selected-model",
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        actorOperationalId: expect.stringMatching(
+          /^lai-ops-v1_[A-Za-z0-9_-]{43}$/,
+        ),
+        operation: "opportunity_pipeline_summary",
+        outcome: "success",
+        providerKind: "openai",
+        providerStatus: "succeeded",
+        rateLimitOutcome: "allowed",
+        inputCandidateCount: 1,
+        inputTokens: 70,
+        outputTokens: 20,
+        totalTokens: 90,
+      }),
     );
   });
 
@@ -179,6 +227,14 @@ describe("Opportunity pipeline summary server action", () => {
     expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
     expect(createOpportunityPipelineSummaryService).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        outcome: "rate_limited",
+        providerStatus: "not_called",
+        rateLimitOutcome: "denied",
+      }),
+    );
 
     vi.mocked(createClient).mockResolvedValueOnce(
       limiterClient(null, { message: "private database detail" }) as never,
@@ -191,6 +247,14 @@ describe("Opportunity pipeline summary server action", () => {
     ).resolves.toMatchObject({ status: "provider_unavailable" });
     expect(getPipelineSummaryReadModel).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      "AI operational event",
+      expect.objectContaining({
+        outcome: "provider_unavailable",
+        providerStatus: "not_called",
+        rateLimitOutcome: "unavailable",
+      }),
+    );
   });
 
   it.each([
@@ -240,6 +304,8 @@ describe("Opportunity pipeline summary server action", () => {
     expect(logs).not.toContain("sk-sensitive");
     expect(logs).not.toContain("lai-ai-v1_unit-test-safety-identifier");
     expect(logs).not.toContain("identity-secret-that-is-at-least-32-bytes");
+    expect(logs).not.toContain("observability-secret-that-is-at-least-32-bytes");
+    expect(logs).not.toContain(actor.userId);
     expect(logs).not.toContain("RM999999");
     expect(logs).not.toContain(row.id);
   });

@@ -2,14 +2,17 @@
 
 import { randomUUID } from "node:crypto";
 import { ZodError } from "zod";
-import {
-  AiActorRateLimitUnavailableError,
-  consumeAiActorRateLimit,
-} from "@/lib/ai/ai-actor-rate-limit";
+import { consumeAiActorRateLimit } from "@/lib/ai/ai-actor-rate-limit";
 import {
   deriveOpenAiSafetyIdentifier,
   getAiControlConfiguration,
 } from "@/lib/ai/ai-control";
+import {
+  deriveAiOperationalActorId,
+  emitAiOperationalEvent,
+  type AiOperationalLogLevel,
+  type AiOperationalTelemetry,
+} from "@/lib/ai/ai-observability";
 import { PipelineSummaryInputTooLargeError } from "@/lib/ai/opportunity-pipeline-summary.input";
 import { projectOpportunityPipelineSummary } from "@/lib/ai/opportunity-pipeline-summary.projection";
 import {
@@ -20,7 +23,6 @@ import { InvalidPipelineSummaryRenderError } from "@/lib/ai/opportunity-pipeline
 import { createOpportunityPipelineSummaryService } from "@/lib/ai/opportunity-pipeline-summary.server";
 import { InvalidPipelineSummaryOutputError } from "@/lib/ai/opportunity-pipeline-summary.validation";
 import { getApplicationMode } from "@/lib/env";
-import { logger } from "@/lib/logger";
 import {
   OpportunityListUnavailableError,
 } from "@/lib/opportunities/opportunity.service";
@@ -30,7 +32,7 @@ import {
 } from "@/lib/opportunities/opportunity.server";
 import type { OpportunityPipelineSummaryActionState } from "./summary-state";
 
-const operation = "generate_opportunity_pipeline_summary";
+const operation = "opportunity_pipeline_summary" as const;
 
 function safeFailure(
   status: Exclude<
@@ -58,15 +60,20 @@ function safeFailure(
 }
 
 function logOutcome(
-  level: "info" | "warn" | "error",
+  level: AiOperationalLogLevel,
   requestId: string,
-  outcome: string,
-  context: Record<string, string | number | null | undefined> = {},
+  startedAt: number,
+  outcome: AiOperationalTelemetry["outcome"],
+  context: Omit<
+    AiOperationalTelemetry,
+    "requestId" | "operation" | "durationMs" | "outcome"
+  >,
 ) {
-  logger[level]("Opportunity pipeline summary generation", {
+  emitAiOperationalEvent(level, {
     operation,
     outcome,
     requestId,
+    durationMs: Date.now() - startedAt,
     ...context,
   });
 }
@@ -80,7 +87,11 @@ export async function generateOpportunityPipelineSummaryAction(
   const requestId = randomUUID();
   const startedAt = Date.now();
   if (getApplicationMode() !== "configured") {
-    logOutcome("warn", requestId, "unavailable_mode");
+    logOutcome("warn", requestId, startedAt, "invalid_configuration", {
+      providerKind: "unavailable",
+      rateLimitOutcome: "not_checked",
+      providerStatus: "not_called",
+    });
     return safeFailure("ai_not_configured");
   }
 
@@ -93,11 +104,15 @@ export async function generateOpportunityPipelineSummaryAction(
         error.code === "unauthenticated" || error.code === "inactive"
           ? "permission_error"
           : "provider_unavailable";
-      logOutcome("warn", requestId, error.code);
+      logOutcome("warn", requestId, startedAt, "unauthorized", {
+        rateLimitOutcome: "not_checked",
+        providerStatus: "not_called",
+      });
       return safeFailure(status);
     }
-    logOutcome("error", requestId, "authentication_failed", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
+    logOutcome("error", requestId, startedAt, "provider_error", {
+      rateLimitOutcome: "not_checked",
+      providerStatus: "not_called",
     });
     return safeFailure("unexpected");
   }
@@ -107,8 +122,34 @@ export async function generateOpportunityPipelineSummaryAction(
   if (aiConfiguration.status !== "enabled") {
     const status =
       aiConfiguration.status === "disabled" ? "ai_disabled" : "ai_not_configured";
-    logOutcome("warn", requestId, status, { actorId: actor.userId });
+    logOutcome(
+      "warn",
+      requestId,
+      startedAt,
+      aiConfiguration.status === "disabled"
+        ? "disabled"
+        : "invalid_configuration",
+      {
+        providerKind: "unavailable",
+        rateLimitOutcome: "not_checked",
+        providerStatus: "not_called",
+      },
+    );
     return safeFailure(status);
+  }
+  let actorOperationalId: string;
+  try {
+    actorOperationalId = deriveAiOperationalActorId(
+      actor.userId,
+      aiConfiguration.observabilitySecret,
+    );
+  } catch {
+    logOutcome("error", requestId, startedAt, "invalid_configuration", {
+      providerKind: "unavailable",
+      rateLimitOutcome: "not_checked",
+      providerStatus: "not_called",
+    });
+    return safeFailure("ai_not_configured");
   }
   const safetyIdentifier = deriveOpenAiSafetyIdentifier(
     actor.userId,
@@ -117,18 +158,22 @@ export async function generateOpportunityPipelineSummaryAction(
   try {
     const rateLimit = await consumeAiActorRateLimit();
     if (!rateLimit.allowed) {
-      logOutcome("warn", requestId, "rate_limited", {
-        actorId: actor.userId,
+      logOutcome("warn", requestId, startedAt, "rate_limited", {
+        actorOperationalId,
+        model: aiConfiguration.model,
+        providerKind: aiConfiguration.providerKind,
+        rateLimitOutcome: "denied",
+        providerStatus: "not_called",
       });
       return safeFailure("rate_limited");
     }
-  } catch (error) {
-    logOutcome("error", requestId, "rate_limiter_unavailable", {
-      actorId: actor.userId,
-      errorName:
-        error instanceof AiActorRateLimitUnavailableError
-          ? error.name
-          : "UnknownError",
+  } catch {
+    logOutcome("error", requestId, startedAt, "provider_unavailable", {
+      actorOperationalId,
+      model: aiConfiguration.model,
+      providerKind: aiConfiguration.providerKind,
+      rateLimitOutcome: "unavailable",
+      providerStatus: "not_called",
     });
     return safeFailure("provider_unavailable");
   }
@@ -146,12 +191,14 @@ export async function generateOpportunityPipelineSummaryAction(
       now,
     );
     const generated = await summaryService.generate(projection);
-    logOutcome("info", requestId, "succeeded", {
-      actorId: actor.userId,
-      candidateCount: projection.providerSnapshot.analyzedCandidateCount,
-      activeCount: projection.providerSnapshot.activeOpportunityCount,
-      durationMs: Date.now() - startedAt,
+    logOutcome("info", requestId, startedAt, "success", {
+      actorOperationalId,
+      inputCandidateCount:
+        projection.providerSnapshot.analyzedCandidateCount,
       model: generated.model,
+      providerKind: aiConfiguration.providerKind,
+      rateLimitOutcome: "allowed",
+      providerStatus: "succeeded",
       inputTokens: generated.usage?.inputTokens,
       outputTokens: generated.usage?.outputTokens,
       totalTokens: generated.usage?.totalTokens,
@@ -164,16 +211,22 @@ export async function generateOpportunityPipelineSummaryAction(
     };
   } catch (error) {
     if (error instanceof PipelineSummaryInputTooLargeError) {
-      logOutcome("warn", requestId, "input_rejected", {
-        actorId: actor.userId,
-        actualBytes: error.actualBytes,
-        limitBytes: error.limitBytes,
+      logOutcome("warn", requestId, startedAt, "invalid_input", {
+        actorOperationalId,
+        model: aiConfiguration.model,
+        providerKind: aiConfiguration.providerKind,
+        rateLimitOutcome: "allowed",
+        providerStatus: "not_called",
       });
       return safeFailure("validation_error");
     }
     if (error instanceof OpportunityListUnavailableError) {
-      logOutcome("warn", requestId, "pipeline_unavailable", {
-        actorId: actor.userId,
+      logOutcome("warn", requestId, startedAt, "provider_unavailable", {
+        actorOperationalId,
+        model: aiConfiguration.model,
+        providerKind: aiConfiguration.providerKind,
+        rateLimitOutcome: "allowed",
+        providerStatus: "not_called",
       });
       return safeFailure("provider_unavailable");
     }
@@ -184,13 +237,36 @@ export async function generateOpportunityPipelineSummaryAction(
       error instanceof ZodError ||
       error instanceof SyntaxError
     ) {
-      logOutcome("warn", requestId, "invalid_model_output", {
-        actorId: actor.userId,
-      });
+      const refusal = error instanceof PipelineSummaryProviderRefusalError;
+      logOutcome(
+        "warn",
+        requestId,
+        startedAt,
+        refusal ? "provider_refusal" : "provider_output_invalid",
+        {
+          actorOperationalId,
+          model: aiConfiguration.model,
+          providerKind: aiConfiguration.providerKind,
+          rateLimitOutcome: "allowed",
+          providerStatus: refusal ? "refusal" : "output_invalid",
+        },
+      );
       return safeFailure("invalid_model_output");
     }
     if (error instanceof PipelineSummaryProviderError) {
-      logOutcome("warn", requestId, error.code, { actorId: actor.userId });
+      logOutcome(
+        "warn",
+        requestId,
+        startedAt,
+        error.code === "timeout" ? "provider_timeout" : "provider_unavailable",
+        {
+          actorOperationalId,
+          model: aiConfiguration.model,
+          providerKind: aiConfiguration.providerKind,
+          rateLimitOutcome: "allowed",
+          providerStatus: error.code === "timeout" ? "timeout" : "unavailable",
+        },
+      );
       return safeFailure(
         error.code === "timeout"
           ? "timeout"
@@ -199,9 +275,12 @@ export async function generateOpportunityPipelineSummaryAction(
             : "provider_unavailable",
       );
     }
-    logOutcome("error", requestId, "unexpected", {
-      actorId: actor.userId,
-      errorName: error instanceof Error ? error.name : "UnknownError",
+    logOutcome("error", requestId, startedAt, "provider_error", {
+      actorOperationalId,
+      model: aiConfiguration.model,
+      providerKind: aiConfiguration.providerKind,
+      rateLimitOutcome: "allowed",
+      providerStatus: "error",
     });
     return safeFailure("unexpected");
   }

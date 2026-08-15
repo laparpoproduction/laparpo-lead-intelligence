@@ -17,6 +17,7 @@ const validEnvironment = {
   LAPARPO_E2E_AI_STUB_CALLS_FILE: undefined,
   AI_FEATURES_ENABLED: "false",
   AI_IDENTITY_HMAC_SECRET: undefined,
+  AI_OBSERVABILITY_HMAC_SECRET: undefined,
   OPENAI_API_KEY: undefined,
   OPENAI_MODEL: undefined,
 };
@@ -105,6 +106,8 @@ describe("next.config production validation integration", () => {
         AI_FEATURES_ENABLED: "true",
         OPENAI_API_KEY: "unit-test-key",
         AI_IDENTITY_HMAC_SECRET: "short",
+        AI_OBSERVABILITY_HMAC_SECRET:
+          "observability-secret-that-is-at-least-32-bytes",
       }),
     ).rejects.toThrow("enabled_ai_requires_identity_secret");
     await expect(
@@ -112,6 +115,8 @@ describe("next.config production validation integration", () => {
         AI_FEATURES_ENABLED: "true",
         OPENAI_API_KEY: "unit-test-key",
         AI_IDENTITY_HMAC_SECRET: "identity-secret-that-is-at-least-32-bytes",
+        AI_OBSERVABILITY_HMAC_SECRET:
+          "observability-secret-that-is-at-least-32-bytes",
         OPENAI_MODEL: "unapproved-model",
       }),
     ).rejects.toThrow("invalid_openai_model");
@@ -124,6 +129,8 @@ describe("next.config production validation integration", () => {
         AI_FEATURES_ENABLED: "true",
         OPENAI_API_KEY: "unit-test-key",
         AI_IDENTITY_HMAC_SECRET: "identity-secret-that-is-at-least-32-bytes",
+        AI_OBSERVABILITY_HMAC_SECRET:
+          "observability-secret-that-is-at-least-32-bytes",
         OPENAI_MODEL: "gpt-5.6-terra",
       }),
     ).resolves.toHaveProperty("default");

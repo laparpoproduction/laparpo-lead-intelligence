@@ -2,14 +2,17 @@
 
 import { randomUUID } from "node:crypto";
 import { ZodError } from "zod";
-import {
-  AiActorRateLimitUnavailableError,
-  consumeAiActorRateLimit,
-} from "@/lib/ai/ai-actor-rate-limit";
+import { consumeAiActorRateLimit } from "@/lib/ai/ai-actor-rate-limit";
 import {
   deriveOpenAiSafetyIdentifier,
   getAiControlConfiguration,
 } from "@/lib/ai/ai-control";
+import {
+  deriveAiOperationalActorId,
+  emitAiOperationalEvent,
+  type AiOperationalLogLevel,
+  type AiOperationalTelemetry,
+} from "@/lib/ai/ai-observability";
 import { CompanyIntelligenceInputTooLargeError } from "@/lib/ai/company-intelligence.input";
 import {
   CompanyIntelligenceProviderError,
@@ -29,10 +32,9 @@ import {
 } from "@/lib/companies/company.server";
 import { validateCompanyId } from "@/lib/companies/company.validation";
 import { getApplicationMode } from "@/lib/env";
-import { logger } from "@/lib/logger";
 import type { CompanyIntelligenceActionState } from "./intelligence-state";
 
-const operation = "generate_company_intelligence";
+const operation = "company_intelligence" as const;
 
 function safeFailure(
   status: Exclude<
@@ -57,15 +59,20 @@ function safeFailure(
 }
 
 function logOutcome(
-  level: "info" | "warn" | "error",
+  level: AiOperationalLogLevel,
   requestId: string,
-  outcome: string,
-  context: Record<string, string | number | null | undefined> = {},
+  startedAt: number,
+  outcome: AiOperationalTelemetry["outcome"],
+  context: Omit<
+    AiOperationalTelemetry,
+    "requestId" | "operation" | "durationMs" | "outcome"
+  >,
 ): void {
-  logger[level]("Company intelligence generation", {
+  emitAiOperationalEvent(level, {
     operation,
     outcome,
     requestId,
+    durationMs: Date.now() - startedAt,
     ...context,
   });
 }
@@ -78,7 +85,11 @@ export async function generateCompanyIntelligenceAction(
   const startedAt = Date.now();
 
   if (getApplicationMode() !== "configured") {
-    logOutcome("warn", requestId, "unavailable_mode");
+    logOutcome("warn", requestId, startedAt, "invalid_configuration", {
+      providerKind: "unavailable",
+      rateLimitOutcome: "not_checked",
+      providerStatus: "not_called",
+    });
     return safeFailure("ai_not_configured");
   }
 
@@ -91,11 +102,15 @@ export async function generateCompanyIntelligenceAction(
         error.code === "unauthenticated" || error.code === "inactive"
           ? "permission_error"
           : "provider_unavailable";
-      logOutcome("warn", requestId, error.code);
+      logOutcome("warn", requestId, startedAt, "unauthorized", {
+        rateLimitOutcome: "not_checked",
+        providerStatus: "not_called",
+      });
       return safeFailure(status);
     }
-    logOutcome("error", requestId, "authentication_failed", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
+    logOutcome("error", requestId, startedAt, "provider_error", {
+      rateLimitOutcome: "not_checked",
+      providerStatus: "not_called",
     });
     return safeFailure("unexpected");
   }
@@ -105,8 +120,34 @@ export async function generateCompanyIntelligenceAction(
   if (aiConfiguration.status !== "enabled") {
     const status =
       aiConfiguration.status === "disabled" ? "ai_disabled" : "ai_not_configured";
-    logOutcome("warn", requestId, status, { actorId: actor.userId });
+    logOutcome(
+      "warn",
+      requestId,
+      startedAt,
+      aiConfiguration.status === "disabled"
+        ? "disabled"
+        : "invalid_configuration",
+      {
+        providerKind: "unavailable",
+        rateLimitOutcome: "not_checked",
+        providerStatus: "not_called",
+      },
+    );
     return safeFailure(status);
+  }
+  let actorOperationalId: string;
+  try {
+    actorOperationalId = deriveAiOperationalActorId(
+      actor.userId,
+      aiConfiguration.observabilitySecret,
+    );
+  } catch {
+    logOutcome("error", requestId, startedAt, "invalid_configuration", {
+      providerKind: "unavailable",
+      rateLimitOutcome: "not_checked",
+      providerStatus: "not_called",
+    });
+    return safeFailure("ai_not_configured");
   }
   const safetyIdentifier = deriveOpenAiSafetyIdentifier(
     actor.userId,
@@ -115,18 +156,22 @@ export async function generateCompanyIntelligenceAction(
   try {
     const rateLimit = await consumeAiActorRateLimit();
     if (!rateLimit.allowed) {
-      logOutcome("warn", requestId, "rate_limited", {
-        actorId: actor.userId,
+      logOutcome("warn", requestId, startedAt, "rate_limited", {
+        actorOperationalId,
+        model: aiConfiguration.model,
+        providerKind: aiConfiguration.providerKind,
+        rateLimitOutcome: "denied",
+        providerStatus: "not_called",
       });
       return safeFailure("rate_limited");
     }
-  } catch (error) {
-    logOutcome("error", requestId, "rate_limiter_unavailable", {
-      actorId: actor.userId,
-      errorName:
-        error instanceof AiActorRateLimitUnavailableError
-          ? error.name
-          : "UnknownError",
+  } catch {
+    logOutcome("error", requestId, startedAt, "provider_unavailable", {
+      actorOperationalId,
+      model: aiConfiguration.model,
+      providerKind: aiConfiguration.providerKind,
+      rateLimitOutcome: "unavailable",
+      providerStatus: "not_called",
     });
     return safeFailure("provider_unavailable");
   }
@@ -138,8 +183,12 @@ export async function generateCompanyIntelligenceAction(
       typeof rawCompanyId === "string" ? rawCompanyId : "",
     );
   } catch {
-    logOutcome("warn", requestId, "invalid_target", {
-      actorId: actor.userId,
+    logOutcome("warn", requestId, startedAt, "invalid_input", {
+      actorOperationalId,
+      model: aiConfiguration.model,
+      providerKind: aiConfiguration.providerKind,
+      rateLimitOutcome: "allowed",
+      providerStatus: "not_called",
     });
     return safeFailure("not_found");
   }
@@ -153,11 +202,12 @@ export async function generateCompanyIntelligenceAction(
     );
 
     const generated = await intelligenceService.generate(projection);
-    logOutcome("info", requestId, "succeeded", {
-      actorId: actor.userId,
-      companyId,
-      durationMs: Date.now() - startedAt,
+    logOutcome("info", requestId, startedAt, "success", {
+      actorOperationalId,
       model: generated.model,
+      providerKind: aiConfiguration.providerKind,
+      rateLimitOutcome: "allowed",
+      providerStatus: "succeeded",
       inputTokens: generated.usage?.inputTokens,
       outputTokens: generated.usage?.outputTokens,
       totalTokens: generated.usage?.totalTokens,
@@ -174,19 +224,22 @@ export async function generateCompanyIntelligenceAction(
       error instanceof CompanyRepositoryNotFoundError ||
       error instanceof CompanyPermissionError
     ) {
-      logOutcome("warn", requestId, "not_found", {
-        actorId: actor.userId,
-        companyId,
+      logOutcome("warn", requestId, startedAt, "not_found", {
+        actorOperationalId,
+        model: aiConfiguration.model,
+        providerKind: aiConfiguration.providerKind,
+        rateLimitOutcome: "allowed",
+        providerStatus: "not_called",
       });
       return safeFailure("not_found");
     }
     if (error instanceof CompanyIntelligenceInputTooLargeError) {
-      logOutcome("warn", requestId, "input_rejected", {
-        actorId: actor.userId,
-        companyId,
-        limitCategory: error.category,
-        actualSize: error.actualSize,
-        limit: error.limit,
+      logOutcome("warn", requestId, startedAt, "invalid_input", {
+        actorOperationalId,
+        model: aiConfiguration.model,
+        providerKind: aiConfiguration.providerKind,
+        rateLimitOutcome: "allowed",
+        providerStatus: "not_called",
       });
       return safeFailure("validation_error");
     }
@@ -195,24 +248,39 @@ export async function generateCompanyIntelligenceAction(
       error instanceof ZodError ||
       error instanceof SyntaxError
     ) {
-      logOutcome("warn", requestId, "invalid_model_output", {
-        actorId: actor.userId,
-        companyId,
+      logOutcome("warn", requestId, startedAt, "provider_output_invalid", {
+        actorOperationalId,
+        model: aiConfiguration.model,
+        providerKind: aiConfiguration.providerKind,
+        rateLimitOutcome: "allowed",
+        providerStatus: "output_invalid",
       });
       return safeFailure("invalid_model_output");
     }
     if (error instanceof CompanyIntelligenceProviderRefusalError) {
-      logOutcome("warn", requestId, "provider_refusal", {
-        actorId: actor.userId,
-        companyId,
+      logOutcome("warn", requestId, startedAt, "provider_refusal", {
+        actorOperationalId,
+        model: aiConfiguration.model,
+        providerKind: aiConfiguration.providerKind,
+        rateLimitOutcome: "allowed",
+        providerStatus: "refusal",
       });
       return safeFailure("invalid_model_output");
     }
     if (error instanceof CompanyIntelligenceProviderError) {
-      logOutcome("warn", requestId, error.code, {
-        actorId: actor.userId,
-        companyId,
-      });
+      logOutcome(
+        "warn",
+        requestId,
+        startedAt,
+        error.code === "timeout" ? "provider_timeout" : "provider_unavailable",
+        {
+          actorOperationalId,
+          model: aiConfiguration.model,
+          providerKind: aiConfiguration.providerKind,
+          rateLimitOutcome: "allowed",
+          providerStatus: error.code === "timeout" ? "timeout" : "unavailable",
+        },
+      );
       return safeFailure(
         error.code === "timeout"
           ? "timeout"
@@ -222,10 +290,12 @@ export async function generateCompanyIntelligenceAction(
       );
     }
 
-    logOutcome("error", requestId, "unexpected", {
-      actorId: actor.userId,
-      companyId,
-      errorName: error instanceof Error ? error.name : "UnknownError",
+    logOutcome("error", requestId, startedAt, "provider_error", {
+      actorOperationalId,
+      model: aiConfiguration.model,
+      providerKind: aiConfiguration.providerKind,
+      rateLimitOutcome: "allowed",
+      providerStatus: "error",
     });
     return safeFailure("unexpected");
   }
